@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from ada.tools.file_sandbox import parse_sandbox_roots
+
 # Default Gemini model: Flash-Lite tier (verify against current API model list).
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite"
 
@@ -46,6 +48,10 @@ class Settings:
     dream_max_soul_bytes: int
     dream_default_max_messages: int
     max_session_tokens: int
+    enable_file_tools: bool
+    file_sandbox_roots: tuple[Path, ...]
+    file_max_read_bytes: int
+    file_max_write_bytes: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -82,6 +88,15 @@ class Settings:
         dream_soul = int(os.environ.get("ADA_DREAM_MAX_SOUL_BYTES", "1024"))
         dream_msgs = int(os.environ.get("ADA_DREAM_MAX_MESSAGES", "60"))
         max_session_tokens = int(os.environ.get("ADA_MAX_SESSION_TOKENS", "50000"))
+        file_tools = os.environ.get("ADA_ENABLE_FILE_TOOLS", "0").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        sandbox_raw = os.environ.get("ADA_FILE_SANDBOX_ROOTS", "").strip()
+        file_roots = parse_sandbox_roots(sandbox_raw, fallback=root)
+        file_max_read = int(os.environ.get("ADA_FILE_MAX_READ_BYTES", str(512 * 1024)))
+        file_max_write = int(os.environ.get("ADA_FILE_MAX_WRITE_BYTES", str(256 * 1024)))
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -108,6 +123,10 @@ class Settings:
             dream_max_soul_bytes=dream_soul,
             dream_default_max_messages=dream_msgs,
             max_session_tokens=max_session_tokens,
+            enable_file_tools=file_tools,
+            file_sandbox_roots=file_roots,
+            file_max_read_bytes=file_max_read,
+            file_max_write_bytes=file_max_write,
         )
 
     def ensure_data_dir(self) -> None:

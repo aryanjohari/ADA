@@ -10,6 +10,7 @@ from typing import Any
 
 from ada.memory_io import append_markdown_block, format_master_section, format_soul_fragment
 from ada.stream_types import CompletedFunctionCall
+from ada.tools.file_sandbox import resolve_workspace_path
 from ada.tools.shell_allowlist import command_to_argv
 
 
@@ -35,9 +36,20 @@ class PlanToolHooks:
     write_plan: Callable[[str], Awaitable[None]]
 
 
+@dataclass(frozen=True)
+class FileToolConfig:
+    """Paths resolved at startup; relative file paths use primary_root."""
+
+    roots: tuple[Path, ...]
+    primary_root: Path
+    max_read_bytes: int
+    max_write_bytes: int
+
+
 class StreamingToolExecutor:
     """
-    Dispatches allowlisted shell, optional memory-append tools, and optional plan_json hooks.
+    Dispatches allowlisted shell, optional memory-append tools, optional plan_json hooks,
+    and optional sandboxed workspace file read/write.
     Single-writer memory I/O uses memory_io global lock.
     """
 
@@ -50,6 +62,7 @@ class StreamingToolExecutor:
         memory: MemoryToolConfig | None = None,
         plan_hooks: PlanToolHooks | None = None,
         token_usage: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+        file_config: FileToolConfig | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
@@ -57,6 +70,7 @@ class StreamingToolExecutor:
         self._memory = memory
         self._plan_hooks = plan_hooks
         self._token_usage = token_usage
+        self._file_config = file_config
         self.discarded = False
 
     def discard(self) -> None:
@@ -93,6 +107,10 @@ class StreamingToolExecutor:
             return await self._write_task_plan(call)
         if call.name == "check_token_usage":
             return await self._check_token_usage()
+        if call.name == "read_workspace_file":
+            return await self._read_workspace_file(call)
+        if call.name == "write_workspace_file":
+            return await self._write_workspace_file(call)
         return {"error": f"unknown tool: {call.name}"}
 
     async def _check_token_usage(self) -> dict[str, Any]:
@@ -165,6 +183,94 @@ class StreamingToolExecutor:
             "exit_code": proc.returncode,
             "command": cmd,
         }
+
+    async def _read_workspace_file(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._file_config is None:
+            return {"error": "file tools not configured"}
+        rel = call.args.get("path")
+        if rel is None or not str(rel).strip():
+            return {"error": "missing path"}
+        try:
+            path = resolve_workspace_path(
+                roots=self._file_config.roots,
+                primary_root=self._file_config.primary_root,
+                user_path=str(rel),
+            )
+        except ValueError as e:
+            return {"error": str(e)}
+        max_b = self._file_config.max_read_bytes
+
+        def _read() -> dict[str, Any]:
+            if not path.is_file():
+                return {"error": "not a file or does not exist", "path": str(path)}
+            data = path.read_bytes()
+            total = len(data)
+            truncated = total > max_b
+            if truncated:
+                data = data[:max_b]
+            text = data.decode("utf-8", errors="replace")
+            out: dict[str, Any] = {
+                "path": str(path),
+                "content": text,
+                "truncated": truncated,
+                "size_bytes": total,
+            }
+            return out
+
+        try:
+            return await asyncio.to_thread(_read)
+        except OSError as e:
+            return {"error": str(e), "path": str(path)}
+
+    async def _write_workspace_file(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._file_config is None:
+            return {"error": "file tools not configured"}
+        rel = call.args.get("path")
+        if rel is None or not str(rel).strip():
+            return {"error": "missing path"}
+        raw_content = call.args.get("content")
+        if raw_content is None:
+            return {"error": "missing content"}
+        content = str(raw_content)
+        mode = str(call.args.get("mode") or "write").strip().lower()
+        if mode not in ("write", "append"):
+            return {"error": "mode must be 'write' or 'append'"}
+        create_parents = bool(call.args.get("create_parents"))
+        try:
+            path = resolve_workspace_path(
+                roots=self._file_config.roots,
+                primary_root=self._file_config.primary_root,
+                user_path=str(rel),
+            )
+        except ValueError as e:
+            return {"error": str(e)}
+        encoded = content.encode("utf-8")
+        if len(encoded) > self._file_config.max_write_bytes:
+            return {
+                "error": "content exceeds max_write_bytes",
+                "max_write_bytes": self._file_config.max_write_bytes,
+                "bytes": len(encoded),
+            }
+
+        def _write() -> dict[str, Any]:
+            if create_parents:
+                path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists() and path.is_dir():
+                return {"error": "path is a directory", "path": str(path)}
+            flag = "a" if mode == "append" else "w"
+            with path.open(flag, encoding="utf-8", newline="") as f:
+                f.write(content)
+            return {
+                "ok": True,
+                "path": str(path),
+                "mode": mode,
+                "bytes_written": len(encoded),
+            }
+
+        try:
+            return await asyncio.to_thread(_write)
+        except OSError as e:
+            return {"error": str(e), "path": str(path)}
 
     async def _append_master(self, call: CompletedFunctionCall) -> dict[str, Any]:
         if self._memory is None:

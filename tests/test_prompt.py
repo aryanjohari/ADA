@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from ada.prompt import build_system_instruction, format_allowlist_summary
+from pathlib import Path
+
+from ada.prompt import (
+    build_system_instruction,
+    format_allowlist_summary,
+    format_file_tools_note,
+)
 
 
 def test_system_instruction_wraps_soul():
@@ -42,3 +48,16 @@ def test_master_block_included():
 
 def test_format_allowlist_summary_empty():
     assert "disabled" in format_allowlist_summary(frozenset()).lower()
+
+
+def test_file_tools_note_in_harness():
+    s = build_system_instruction(
+        soul_text="",
+        master_text="",
+        state_db_display_path="/data/state.db",
+        allowlist_summary="(none)",
+        file_tools_note=format_file_tools_note((Path("/tmp/ada_sandbox"),)),
+    )
+    assert "read_workspace_file" in s
+    assert "write_workspace_file" in s
+    assert "/tmp/ada_sandbox" in s

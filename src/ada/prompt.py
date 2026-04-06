@@ -25,12 +25,23 @@ def format_allowlist_summary(allowed: frozenset[str], *, limit: int = 24) -> str
     return "\n".join(f"- `{s}`" for s in lines) + extra
 
 
+def format_file_tools_note(roots: tuple[Path, ...]) -> str:
+    """Short harness note when sandboxed file tools are enabled."""
+    lines = "\n".join(f"- `{r}`" for r in roots)
+    return (
+        "**Workspace files:** `read_workspace_file` and `write_workspace_file` are enabled. "
+        "Paths must resolve inside one of these roots (symlinks resolved):\n"
+        f"{lines}"
+    )
+
+
 def build_system_instruction(
     *,
     soul_text: str,
     master_text: str,
     state_db_display_path: str,
     allowlist_summary: str,
+    file_tools_note: str | None = None,
 ) -> str:
     """
     Trusted harness + optional <master> + <user_soul>.
@@ -46,7 +57,10 @@ and optionally `append_master_section` / `append_soul_fragment` to persist small
 **Allowlisted commands (exact lines):**
 {allowlist_summary}
 """
-    blocks: list[str] = [harness.strip()]
+    harness = harness.strip()
+    if file_tools_note:
+        harness = f"{harness}\n\n{file_tools_note.strip()}"
+    blocks: list[str] = [harness]
     master_block = master_text.strip()
     if master_block:
         blocks.append(

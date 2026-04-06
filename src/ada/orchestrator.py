@@ -9,7 +9,12 @@ from typing import Any
 
 from ada.adapters.gemini_stream import chain_rows_to_contents, stream_one_model_leg
 from ada.query_engine import QueryEngine
-from ada.tool_executor import MemoryToolConfig, PlanToolHooks, StreamingToolExecutor
+from ada.tool_executor import (
+    FileToolConfig,
+    MemoryToolConfig,
+    PlanToolHooks,
+    StreamingToolExecutor,
+)
 from ada.tools.registry import build_agent_tools
 
 
@@ -41,6 +46,7 @@ async def orchestrate_turn(
     enable_memory_tools: bool = True,
     memory_config: MemoryToolConfig | None = None,
     include_plan_tools: bool = False,
+    file_config: FileToolConfig | None = None,
     max_session_tokens: int = 50000,
 ) -> str:
     """
@@ -54,6 +60,7 @@ async def orchestrate_turn(
         allowed_exact_commands=allow,
         include_memory_tools=enable_memory_tools,
         include_plan_tools=include_plan_tools,
+        include_file_tools=file_config is not None,
     )
     legs_cap = max(1, max_tool_rounds)
     memory = memory_config if enable_memory_tools else None
@@ -84,6 +91,7 @@ async def orchestrate_turn(
             memory=memory,
             plan_hooks=plan_hooks,
             token_usage=_token_usage_bound,
+            file_config=file_config,
         )
         try:
             return await _agentic_loop(
@@ -103,6 +111,7 @@ async def orchestrate_turn(
                 stream_leg_max_wall_sec=stream_leg_max_wall_sec,
                 rewire_after_tombstone=rewire_after_tombstone,
                 plan_tools_configured=plan_hooks is not None,
+                file_tools_configured=file_config is not None,
                 max_session_tokens=max_session_tokens,
             )
         except SessionTokenLimitExceeded:
@@ -139,6 +148,7 @@ async def _agentic_loop(
     stream_leg_max_wall_sec: float | None,
     rewire_after_tombstone: bool,
     plan_tools_configured: bool,
+    file_tools_configured: bool,
     max_session_tokens: int,
 ) -> str:
     parent = user_parent_uuid
@@ -245,6 +255,15 @@ async def _agentic_loop(
         if needs_plan and not plan_tools_configured:
             raise StreamFailed(
                 "model requested plan tools but plan tools are not configured"
+            )
+
+        needs_file = any(
+            c.name in ("read_workspace_file", "write_workspace_file")
+            for c in leg.function_calls
+        )
+        if needs_file and not file_tools_configured:
+            raise StreamFailed(
+                "model requested file tools but file tools are not configured"
             )
 
         results = await executor.run_ordered(leg.function_calls)

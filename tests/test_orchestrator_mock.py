@@ -6,6 +6,7 @@ import pytest
 import ada.orchestrator as orch
 from ada.query_engine import QueryEngine
 from ada.stream_types import CompletedFunctionCall, StreamLegResult
+from ada.tool_executor import FileToolConfig
 
 
 @pytest.mark.asyncio
@@ -187,6 +188,67 @@ async def test_orchestrator_plan_tool_round_persists_plan_json(
         assert any(
             p.get("name") == "write_task_plan" for p in tool_parts
         )
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_file_tool_round_writes_file(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    rr = workspace.resolve()
+    file_cfg = FileToolConfig(
+        roots=(rr,),
+        primary_root=rr,
+        max_read_bytes=4096,
+        max_write_bytes=4096,
+    )
+    calls = {"n": 0}
+
+    async def two_leg(**kwargs: object) -> StreamLegResult:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return StreamLegResult(
+                "",
+                [
+                    CompletedFunctionCall(
+                        name="write_workspace_file",
+                        args={
+                            "path": "out.txt",
+                            "content": "from-tool",
+                            "mode": "write",
+                        },
+                        id="f1",
+                    )
+                ],
+                {},
+                None,
+            )
+        return StreamLegResult("done.", [], {}, None)
+
+    monkeypatch.setattr(orch, "stream_one_model_leg", two_leg)
+
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("Interactive", status="executing")
+        out = await orch.orchestrate_turn(
+            qe,
+            session_id=tid,
+            user_text="write file",
+            system_instruction="sys",
+            api_key="k",
+            model="m",
+            max_retries=0,
+            enable_memory_tools=False,
+            include_plan_tools=False,
+            file_config=file_cfg,
+        )
+        assert out == "done."
+        assert (workspace / "out.txt").read_text(encoding="utf-8") == "from-tool"
     finally:
         await qe.close()
 

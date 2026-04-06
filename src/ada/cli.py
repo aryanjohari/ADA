@@ -12,11 +12,12 @@ from ada.orchestrator import SessionTokenLimitExceeded, orchestrate_turn
 from ada.prompt import (
     build_system_instruction,
     format_allowlist_summary,
+    format_file_tools_note,
     read_soul_text,
     read_text_file,
 )
 from ada.query_engine import QueryEngine
-from ada.tool_executor import MemoryToolConfig
+from ada.tool_executor import FileToolConfig, MemoryToolConfig
 from ada.tools.shell_allowlist import load_allowlist_exact_lines
 
 
@@ -30,6 +31,18 @@ def _memory_tool_config(settings: Settings) -> MemoryToolConfig | None:
         memory_dir=settings.memory_dir,
         max_append_bytes=settings.memory_max_append_bytes,
         max_file_bytes=settings.memory_max_file_bytes,
+    )
+
+
+def _file_tool_config(settings: Settings) -> FileToolConfig | None:
+    if not settings.enable_file_tools:
+        return None
+    roots = settings.file_sandbox_roots
+    return FileToolConfig(
+        roots=roots,
+        primary_root=roots[0],
+        max_read_bytes=settings.file_max_read_bytes,
+        max_write_bytes=settings.file_max_write_bytes,
     )
 
 
@@ -63,12 +76,19 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
         soul = read_soul_text(settings.soul_path)
         master = read_text_file(settings.master_path)
         wakeup = read_text_file(settings.wakeup_path)
+        file_note = (
+            format_file_tools_note(settings.file_sandbox_roots)
+            if settings.enable_file_tools
+            else None
+        )
         sys_instr = build_system_instruction(
             soul_text=soul,
             master_text=master,
             state_db_display_path=str(settings.state_db_path),
             allowlist_summary=format_allowlist_summary(allow),
+            file_tools_note=file_note,
         )
+        file_cfg = _file_tool_config(settings)
 
         if not settings.gemini_api_key:
             print("Set GEMINI_API_KEY (see .env.example).", file=sys.stderr)
@@ -99,6 +119,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
+                    file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
                 )
                 print(flush=True)
@@ -141,6 +162,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
+                    file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
                 )
                 await qe.update_task(
