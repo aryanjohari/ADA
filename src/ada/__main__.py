@@ -7,7 +7,7 @@ import asyncio
 import sys
 
 from ada.config import Settings, load_dotenv_if_present
-from ada.cli import run_chat
+from ada.cli import run_chat, run_dream_cli
 from ada.main import main_daemon
 
 
@@ -28,12 +28,49 @@ def main() -> None:
 
     sub.add_parser("daemon", help="Poll pending tasks in SQLite")
 
+    dream_p = sub.add_parser(
+        "dream",
+        help="Run dream compression once (summarize DB → master/soul); manual trigger for testing",
+    )
+    dream_p.add_argument(
+        "--session",
+        type=int,
+        default=None,
+        help="Limit transcript to this task id (default: all recent messages)",
+    )
+    dream_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Call model but do not write master.md / soul.md",
+    )
+    dream_p.add_argument(
+        "--max-messages",
+        type=int,
+        default=None,
+        help="Transcript window size (default: ADA_DREAM_MAX_MESSAGES)",
+    )
+
     args = p.parse_args()
     if args.cmd == "chat":
         settings = Settings.load()
         asyncio.run(run_chat(settings, new_session=args.new_session))
     elif args.cmd == "daemon":
         main_daemon()
+    elif args.cmd == "dream":
+        settings = Settings.load()
+        max_m = (
+            args.max_messages
+            if args.max_messages is not None
+            else settings.dream_default_max_messages
+        )
+        asyncio.run(
+            run_dream_cli(
+                settings,
+                session_id=args.session,
+                dry_run=args.dry_run,
+                max_messages=max_m,
+            )
+        )
     else:
         p.print_help()
         sys.exit(2)

@@ -101,3 +101,53 @@ async def test_record_usage_ledger(tmp_path, schema_sql_path):
         assert row[0] == 1
     finally:
         await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_tombstone_rewires_live_children(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("t", status="pending")
+        u = await qe.persist_user(tid, "hi")
+        a = await qe.persist_assistant_begin(tid, u)
+        tid_tool = await qe.persist_tool_result(
+            tid,
+            parent_assistant_uuid=a,
+            name="run_allowlisted_shell",
+            tool_call_id="x",
+            response={"stdout": "ok"},
+        )
+        await qe.tombstone([a], tid, rewire_orphans=True)
+        async with aiosqlite.connect(db) as raw:
+            cur = await raw.execute(
+                "SELECT parent_uuid FROM messages WHERE uuid = ?", (tid_tool,)
+            )
+            row = await cur.fetchone()
+        assert row is not None
+        assert row[0] == u
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_append_action_log(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("t", status="pending")
+        rid = await qe.append_action_log(
+            "test_kind", {"a": 1}, session_id=tid
+        )
+        assert rid >= 1
+        async with aiosqlite.connect(db) as raw:
+            cur = await raw.execute(
+                "SELECT kind, payload_json FROM action_log WHERE id = ?", (rid,)
+            )
+            row = await cur.fetchone()
+        assert row[0] == "test_kind"
+        assert '"a": 1' in row[1]
+    finally:
+        await qe.close()

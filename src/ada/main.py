@@ -15,7 +15,21 @@ from ada.prompt import (
     read_text_file,
 )
 from ada.query_engine import QueryEngine
+from ada.tool_executor import MemoryToolConfig
 from ada.tools.shell_allowlist import load_allowlist_exact_lines
+
+
+def _memory_tool_config(settings: Settings) -> MemoryToolConfig | None:
+    if not settings.enable_memory_tools:
+        return None
+    return MemoryToolConfig(
+        master_path=settings.master_path,
+        soul_path=settings.soul_path,
+        backups_dir=settings.memory_backups_dir,
+        memory_dir=settings.memory_dir,
+        max_append_bytes=settings.memory_max_append_bytes,
+        max_file_bytes=settings.memory_max_file_bytes,
+    )
 
 log = logging.getLogger("ada.daemon")
 
@@ -66,6 +80,11 @@ async def run_daemon_loop(settings: Settings) -> None:
                     max_tool_rounds=settings.max_tool_rounds,
                     shell_max_output_bytes=settings.shell_max_output_bytes,
                     shell_timeout_sec=settings.shell_timeout_sec,
+                    stream_chunk_idle_timeout_sec=settings.stream_chunk_idle_timeout_sec,
+                    stream_leg_max_wall_sec=settings.stream_leg_max_wall_sec,
+                    rewire_after_tombstone=settings.rewire_after_tombstone,
+                    enable_memory_tools=settings.enable_memory_tools,
+                    memory_config=_memory_tool_config(settings),
                 )
                 await qe.update_task(
                     task_id,

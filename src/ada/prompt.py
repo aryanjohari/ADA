@@ -40,8 +40,8 @@ def build_system_instruction(
 Conversation turns are persisted to SQLite at: `{state_db_display_path}`.
 Use transcript history for continuity across turns.
 
-You may have a tool `run_allowlisted_shell` for **read-only** hardware / OS probes.
-Each command string must match the allowlist **exactly** (character-for-character).
+You may have tools: `run_allowlisted_shell` (**read-only** OS probes; commands must match the allowlist **exactly**),
+and optionally `append_master_section` / `append_soul_fragment` to persist small memory updates under `memory/` (with backups).
 
 **Allowlisted commands (exact lines):**
 {allowlist_summary}

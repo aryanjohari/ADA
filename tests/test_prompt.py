@@ -14,6 +14,7 @@ def test_system_instruction_wraps_soul():
     assert "Be brief." in s
     assert "ADA" in s
     assert "SQLite" in s
+    assert "append_master_section" in s
 
 
 def test_harness_without_soul():

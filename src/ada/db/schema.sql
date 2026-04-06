@@ -45,3 +45,17 @@ CREATE TABLE IF NOT EXISTS usage_ledger (
 
 CREATE INDEX IF NOT EXISTS idx_usage_session
     ON usage_ledger(session_id, recorded_at);
+
+CREATE TABLE IF NOT EXISTS action_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_action_log_created
+    ON action_log(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_action_log_session
+    ON action_log(session_id, created_at);

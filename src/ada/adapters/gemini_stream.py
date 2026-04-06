@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from google import genai
 from google.genai import types
 
-from ada.query_engine import ROLE_ASSISTANT, ROLE_TOOL, ROLE_USER
 from ada.stream_types import CompletedFunctionCall, StreamLegResult
+from ada.transcript_format import ROLE_ASSISTANT, ROLE_TOOL, ROLE_USER
+
+
+class StreamTimeout(Exception):
+    """No chunk within idle window, or entire leg exceeded wall-clock max."""
+
 
 
 def chain_rows_to_contents(rows: list[dict[str, Any]]) -> list[types.Content]:
@@ -101,6 +108,31 @@ def _remember_fc(
     bucket[key] = fc
 
 
+def _merge_usage_metadata(into: dict[str, Any], um: object) -> None:
+    if um is None:
+        return
+    dump = getattr(um, "model_dump", None)
+    if callable(dump):
+        try:
+            d = dump()
+            if isinstance(d, dict):
+                into["usage_metadata"] = d
+                return
+        except Exception:
+            pass
+    for attr in (
+        "prompt_token_count",
+        "candidates_token_count",
+        "total_token_count",
+        "cached_content_token_count",
+        "thoughts_token_count",
+        "tool_use_prompt_token_count",
+    ):
+        v = getattr(um, attr, None)
+        if v is not None:
+            into[attr] = v
+
+
 async def stream_one_model_leg(
     *,
     api_key: str,
@@ -109,6 +141,8 @@ async def stream_one_model_leg(
     contents: list[types.Content],
     tool: types.Tool | None,
     on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+    chunk_idle_timeout_sec: float | None = 120.0,
+    leg_max_wall_sec: float | None = 600.0,
 ) -> StreamLegResult:
     """
     One generate_content_stream leg with optional tools; manual function calling.
@@ -137,9 +171,28 @@ async def stream_one_model_leg(
     usage: dict[str, Any] = {}
     finish_reason: str | None = None
 
-    async for chunk in stream:
+    aiter = stream.__aiter__()
+    loop_start = time.monotonic()
+
+    async def _next_chunk() -> object:
+        if chunk_idle_timeout_sec is not None and chunk_idle_timeout_sec > 0:
+            return await asyncio.wait_for(aiter.__anext__(), timeout=chunk_idle_timeout_sec)
+        return await aiter.__anext__()
+
+    while True:
+        if leg_max_wall_sec is not None and leg_max_wall_sec > 0:
+            if time.monotonic() - loop_start > leg_max_wall_sec:
+                raise StreamTimeout("stream leg exceeded wall-clock limit")
+        try:
+            chunk = await _next_chunk()
+        except StopAsyncIteration:
+            break
+        except asyncio.TimeoutError:
+            raise StreamTimeout("no stream chunk within idle timeout") from None
+
         um = getattr(chunk, "usage_metadata", None)
         if um:
+            _merge_usage_metadata(usage, um)
             pt = getattr(um, "prompt_token_count", None)
             ct = getattr(um, "candidates_token_count", None)
             if pt is not None:

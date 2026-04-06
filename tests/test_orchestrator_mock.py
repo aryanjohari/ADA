@@ -31,6 +31,7 @@ async def test_orchestrate_turn_streams_and_persists(
             model="gemini-test",
             on_delta=None,
             max_retries=0,
+            enable_memory_tools=False,
         )
         assert out == "Hello"
         chain = await qe.load_chain_for_api(tid)
@@ -66,6 +67,7 @@ async def test_orchestrator_retry_tombstones_failed_assistant(
             api_key="k",
             model="m",
             max_retries=1,
+            enable_memory_tools=False,
         )
         assert text == "ok"
         async with aiosqlite.connect(db) as raw:
@@ -118,6 +120,7 @@ async def test_orchestrator_tool_round_persists_tool_row(
             model="m",
             max_retries=0,
             shell_allowlist=frozenset({"uname -a"}),
+            enable_memory_tools=False,
         )
         assert out == "Done."
         chain = await qe.load_chain_for_api(tid)

@@ -35,6 +35,15 @@ class Settings:
     persist_debounce_ms: int
     shell_max_output_bytes: int
     shell_timeout_sec: float
+    stream_chunk_idle_timeout_sec: float
+    stream_leg_max_wall_sec: float
+    rewire_after_tombstone: bool
+    enable_memory_tools: bool
+    memory_backups_dir: Path
+    memory_max_append_bytes: int
+    memory_max_file_bytes: int
+    dream_max_soul_bytes: int
+    dream_default_max_messages: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -49,6 +58,22 @@ class Settings:
         debounce = int(os.environ.get("ADA_PERSIST_DEBOUNCE_MS", "100"))
         shell_max = int(os.environ.get("ADA_SHELL_MAX_OUTPUT_BYTES", "65536"))
         shell_timeout = float(os.environ.get("ADA_SHELL_TIMEOUT_SEC", "60"))
+        stream_idle = float(os.environ.get("ADA_STREAM_CHUNK_IDLE_SEC", "120"))
+        stream_wall = float(os.environ.get("ADA_STREAM_LEG_MAX_SEC", "600"))
+        rewire = os.environ.get("ADA_REWIRE_AFTER_TOMBSTONE", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        mem_tools = os.environ.get("ADA_ENABLE_MEMORY_TOOLS", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        mem_append = int(os.environ.get("ADA_MEMORY_MAX_APPEND_BYTES", "8192"))
+        mem_file = int(os.environ.get("ADA_MEMORY_MAX_FILE_BYTES", str(512 * 1024)))
+        dream_soul = int(os.environ.get("ADA_DREAM_MAX_SOUL_BYTES", "1024"))
+        dream_msgs = int(os.environ.get("ADA_DREAM_MAX_MESSAGES", "60"))
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -64,6 +89,15 @@ class Settings:
             persist_debounce_ms=debounce,
             shell_max_output_bytes=shell_max,
             shell_timeout_sec=shell_timeout,
+            stream_chunk_idle_timeout_sec=stream_idle,
+            stream_leg_max_wall_sec=stream_wall,
+            rewire_after_tombstone=rewire,
+            enable_memory_tools=mem_tools,
+            memory_backups_dir=memory_dir / "backups",
+            memory_max_append_bytes=mem_append,
+            memory_max_file_bytes=mem_file,
+            dream_max_soul_bytes=dream_soul,
+            dream_default_max_messages=dream_msgs,
         )
 
     def ensure_data_dir(self) -> None:
