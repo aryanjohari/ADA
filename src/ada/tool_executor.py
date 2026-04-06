@@ -118,11 +118,11 @@ class StreamingToolExecutor:
     async def _shell(self, call: CompletedFunctionCall) -> dict[str, Any]:
         cmd = (call.args.get("command") or "").strip()
         if cmd not in self._allowlist:
-            return {"error": f"command not allowlisted: {cmd!r}"}
+            return {"error": "Command not in allowlist", "command": cmd}
         try:
             argv = command_to_argv(cmd)
         except ValueError as e:
-            return {"error": str(e)}
+            return {"error": str(e), "command": cmd}
         try:
             proc = await asyncio.create_subprocess_exec(
                 argv[0],
@@ -130,8 +130,8 @@ class StreamingToolExecutor:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
-        except FileNotFoundError:
-            return {"error": f"executable not found: {argv[0]!r}"}
+        except (FileNotFoundError, PermissionError, OSError) as e:
+            return {"error": str(e), "command": cmd}
         try:
             raw, _ = await asyncio.wait_for(
                 proc.communicate(), timeout=self._timeout_sec
@@ -139,6 +139,12 @@ class StreamingToolExecutor:
         except asyncio.TimeoutError:
             proc.kill()
             return {"error": "timeout", "command": cmd}
+        except asyncio.CancelledError:
+            proc.kill()
+            raise
+        except Exception as e:
+            proc.kill()
+            return {"error": str(e), "command": cmd}
         text = raw.decode("utf-8", errors="replace")
         if len(text) > self._max_output_bytes:
             text = text[: self._max_output_bytes] + "\n… [truncated]"
