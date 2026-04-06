@@ -8,8 +8,14 @@ from pathlib import Path
 
 from ada.config import Settings, load_dotenv_if_present
 from ada.orchestrator import orchestrate_turn
-from ada.prompt import build_system_instruction, read_soul_text
+from ada.prompt import (
+    build_system_instruction,
+    format_allowlist_summary,
+    read_soul_text,
+    read_text_file,
+)
 from ada.query_engine import QueryEngine
+from ada.tools.shell_allowlist import load_allowlist_exact_lines
 
 log = logging.getLogger("ada.daemon")
 
@@ -25,10 +31,14 @@ async def run_daemon_loop(settings: Settings) -> None:
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    allow = load_allowlist_exact_lines(settings.allowlist_path)
     soul = read_soul_text(settings.soul_path)
+    master = read_text_file(settings.master_path)
     sys_instr = build_system_instruction(
         soul_text=soul,
+        master_text=master,
         state_db_display_path=str(settings.state_db_path),
+        allowlist_summary=format_allowlist_summary(allow),
     )
     if not settings.gemini_api_key:
         log.error("GEMINI_API_KEY not set; daemon idle")
@@ -52,6 +62,10 @@ async def run_daemon_loop(settings: Settings) -> None:
                     api_key=settings.gemini_api_key,
                     model=settings.gemini_model,
                     on_delta=None,
+                    shell_allowlist=allow,
+                    max_tool_rounds=settings.max_tool_rounds,
+                    shell_max_output_bytes=settings.shell_max_output_bytes,
+                    shell_timeout_sec=settings.shell_timeout_sec,
                 )
                 await qe.update_task(
                     task_id,

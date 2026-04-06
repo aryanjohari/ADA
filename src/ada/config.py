@@ -27,10 +27,14 @@ class Settings:
     memory_dir: Path
     soul_path: Path
     master_path: Path
+    wakeup_path: Path
+    allowlist_path: Path
     gemini_api_key: str
     gemini_model: str
     max_tool_rounds: int
     persist_debounce_ms: int
+    shell_max_output_bytes: int
+    shell_timeout_sec: float
 
     @classmethod
     def load(cls) -> "Settings":
@@ -41,8 +45,10 @@ class Settings:
         memory_dir = root / "memory"
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
-        max_rounds = int(os.environ.get("ADA_MAX_TOOL_ROUNDS", "0"))
+        max_rounds = int(os.environ.get("ADA_MAX_TOOL_ROUNDS", "12"))
         debounce = int(os.environ.get("ADA_PERSIST_DEBOUNCE_MS", "100"))
+        shell_max = int(os.environ.get("ADA_SHELL_MAX_OUTPUT_BYTES", "65536"))
+        shell_timeout = float(os.environ.get("ADA_SHELL_TIMEOUT_SEC", "60"))
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -50,10 +56,14 @@ class Settings:
             memory_dir=memory_dir,
             soul_path=memory_dir / "soul.md",
             master_path=memory_dir / "master.md",
+            wakeup_path=memory_dir / "wakeup.md",
+            allowlist_path=memory_dir / "shell_allowlist.txt",
             gemini_api_key=key,
             gemini_model=model or DEFAULT_GEMINI_MODEL,
             max_tool_rounds=max_rounds,
             persist_debounce_ms=debounce,
+            shell_max_output_bytes=shell_max,
+            shell_timeout_sec=shell_timeout,
         )
 
     def ensure_data_dir(self) -> None:

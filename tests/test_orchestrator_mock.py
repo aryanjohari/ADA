@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
 import aiosqlite
 import pytest
 
 import ada.orchestrator as orch
 from ada.query_engine import QueryEngine
+from ada.stream_types import CompletedFunctionCall, StreamLegResult
 
 
 @pytest.mark.asyncio
 async def test_orchestrate_turn_streams_and_persists(
     tmp_path, schema_sql_path, monkeypatch
 ):
-    async def fake_stream(
-        **kwargs: object,
-    ) -> AsyncIterator[str]:
-        yield "He"
-        yield "llo"
+    async def fake_leg(**kwargs: object) -> StreamLegResult:
+        return StreamLegResult("Hello", [], {}, None)
 
-    monkeypatch.setattr(orch, "stream_generate_text", fake_stream)
+    monkeypatch.setattr(orch, "stream_one_model_leg", fake_leg)
 
     db = tmp_path / "s.db"
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
@@ -49,13 +45,13 @@ async def test_orchestrator_retry_tombstones_failed_assistant(
 ):
     calls = {"n": 0}
 
-    async def flaky_stream(**kwargs: object) -> AsyncIterator[str]:
+    async def flaky_leg(**kwargs: object) -> StreamLegResult:
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("stream down")
-        yield "ok"
+        return StreamLegResult("ok", [], {}, None)
 
-    monkeypatch.setattr(orch, "stream_generate_text", flaky_stream)
+    monkeypatch.setattr(orch, "stream_one_model_leg", flaky_leg)
 
     db = tmp_path / "s.db"
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
@@ -79,5 +75,53 @@ async def test_orchestrator_retry_tombstones_failed_assistant(
             )
             row = await cur.fetchone()
         assert row[0] >= 1
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_tool_round_persists_tool_row(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    calls = {"n": 0}
+
+    async def two_leg(**kwargs: object) -> StreamLegResult:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return StreamLegResult(
+                "",
+                [
+                    CompletedFunctionCall(
+                        name="run_allowlisted_shell",
+                        args={"command": "uname -a"},
+                        id="c1",
+                    )
+                ],
+                {},
+                None,
+            )
+        return StreamLegResult("Done.", [], {}, None)
+
+    monkeypatch.setattr(orch, "stream_one_model_leg", two_leg)
+
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("Interactive", status="executing")
+        out = await orch.orchestrate_turn(
+            qe,
+            session_id=tid,
+            user_text="probe",
+            system_instruction="sys",
+            api_key="k",
+            model="m",
+            max_retries=0,
+            shell_allowlist=frozenset({"uname -a"}),
+        )
+        assert out == "Done."
+        chain = await qe.load_chain_for_api(tid)
+        roles = [r["role"] for r in chain]
+        assert roles.count("tool") >= 1
     finally:
         await qe.close()

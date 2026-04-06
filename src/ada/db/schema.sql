@@ -1,4 +1,4 @@
--- ADA MVP schema: tasks, messages (transcript), state (KV)
+-- ADA schema: tasks, messages (transcript), state (KV), usage_ledger
 
 PRAGMA foreign_keys = ON;
 
@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     goal TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     current_output TEXT NOT NULL DEFAULT '',
+    plan_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -32,3 +33,15 @@ CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS usage_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    model TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_session
+    ON usage_ledger(session_id, recorded_at);

@@ -1,4 +1,4 @@
-"""One-turn streaming orchestration (MVP: single leg, no tools)."""
+"""Agentic turn: stream legs + allowlisted tools (claude_logic §6–7)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,10 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from ada.adapters.gemini_stream import chain_rows_to_contents, stream_generate_text
+from ada.adapters.gemini_stream import chain_rows_to_contents, stream_one_model_leg
 from ada.query_engine import QueryEngine
+from ada.tool_executor import StreamingToolExecutor
+from ada.tools.registry import build_shell_tool
 
 
 class StreamFailed(Exception):
@@ -24,27 +26,44 @@ async def orchestrate_turn(
     model: str,
     on_delta: Callable[[str], Coroutine[Any, Any, None]] | None = None,
     max_retries: int = 1,
+    shell_allowlist: frozenset[str] | None = None,
+    max_tool_rounds: int = 12,
+    shell_max_output_bytes: int = 65536,
+    shell_timeout_sec: float = 60.0,
 ) -> str:
     """
-    Persist user once, then stream assistant with retries (§8 light).
-    Each retry tombstones the failed assistant shell only.
+    Persist user once, then run one or more model legs with optional tool rounds.
+    Retries only if no tool results were persisted for this user turn.
     """
     user_uuid = await qe.persist_user(session_id, user_text)
+    allow = shell_allowlist or frozenset()
+    gemini_tool = build_shell_tool(allowed_exact_commands=allow)
+    legs_cap = max(1, max_tool_rounds)
+
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
+        tools_were_persisted = [False]
         try:
-            return await _stream_assistant_leg(
+            return await _agentic_loop(
                 qe,
                 session_id=session_id,
-                parent_user_uuid=user_uuid,
+                user_parent_uuid=user_uuid,
                 system_instruction=system_instruction,
                 api_key=api_key,
                 model=model,
+                gemini_tool=gemini_tool,
                 on_delta=on_delta,
+                legs_cap=legs_cap,
+                shell_allowlist=allow,
+                shell_max_output_bytes=shell_max_output_bytes,
+                shell_timeout_sec=shell_timeout_sec,
+                tools_were_persisted=tools_were_persisted,
             )
         except Exception as e:
             last_err = e
             await qe.state_set("turn.fallback_generation", str(attempt + 1))
+            if tools_were_persisted[0]:
+                break
             if attempt >= max_retries:
                 break
             await asyncio.sleep(0.25 * (attempt + 1))
@@ -52,45 +71,101 @@ async def orchestrate_turn(
     raise last_err
 
 
-async def _stream_assistant_leg(
+async def _agentic_loop(
     qe: QueryEngine,
     *,
     session_id: int,
-    parent_user_uuid: str,
+    user_parent_uuid: str,
     system_instruction: str,
     api_key: str,
     model: str,
+    gemini_tool: Any,
     on_delta: Callable[[str], Coroutine[Any, Any, None]] | None,
+    legs_cap: int,
+    shell_allowlist: frozenset[str],
+    shell_max_output_bytes: int,
+    shell_timeout_sec: float,
+    tools_were_persisted: list[bool],
 ) -> str:
-    chain = await qe.load_chain_for_api(session_id)
-    gemini_contents = chain_rows_to_contents(chain)
-    assistant_uuid = await qe.persist_assistant_begin(
-        session_id, parent_user_uuid
+    parent = user_parent_uuid
+    executor = StreamingToolExecutor(
+        allowlist_exact=shell_allowlist,
+        max_output_bytes=shell_max_output_bytes,
+        timeout_sec=shell_timeout_sec,
     )
 
-    pieces: list[str] = []
-    try:
-        async for frag in stream_generate_text(
-            api_key=api_key,
-            model=model,
-            system_instruction=system_instruction,
-            contents=gemini_contents,
-        ):
-            pieces.append(frag)
-            cur = "".join(pieces)
-            qe.schedule_assistant_append(assistant_uuid, cur)
+    for _ in range(legs_cap):
+        chain = await qe.load_chain_for_api(session_id)
+        gemini_contents = chain_rows_to_contents(chain)
+        assistant_uuid = await qe.persist_assistant_begin(session_id, parent)
+        tool_rows_this_leg: list[str] = []
+
+        async def _td(s: str) -> None:
             if on_delta:
-                await on_delta(frag)
-        final = "".join(pieces)
-        if not final.strip():
-            raise StreamFailed("empty model output")
-        meta = {"model": model}
-        await qe.persist_assistant_finalize(assistant_uuid, final, meta)
-        await qe.state_set("session.active_model", model)
-        return final
-    except asyncio.CancelledError:
-        await qe.tombstone([assistant_uuid], session_id)
-        raise
-    except Exception:
-        await qe.tombstone([assistant_uuid], session_id)
-        raise
+                await on_delta(s)
+
+        try:
+            leg = await stream_one_model_leg(
+                api_key=api_key,
+                model=model,
+                system_instruction=system_instruction,
+                contents=gemini_contents,
+                tool=gemini_tool,
+                on_text_delta=_td if on_delta else None,
+            )
+            fc_payload = (
+                [{"name": c.name, "args": c.args, "id": c.id} for c in leg.function_calls]
+                if leg.function_calls
+                else None
+            )
+            meta = {"model": model, "finish_reason": leg.finish_reason}
+            await qe.persist_assistant_finalize(
+                assistant_uuid,
+                leg.text,
+                meta,
+                function_calls=fc_payload,
+            )
+            await qe.record_usage(
+                session_id,
+                model=model,
+                input_tokens=leg.usage.get("input_tokens")
+                if isinstance(leg.usage.get("input_tokens"), int)
+                else None,
+                output_tokens=leg.usage.get("output_tokens")
+                if isinstance(leg.usage.get("output_tokens"), int)
+                else None,
+            )
+        except asyncio.CancelledError:
+            await qe.tombstone([assistant_uuid, *tool_rows_this_leg], session_id)
+            raise
+        except Exception:
+            await qe.tombstone([assistant_uuid, *tool_rows_this_leg], session_id)
+            raise
+
+        if not leg.function_calls:
+            if not leg.text.strip():
+                raise StreamFailed("empty model output")
+            await qe.state_set("session.active_model", model)
+            return leg.text
+
+        if not shell_allowlist:
+            raise StreamFailed("model requested tools but allowlist is empty")
+
+        results = await executor.run_ordered(leg.function_calls)
+        for tr in results:
+            tid = await qe.persist_tool_result(
+                session_id,
+                parent_assistant_uuid=assistant_uuid,
+                name=tr.call.name,
+                tool_call_id=tr.call.id,
+                response=tr.response,
+            )
+            tool_rows_this_leg.append(tid)
+        tools_were_persisted[0] = True
+
+        head = await qe.chain_head_uuid(session_id)
+        if not head:
+            raise StreamFailed("chain head missing after tool results")
+        parent = head
+
+    raise StreamFailed("max tool/model legs exceeded")

@@ -35,6 +35,33 @@ def _pack_assistant_text(text: str, extra: dict[str, Any] | None = None) -> str:
     return json.dumps(base, ensure_ascii=False)
 
 
+def _pack_assistant_full(
+    *,
+    text: str,
+    function_calls: list[dict[str, Any]] | None,
+    meta: dict[str, Any] | None,
+) -> str:
+    parts: list[dict[str, Any]] = []
+    if text.strip():
+        parts.append({"type": "text", "text": text})
+    if function_calls:
+        for fc in function_calls:
+            parts.append(
+                {
+                    "type": "function_call",
+                    "name": fc.get("name") or "",
+                    "args": fc.get("args") or {},
+                    "id": fc.get("id"),
+                }
+            )
+    if not parts:
+        parts.append({"type": "text", "text": ""})
+    base: dict[str, Any] = {"parts": parts}
+    if meta:
+        base["meta"] = meta
+    return json.dumps(base, ensure_ascii=False)
+
+
 @dataclass
 class QueryEngine:
     db_path: Path
@@ -52,6 +79,7 @@ class QueryEngine:
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._conn.execute("PRAGMA journal_mode = WAL")
         await self._apply_schema()
+        await self._migrate_schema()
         await self._conn.commit()
 
     async def close(self) -> None:
@@ -63,6 +91,16 @@ class QueryEngine:
         assert self._conn is not None
         sql = self.schema_path.read_text(encoding="utf-8")
         await self._conn.executescript(sql)
+
+    async def _migrate_schema(self) -> None:
+        """Add columns / tables for DBs created before schema bumps."""
+        assert self._conn is not None
+        cur = await self._conn.execute("PRAGMA table_info(tasks)")
+        cols = {str(row[1]) for row in await cur.fetchall()}
+        if "plan_json" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE tasks ADD COLUMN plan_json TEXT NOT NULL DEFAULT '{}'"
+            )
 
     async def _next_sequence(self, session_id: int) -> int:
         assert self._conn is not None
@@ -145,6 +183,8 @@ class QueryEngine:
         assistant_uuid: str,
         final_text: str,
         meta: dict[str, Any] | None = None,
+        *,
+        function_calls: list[dict[str, Any]] | None = None,
     ) -> None:
         assert self._conn is not None
         t = self._debounce_tasks.pop(assistant_uuid, None)
@@ -154,10 +194,78 @@ class QueryEngine:
                 await t
             except asyncio.CancelledError:
                 pass
-        extra = {"meta": meta} if meta else None
+        if function_calls:
+            payload = _pack_assistant_full(
+                text=final_text,
+                function_calls=function_calls,
+                meta=meta,
+            )
+        elif meta:
+            payload = _pack_assistant_text(final_text, {"meta": meta})
+        else:
+            payload = _pack_assistant_text(final_text)
         await self._conn.execute(
             "UPDATE messages SET content_json = ? WHERE uuid = ?",
-            (_pack_assistant_text(final_text, extra), assistant_uuid),
+            (payload, assistant_uuid),
+        )
+        await self._conn.commit()
+
+    async def persist_tool_result(
+        self,
+        session_id: int,
+        *,
+        parent_assistant_uuid: str,
+        name: str,
+        tool_call_id: str | None,
+        response: dict[str, Any],
+    ) -> str:
+        assert self._conn is not None
+        mid = _new_uuid()
+        seq = await self._next_sequence(session_id)
+        payload = {
+            "parts": [
+                {
+                    "type": "function_response",
+                    "name": name,
+                    "response": response,
+                    "tool_call_id": tool_call_id or "",
+                }
+            ]
+        }
+        await self._conn.execute(
+            """
+            INSERT INTO messages (uuid, session_id, parent_uuid, role, content_json, tombstone, sequence)
+            VALUES (?, ?, ?, ?, ?, 0, ?)
+            """,
+            (
+                mid,
+                session_id,
+                parent_assistant_uuid,
+                ROLE_TOOL,
+                json.dumps(payload, ensure_ascii=False),
+                seq,
+            ),
+        )
+        await self._conn.commit()
+        return mid
+
+    async def record_usage(
+        self,
+        session_id: int,
+        *,
+        model: str | None,
+        input_tokens: int | None,
+        output_tokens: int | None,
+    ) -> None:
+        if input_tokens is None and output_tokens is None:
+            return
+        assert self._conn is not None
+        await self._conn.execute(
+            """
+            INSERT INTO usage_ledger (session_id, model, input_tokens, output_tokens)
+            VALUES (?, ?, ?, ?)
+            """,
+            (session_id, model, input_tokens, output_tokens),
         )
         await self._conn.commit()
 

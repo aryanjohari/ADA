@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import aiosqlite
 import pytest
 
 from ada.query_engine import QueryEngine, ROLE_ASSISTANT, ROLE_USER
@@ -54,5 +55,49 @@ async def test_state_kv(tmp_path, schema_sql_path):
     try:
         await qe.state_set("k", "v")
         assert await qe.state_get("k") == "v"
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_persist_assistant_with_function_calls(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("t", status="pending")
+        u = await qe.persist_user(tid, "hi")
+        mid = await qe.persist_assistant_begin(tid, u)
+        await qe.persist_assistant_finalize(
+            mid,
+            "thinking",
+            {"model": "x"},
+            function_calls=[
+                {"name": "run_allowlisted_shell", "args": {"command": "uname -a"}, "id": "1"}
+            ],
+        )
+        chain = await qe.load_chain_for_api(tid)
+        parts = chain[-1]["parts"]
+        types_ = [p["type"] for p in parts]
+        assert "text" in types_
+        assert "function_call" in types_
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_record_usage_ledger(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("t", status="pending")
+        await qe.record_usage(tid, model="m", input_tokens=10, output_tokens=3)
+        async with aiosqlite.connect(db) as raw:
+            cur = await raw.execute(
+                "SELECT count(*) FROM usage_ledger WHERE session_id = ?", (tid,)
+            )
+            row = await cur.fetchone()
+        assert row[0] == 1
     finally:
         await qe.close()

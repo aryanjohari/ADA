@@ -1,0 +1,8 @@
+# One command per line; must match exactly (after trim). Lines starting with # are ignored.
+uname -a
+cat /proc/cpuinfo
+free -h
+df -h
+cat /proc/meminfo
+hostname
+hostnamectl

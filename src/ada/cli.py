@@ -8,8 +8,18 @@ from pathlib import Path
 
 from ada.config import Settings
 from ada.orchestrator import orchestrate_turn
-from ada.prompt import build_system_instruction, read_soul_text
+from ada.prompt import (
+    build_system_instruction,
+    format_allowlist_summary,
+    read_soul_text,
+    read_text_file,
+)
 from ada.query_engine import QueryEngine
+from ada.tools.shell_allowlist import load_allowlist_exact_lines
+
+
+def _boot_state_key(task_id: int) -> str:
+    return f"session.{task_id}.boot_complete"
 
 
 async def run_chat(settings: Settings, *, new_session: bool) -> None:
@@ -34,15 +44,45 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     "Interactive session", status="executing"
                 )
 
+        allow = load_allowlist_exact_lines(settings.allowlist_path)
         soul = read_soul_text(settings.soul_path)
+        master = read_text_file(settings.master_path)
+        wakeup = read_text_file(settings.wakeup_path)
         sys_instr = build_system_instruction(
             soul_text=soul,
+            master_text=master,
             state_db_display_path=str(settings.state_db_path),
+            allowlist_summary=format_allowlist_summary(allow),
         )
 
         if not settings.gemini_api_key:
             print("Set GEMINI_API_KEY (see .env.example).", file=sys.stderr)
             return
+
+        if await qe.state_get(_boot_state_key(task_id)) is None and wakeup.strip():
+            print("Boot: running wakeup prompt once for this session…", flush=True)
+            try:
+
+                async def boot_on_delta(chunk: str) -> None:
+                    print(chunk, end="", flush=True)
+
+                await orchestrate_turn(
+                    qe,
+                    session_id=task_id,
+                    user_text=wakeup.strip(),
+                    system_instruction=sys_instr,
+                    api_key=settings.gemini_api_key,
+                    model=settings.gemini_model,
+                    on_delta=boot_on_delta,
+                    shell_allowlist=allow,
+                    max_tool_rounds=settings.max_tool_rounds,
+                    shell_max_output_bytes=settings.shell_max_output_bytes,
+                    shell_timeout_sec=settings.shell_timeout_sec,
+                )
+                print(flush=True)
+                await qe.state_set(_boot_state_key(task_id), "1")
+            except Exception as e:
+                print(f"\n[boot error] {e}", file=sys.stderr)
 
         print("ADA chat — empty line or Ctrl-D to exit.", flush=True)
         while True:
@@ -66,6 +106,10 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     api_key=settings.gemini_api_key,
                     model=settings.gemini_model,
                     on_delta=on_delta,
+                    shell_allowlist=allow,
+                    max_tool_rounds=settings.max_tool_rounds,
+                    shell_max_output_bytes=settings.shell_max_output_bytes,
+                    shell_timeout_sec=settings.shell_timeout_sec,
                 )
                 await qe.update_task(
                     task_id,
