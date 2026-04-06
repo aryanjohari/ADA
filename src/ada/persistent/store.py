@@ -325,6 +325,34 @@ class PersistentState:
         row = await cur.fetchone()
         return str(row[0]) if row else None
 
+    async def get_task_plan_json(self, task_id: int) -> str:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT plan_json FROM tasks WHERE id = ?", (task_id,)
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise LookupError(f"no task with id={task_id}")
+        return str(row[0])
+
+    async def set_task_plan_json(self, task_id: int, plan_json: str) -> None:
+        assert self._conn is not None
+        try:
+            json.loads(plan_json)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"plan_json is not valid JSON: {e}") from e
+        cur = await self._conn.execute(
+            """
+            UPDATE tasks
+            SET plan_json = ?, updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (plan_json, task_id),
+        )
+        if cur.rowcount == 0:
+            raise LookupError(f"no task with id={task_id}")
+        await self._conn.commit()
+
     async def update_task(
         self,
         task_id: int,

@@ -165,6 +165,12 @@ class QueryEngine:
     async def state_get(self, key: str) -> str | None:
         return await self._store.state_get(key)
 
+    async def get_task_plan_json(self, task_id: int) -> str:
+        return await self._store.get_task_plan_json(task_id)
+
+    async def set_task_plan_json(self, task_id: int, plan_json: str) -> None:
+        await self._store.set_task_plan_json(task_id, plan_json)
+
     async def update_task(
         self,
         task_id: int,

@@ -6,3 +6,5 @@ df -h
 cat /proc/meminfo
 hostname
 hostnamectl
+cat /sys/class/thermal/thermal_zone0/temp
+echo

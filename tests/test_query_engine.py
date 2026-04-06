@@ -151,3 +151,46 @@ async def test_append_action_log(tmp_path, schema_sql_path):
         assert '"a": 1' in row[1]
     finally:
         await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_task_plan_json_roundtrip(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("t", status="pending")
+        assert await qe.get_task_plan_json(tid) == "{}"
+        await qe.set_task_plan_json(tid, '{"steps":["a"]}')
+        assert await qe.get_task_plan_json(tid) == '{"steps":["a"]}'
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_set_task_plan_json_invalid_json_raises(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("t", status="pending")
+        with pytest.raises(ValueError, match="valid JSON"):
+            await qe.set_task_plan_json(tid, "not json")
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_task_plan_json_missing_task_raises(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        await qe.insert_task("t", status="pending")
+        bad_id = 99999
+        with pytest.raises(LookupError):
+            await qe.get_task_plan_json(bad_id)
+        with pytest.raises(LookupError):
+            await qe.set_task_plan_json(bad_id, "{}")
+    finally:
+        await qe.close()

@@ -85,6 +85,7 @@ async def run_daemon_loop(settings: Settings) -> None:
                     rewire_after_tombstone=settings.rewire_after_tombstone,
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
+                    include_plan_tools=settings.enable_plan_tools,
                 )
                 await qe.update_task(
                     task_id,

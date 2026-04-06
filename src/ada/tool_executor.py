@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,9 +29,15 @@ class MemoryToolConfig:
     max_file_bytes: int
 
 
+@dataclass(frozen=True)
+class PlanToolHooks:
+    read_plan: Callable[[], Awaitable[str]]
+    write_plan: Callable[[str], Awaitable[None]]
+
+
 class StreamingToolExecutor:
     """
-    Dispatches allowlisted shell and (optionally) memory-append tools.
+    Dispatches allowlisted shell, optional memory-append tools, and optional plan_json hooks.
     Single-writer memory I/O uses memory_io global lock.
     """
 
@@ -41,11 +48,13 @@ class StreamingToolExecutor:
         max_output_bytes: int,
         timeout_sec: float,
         memory: MemoryToolConfig | None = None,
+        plan_hooks: PlanToolHooks | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
         self._timeout_sec = timeout_sec
         self._memory = memory
+        self._plan_hooks = plan_hooks
         self.discarded = False
 
     def discard(self) -> None:
@@ -76,7 +85,35 @@ class StreamingToolExecutor:
             return await self._append_master(call)
         if call.name == "append_soul_fragment":
             return await self._append_soul(call)
+        if call.name == "read_task_plan":
+            return await self._read_task_plan()
+        if call.name == "write_task_plan":
+            return await self._write_task_plan(call)
         return {"error": f"unknown tool: {call.name}"}
+
+    async def _read_task_plan(self) -> dict[str, Any]:
+        if self._plan_hooks is None:
+            return {"error": "plan tools not configured"}
+        try:
+            text = await self._plan_hooks.read_plan()
+            return {"plan_json": text}
+        except (LookupError, ValueError) as e:
+            return {"error": str(e)}
+
+    async def _write_task_plan(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._plan_hooks is None:
+            return {"error": "plan tools not configured"}
+        raw = call.args.get("plan_json")
+        if raw is None:
+            return {"error": "missing plan_json"}
+        text = str(raw)
+        if not text.strip():
+            return {"error": "empty plan_json"}
+        try:
+            await self._plan_hooks.write_plan(text)
+        except (LookupError, ValueError) as e:
+            return {"error": str(e)}
+        return {"ok": True, "chars": len(text)}
 
     async def _shell(self, call: CompletedFunctionCall) -> dict[str, Any]:
         cmd = (call.args.get("command") or "").strip()

@@ -98,6 +98,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     rewire_after_tombstone=settings.rewire_after_tombstone,
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
+                    include_plan_tools=settings.enable_plan_tools,
                 )
                 print(flush=True)
                 await qe.state_set(_boot_state_key(task_id), "1")
@@ -135,6 +136,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     rewire_after_tombstone=settings.rewire_after_tombstone,
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
+                    include_plan_tools=settings.enable_plan_tools,
                 )
                 await qe.update_task(
                     task_id,

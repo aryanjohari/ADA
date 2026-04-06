@@ -49,6 +49,40 @@ def _memory_function_declarations() -> list[types.FunctionDeclaration]:
     ]
 
 
+def _plan_function_declarations() -> list[types.FunctionDeclaration]:
+    return [
+        types.FunctionDeclaration(
+            name="read_task_plan",
+            description=(
+                "Read the current task's plan_json from SQLite (session clipboard). "
+                "Returns the stored JSON text for the active session only."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="write_task_plan",
+            description=(
+                "Replace the current task's plan_json in SQLite. "
+                "Argument must be a string containing valid JSON (typically a JSON object)."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "plan_json": {
+                        "type": "string",
+                        "description": "Full JSON text to store (e.g. '{\"steps\":[]}').",
+                    },
+                },
+                "required": ["plan_json"],
+            },
+        ),
+    ]
+
+
 def build_shell_declarations(*, allowed_exact_commands: frozenset[str]) -> list[types.FunctionDeclaration]:
     if not allowed_exact_commands:
         return []
@@ -83,11 +117,14 @@ def build_agent_tools(
     *,
     allowed_exact_commands: frozenset[str],
     include_memory_tools: bool,
+    include_plan_tools: bool = False,
 ) -> types.Tool | None:
     decls: list[types.FunctionDeclaration] = []
     decls.extend(build_shell_declarations(allowed_exact_commands=allowed_exact_commands))
     if include_memory_tools:
         decls.extend(_memory_function_declarations())
+    if include_plan_tools:
+        decls.extend(_plan_function_declarations())
     if not decls:
         return None
     return types.Tool(function_declarations=decls)
@@ -98,4 +135,5 @@ def build_shell_tool(*, allowed_exact_commands: frozenset[str]) -> types.Tool | 
     return build_agent_tools(
         allowed_exact_commands=allowed_exact_commands,
         include_memory_tools=False,
+        include_plan_tools=False,
     )

@@ -39,6 +39,7 @@ class Settings:
     stream_leg_max_wall_sec: float
     rewire_after_tombstone: bool
     enable_memory_tools: bool
+    enable_plan_tools: bool
     memory_backups_dir: Path
     memory_max_append_bytes: int
     memory_max_file_bytes: int
@@ -70,6 +71,11 @@ class Settings:
             "false",
             "no",
         )
+        plan_tools = os.environ.get("ADA_ENABLE_PLAN_TOOLS", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
         mem_append = int(os.environ.get("ADA_MEMORY_MAX_APPEND_BYTES", "8192"))
         mem_file = int(os.environ.get("ADA_MEMORY_MAX_FILE_BYTES", str(512 * 1024)))
         dream_soul = int(os.environ.get("ADA_DREAM_MAX_SOUL_BYTES", "1024"))
@@ -93,6 +99,7 @@ class Settings:
             stream_leg_max_wall_sec=stream_wall,
             rewire_after_tombstone=rewire,
             enable_memory_tools=mem_tools,
+            enable_plan_tools=plan_tools,
             memory_backups_dir=memory_dir / "backups",
             memory_max_append_bytes=mem_append,
             memory_max_file_bytes=mem_file,

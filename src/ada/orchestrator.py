@@ -9,7 +9,7 @@ from typing import Any
 
 from ada.adapters.gemini_stream import chain_rows_to_contents, stream_one_model_leg
 from ada.query_engine import QueryEngine
-from ada.tool_executor import MemoryToolConfig, StreamingToolExecutor
+from ada.tool_executor import MemoryToolConfig, PlanToolHooks, StreamingToolExecutor
 from ada.tools.registry import build_agent_tools
 
 
@@ -36,6 +36,7 @@ async def orchestrate_turn(
     rewire_after_tombstone: bool = True,
     enable_memory_tools: bool = True,
     memory_config: MemoryToolConfig | None = None,
+    include_plan_tools: bool = False,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -47,9 +48,22 @@ async def orchestrate_turn(
     gemini_tool = build_agent_tools(
         allowed_exact_commands=allow,
         include_memory_tools=enable_memory_tools,
+        include_plan_tools=include_plan_tools,
     )
     legs_cap = max(1, max_tool_rounds)
     memory = memory_config if enable_memory_tools else None
+
+    async def _read_plan_bound() -> str:
+        return await qe.get_task_plan_json(session_id)
+
+    async def _write_plan_bound(text: str) -> None:
+        await qe.set_task_plan_json(session_id, text)
+
+    plan_hooks: PlanToolHooks | None = (
+        PlanToolHooks(read_plan=_read_plan_bound, write_plan=_write_plan_bound)
+        if include_plan_tools
+        else None
+    )
 
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
@@ -59,6 +73,7 @@ async def orchestrate_turn(
             max_output_bytes=shell_max_output_bytes,
             timeout_sec=shell_timeout_sec,
             memory=memory,
+            plan_hooks=plan_hooks,
         )
         try:
             return await _agentic_loop(
@@ -77,6 +92,7 @@ async def orchestrate_turn(
                 stream_chunk_idle_timeout_sec=stream_chunk_idle_timeout_sec,
                 stream_leg_max_wall_sec=stream_leg_max_wall_sec,
                 rewire_after_tombstone=rewire_after_tombstone,
+                plan_tools_configured=plan_hooks is not None,
             )
         except Exception as e:
             last_err = e
@@ -108,6 +124,7 @@ async def _agentic_loop(
     stream_chunk_idle_timeout_sec: float | None,
     stream_leg_max_wall_sec: float | None,
     rewire_after_tombstone: bool,
+    plan_tools_configured: bool,
 ) -> str:
     parent = user_parent_uuid
 
@@ -188,6 +205,15 @@ async def _agentic_loop(
         )
         if needs_shell and not shell_allowlist:
             raise StreamFailed("model requested shell but allowlist is empty")
+
+        needs_plan = any(
+            c.name in ("read_task_plan", "write_task_plan")
+            for c in leg.function_calls
+        )
+        if needs_plan and not plan_tools_configured:
+            raise StreamFailed(
+                "model requested plan tools but plan tools are not configured"
+            )
 
         results = await executor.run_ordered(leg.function_calls)
         for tr in results:
