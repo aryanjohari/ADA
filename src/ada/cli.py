@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ada.config import Settings
 from ada.dream.run import run_dream_job
-from ada.orchestrator import orchestrate_turn
+from ada.orchestrator import SessionTokenLimitExceeded, orchestrate_turn
 from ada.prompt import (
     build_system_instruction,
     format_allowlist_summary,
@@ -99,9 +99,13 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
+                    max_session_tokens=settings.max_session_tokens,
                 )
                 print(flush=True)
                 await qe.state_set(_boot_state_key(task_id), "1")
+            except SessionTokenLimitExceeded as e:
+                print(f"\n[boot error] {e}", file=sys.stderr)
+                await qe.update_task(task_id, status="failed", current_output=str(e))
             except Exception as e:
                 print(f"\n[boot error] {e}", file=sys.stderr)
 
@@ -137,6 +141,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
+                    max_session_tokens=settings.max_session_tokens,
                 )
                 await qe.update_task(
                     task_id,
@@ -144,6 +149,13 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     current_output=final,
                 )
                 print()
+            except SessionTokenLimitExceeded as e:
+                print(f"\n[error] {e}", file=sys.stderr)
+                await qe.update_task(
+                    task_id,
+                    status="failed",
+                    current_output=str(e),
+                )
             except Exception as e:
                 print(f"\n[error] {e}", file=sys.stderr)
                 await qe.update_task(

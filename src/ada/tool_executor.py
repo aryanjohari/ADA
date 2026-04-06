@@ -49,12 +49,14 @@ class StreamingToolExecutor:
         timeout_sec: float,
         memory: MemoryToolConfig | None = None,
         plan_hooks: PlanToolHooks | None = None,
+        token_usage: Callable[[], Awaitable[dict[str, Any]]] | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
         self._timeout_sec = timeout_sec
         self._memory = memory
         self._plan_hooks = plan_hooks
+        self._token_usage = token_usage
         self.discarded = False
 
     def discard(self) -> None:
@@ -89,7 +91,17 @@ class StreamingToolExecutor:
             return await self._read_task_plan()
         if call.name == "write_task_plan":
             return await self._write_task_plan(call)
+        if call.name == "check_token_usage":
+            return await self._check_token_usage()
         return {"error": f"unknown tool: {call.name}"}
+
+    async def _check_token_usage(self) -> dict[str, Any]:
+        if self._token_usage is None:
+            return {"error": "token usage not configured"}
+        try:
+            return await self._token_usage()
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _read_task_plan(self) -> dict[str, Any]:
         if self._plan_hooks is None:

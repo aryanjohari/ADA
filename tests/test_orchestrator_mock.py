@@ -189,3 +189,55 @@ async def test_orchestrator_plan_tool_round_persists_plan_json(
         )
     finally:
         await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_session_token_limit_kill_switch(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    async def heavy_leg(**kwargs: object) -> StreamLegResult:
+        return StreamLegResult(
+            "partial",
+            [],
+            {"input_tokens": 50, "output_tokens": 51},
+            None,
+        )
+
+    monkeypatch.setattr(orch, "stream_one_model_leg", heavy_leg)
+
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("Interactive", status="executing")
+        with pytest.raises(orch.SessionTokenLimitExceeded):
+            await orch.orchestrate_turn(
+                qe,
+                session_id=tid,
+                user_text="hi",
+                system_instruction="sys",
+                api_key="k",
+                model="m",
+                max_retries=0,
+                enable_memory_tools=False,
+                include_plan_tools=False,
+                max_session_tokens=100,
+            )
+        async with aiosqlite.connect(db) as raw:
+            cur = await raw.execute(
+                "SELECT status FROM tasks WHERE id = ?", (tid,)
+            )
+            row = await cur.fetchone()
+        assert row[0] == "failed"
+        async with aiosqlite.connect(db) as raw:
+            cur = await raw.execute(
+                """
+                SELECT kind FROM action_log
+                WHERE session_id = ? ORDER BY id DESC LIMIT 1
+                """,
+                (tid,),
+            )
+            row = await cur.fetchone()
+        assert row[0] == "session_token_limit_exceeded"
+    finally:
+        await qe.close()

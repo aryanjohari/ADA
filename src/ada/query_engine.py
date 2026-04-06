@@ -140,6 +140,9 @@ class QueryEngine:
             usage_extras_json=usage_extras_json,
         )
 
+    async def get_session_token_usage(self, session_id: int) -> dict[str, Any]:
+        return await self._store.get_session_token_usage(session_id)
+
     async def tombstone(
         self,
         uuids: Sequence[str],

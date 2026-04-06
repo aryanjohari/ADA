@@ -104,6 +104,24 @@ async def test_record_usage_ledger(tmp_path, schema_sql_path):
 
 
 @pytest.mark.asyncio
+async def test_get_session_token_usage_sums_ledger(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("t", status="pending")
+        await qe.record_usage(tid, model="m1", input_tokens=10, output_tokens=3)
+        await qe.record_usage(tid, model="m2", input_tokens=7, output_tokens=None)
+        await qe.record_usage(tid, model="m3", input_tokens=None, output_tokens=5)
+        u = await qe.get_session_token_usage(tid)
+        assert u["input_tokens"] == 17
+        assert u["output_tokens"] == 8
+        assert u["total"] == 25
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
 async def test_tombstone_rewires_live_children(tmp_path, schema_sql_path):
     db = tmp_path / "s.db"
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)

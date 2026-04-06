@@ -86,6 +86,7 @@ async def run_daemon_loop(settings: Settings) -> None:
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
+                    max_session_tokens=settings.max_session_tokens,
                 )
                 await qe.update_task(
                     task_id,

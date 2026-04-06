@@ -17,6 +17,10 @@ class StreamFailed(Exception):
     """Raised when the model stream ends without usable output."""
 
 
+class SessionTokenLimitExceeded(Exception):
+    """Raised when summed session usage_ledger tokens exceed ADA_MAX_SESSION_TOKENS."""
+
+
 async def orchestrate_turn(
     qe: QueryEngine,
     *,
@@ -37,6 +41,7 @@ async def orchestrate_turn(
     enable_memory_tools: bool = True,
     memory_config: MemoryToolConfig | None = None,
     include_plan_tools: bool = False,
+    max_session_tokens: int = 50000,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -68,12 +73,17 @@ async def orchestrate_turn(
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
         tools_were_persisted = [False]
+
+        async def _token_usage_bound() -> dict[str, Any]:
+            return await qe.get_session_token_usage(session_id)
+
         executor = StreamingToolExecutor(
             allowlist_exact=allow,
             max_output_bytes=shell_max_output_bytes,
             timeout_sec=shell_timeout_sec,
             memory=memory,
             plan_hooks=plan_hooks,
+            token_usage=_token_usage_bound,
         )
         try:
             return await _agentic_loop(
@@ -93,7 +103,11 @@ async def orchestrate_turn(
                 stream_leg_max_wall_sec=stream_leg_max_wall_sec,
                 rewire_after_tombstone=rewire_after_tombstone,
                 plan_tools_configured=plan_hooks is not None,
+                max_session_tokens=max_session_tokens,
             )
+        except SessionTokenLimitExceeded:
+            executor.discard()
+            raise
         except Exception as e:
             last_err = e
             executor.discard()
@@ -125,6 +139,7 @@ async def _agentic_loop(
     stream_leg_max_wall_sec: float | None,
     rewire_after_tombstone: bool,
     plan_tools_configured: bool,
+    max_session_tokens: int,
 ) -> str:
     parent = user_parent_uuid
 
@@ -177,12 +192,29 @@ async def _agentic_loop(
                 else None,
                 usage_extras_json=usage_extras,
             )
+            usage_totals = await qe.get_session_token_usage(session_id)
+            if usage_totals["total"] > max_session_tokens:
+                await qe.append_action_log(
+                    "session_token_limit_exceeded",
+                    {
+                        "message": "Session token limit exceeded",
+                        "input_tokens": usage_totals["input_tokens"],
+                        "output_tokens": usage_totals["output_tokens"],
+                        "total": usage_totals["total"],
+                        "limit": max_session_tokens,
+                    },
+                    session_id=session_id,
+                )
+                await qe.update_task(session_id, status="failed")
+                raise SessionTokenLimitExceeded("Session token limit exceeded")
         except asyncio.CancelledError:
             await qe.tombstone(
                 [assistant_uuid, *tool_rows_this_leg],
                 session_id,
                 rewire_orphans=rewire_after_tombstone,
             )
+            raise
+        except SessionTokenLimitExceeded:
             raise
         except Exception:
             await qe.tombstone(

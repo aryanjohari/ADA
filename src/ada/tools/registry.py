@@ -5,6 +5,22 @@ from __future__ import annotations
 from google.genai import types
 
 
+def _check_token_usage_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="check_token_usage",
+        description=(
+            "Return this session's summed token counts from the usage ledger "
+            "(input_tokens, output_tokens, total). Call periodically during long "
+            "multi-step work to stay within budget."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    )
+
+
 def _memory_function_declarations() -> list[types.FunctionDeclaration]:
     return [
         types.FunctionDeclaration(
@@ -118,20 +134,18 @@ def build_agent_tools(
     allowed_exact_commands: frozenset[str],
     include_memory_tools: bool,
     include_plan_tools: bool = False,
-) -> types.Tool | None:
-    decls: list[types.FunctionDeclaration] = []
+) -> types.Tool:
+    decls: list[types.FunctionDeclaration] = [_check_token_usage_declaration()]
     decls.extend(build_shell_declarations(allowed_exact_commands=allowed_exact_commands))
     if include_memory_tools:
         decls.extend(_memory_function_declarations())
     if include_plan_tools:
         decls.extend(_plan_function_declarations())
-    if not decls:
-        return None
     return types.Tool(function_declarations=decls)
 
 
-def build_shell_tool(*, allowed_exact_commands: frozenset[str]) -> types.Tool | None:
-    """Backward-compatible: shell-only tool."""
+def build_shell_tool(*, allowed_exact_commands: frozenset[str]) -> types.Tool:
+    """Shell allowlist plus check_token_usage (always present)."""
     return build_agent_tools(
         allowed_exact_commands=allowed_exact_commands,
         include_memory_tools=False,

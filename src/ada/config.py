@@ -45,6 +45,7 @@ class Settings:
     memory_max_file_bytes: int
     dream_max_soul_bytes: int
     dream_default_max_messages: int
+    max_session_tokens: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -80,6 +81,7 @@ class Settings:
         mem_file = int(os.environ.get("ADA_MEMORY_MAX_FILE_BYTES", str(512 * 1024)))
         dream_soul = int(os.environ.get("ADA_DREAM_MAX_SOUL_BYTES", "1024"))
         dream_msgs = int(os.environ.get("ADA_DREAM_MAX_MESSAGES", "60"))
+        max_session_tokens = int(os.environ.get("ADA_MAX_SESSION_TOKENS", "50000"))
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -105,6 +107,7 @@ class Settings:
             memory_max_file_bytes=mem_file,
             dream_max_soul_bytes=dream_soul,
             dream_default_max_messages=dream_msgs,
+            max_session_tokens=max_session_tokens,
         )
 
     def ensure_data_dir(self) -> None:

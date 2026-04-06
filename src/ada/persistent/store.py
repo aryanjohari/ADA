@@ -232,6 +232,26 @@ class PersistentState:
         if usage_extras_json:
             await self.state_set("session.last_usage_extras_json", usage_extras_json)
 
+    async def get_session_token_usage(self, session_id: int) -> dict[str, Any]:
+        """
+        Sum input/output token counts from usage_ledger for this session.
+        Operational upper bound only — multi-leg turns may overlap prompt context in billing.
+        """
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+            FROM usage_ledger
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return {"input_tokens": 0, "output_tokens": 0, "total": 0}
+        inp, out = int(row[0]), int(row[1])
+        return {"input_tokens": inp, "output_tokens": out, "total": inp + out}
+
     async def rewire_parents_after_tombstone(
         self, session_id: int, tombstoned_uuids: Sequence[str]
     ) -> None:
