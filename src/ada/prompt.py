@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ada.config import Settings
+
 
 def read_text_file(path: Path) -> str:
     if not path.is_file():
@@ -25,13 +27,33 @@ def format_allowlist_summary(allowed: frozenset[str], *, limit: int = 24) -> str
     return "\n".join(f"- `{s}`" for s in lines) + extra
 
 
-def format_file_tools_note(roots: tuple[Path, ...]) -> str:
-    """Short harness note when sandboxed file tools are enabled."""
-    lines = "\n".join(f"- `{r}`" for r in roots)
+def format_file_tools_note(settings: Settings) -> str:
+    """Harness note when sandboxed file tools are enabled (roots, denylist, browser)."""
+    roots = settings.file_sandbox_roots
+    root_lines = "\n".join(f"- `{r}`" for r in roots)
+    deny_preview = sorted({str(p.resolve()) for p in settings.file_deny_prefixes})
+    deny_block = "\n".join(f"- `{d}`" for d in deny_preview[:15])
+    more = ""
+    if len(deny_preview) > 15:
+        more = f"\n… and {len(deny_preview) - 15} more prefix rules."
+    extra_base = ""
+    if settings.file_deny_basenames_extra:
+        extra_base = (
+            f" Extra forbidden basenames (from env): "
+            f"{', '.join(sorted(settings.file_deny_basenames_extra))}."
+        )
     return (
-        "**Workspace files:** `read_workspace_file` and `write_workspace_file` are enabled. "
+        "**Workspace file tools:** `list_workspace_directory` (one level, non-recursive), "
+        "`read_workspace_file`, and `write_workspace_file`. "
         "Paths must resolve inside one of these roots (symlinks resolved):\n"
-        f"{lines}"
+        f"{root_lines}\n\n"
+        "**Denied path prefixes** (read/list/write blocked):\n"
+        f"{deny_block}{more}\n\n"
+        "**Denied basenames** anywhere under roots: `.env`, `id_rsa`, any `*.pem`."
+        f"{extra_base}\n"
+        "Use `append_master_section` / `append_soul_fragment` for long-term memory; "
+        "do not put secrets in workspace files the model can read. "
+        "The SQLite database and `memory/` markdown files are not reachable through these file tools."
     )
 
 
@@ -59,7 +81,10 @@ and optionally `append_master_section` / `append_soul_fragment` to persist small
 """
     harness = harness.strip()
     if file_tools_note:
-        harness = f"{harness}\n\n{file_tools_note.strip()}"
+        harness = (
+            f"{harness}\n\n{file_tools_note.strip()}\n\n"
+            "(When workspace file tools are enabled, follow the contract above.)"
+        )
     blocks: list[str] = [harness]
     master_block = master_text.strip()
     if master_block:

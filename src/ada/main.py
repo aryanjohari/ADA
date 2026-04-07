@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from ada.config import Settings, load_dotenv_if_present
-from ada.orchestrator import orchestrate_turn
+from ada.orchestrator import file_guard_audit_hook, orchestrate_turn
 from ada.prompt import (
     build_system_instruction,
     format_allowlist_summary,
@@ -42,6 +42,9 @@ def _file_tool_config(settings: Settings) -> FileToolConfig | None:
         primary_root=roots[0],
         max_read_bytes=settings.file_max_read_bytes,
         max_write_bytes=settings.file_max_write_bytes,
+        deny_prefixes=settings.file_deny_prefixes,
+        deny_basenames_extra=settings.file_deny_basenames_extra,
+        max_list_entries=settings.file_max_list_entries,
     )
 
 
@@ -63,7 +66,7 @@ async def run_daemon_loop(settings: Settings) -> None:
     soul = read_soul_text(settings.soul_path)
     master = read_text_file(settings.master_path)
     file_note = (
-        format_file_tools_note(settings.file_sandbox_roots)
+        format_file_tools_note(settings)
         if settings.enable_file_tools
         else None
     )
@@ -109,6 +112,11 @@ async def run_daemon_loop(settings: Settings) -> None:
                     include_plan_tools=settings.enable_plan_tools,
                     file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
+                    on_file_guard_violation=file_guard_audit_hook(
+                        qe,
+                        task_id,
+                        enabled=settings.file_audit_denials,
+                    ),
                 )
                 await qe.update_task(
                     task_id,

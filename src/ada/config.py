@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ada.tools.file_sandbox import parse_sandbox_roots
+from ada.tools.file_sandbox import load_denylist_paths_from_file, parse_sandbox_roots
 
 # Default Gemini model: Flash-Lite tier (verify against current API model list).
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite"
@@ -19,6 +19,40 @@ def _find_project_root() -> Path:
         if (parent / "pyproject.toml").exists():
             return parent
     return Path.cwd()
+
+
+def _unique_resolved_paths(*paths: Path) -> tuple[Path, ...]:
+    seen: dict[str, Path] = {}
+    for p in paths:
+        r = p.resolve()
+        seen[str(r)] = r
+    return tuple(seen.values())
+
+
+def build_file_deny_prefixes(
+    *,
+    project_root: Path,
+    data_dir: Path,
+    memory_dir: Path,
+    primary_sandbox_root: Path,
+    extra_comma_separated: str,
+    denylist_file: Path | None,
+) -> tuple[Path, ...]:
+    """
+    Always deny data_dir and memory_dir for file tools.
+    Deny project_root when sandbox primary root strictly contains the project
+    (e.g. home-wide sandbox, ADA lives in a subdirectory).
+    """
+    parts: list[Path] = [data_dir, memory_dir]
+    proj = project_root.resolve()
+    pri = primary_sandbox_root.resolve()
+    if proj != pri and proj.is_relative_to(pri):
+        parts.append(project_root)
+    for raw in [p.strip() for p in extra_comma_separated.split(",") if p.strip()]:
+        parts.append(Path(raw).expanduser())
+    if denylist_file is not None:
+        parts.extend(load_denylist_paths_from_file(denylist_file))
+    return _unique_resolved_paths(*parts)
 
 
 @dataclass(frozen=True)
@@ -52,6 +86,10 @@ class Settings:
     file_sandbox_roots: tuple[Path, ...]
     file_max_read_bytes: int
     file_max_write_bytes: int
+    file_deny_prefixes: tuple[Path, ...]
+    file_deny_basenames_extra: frozenset[str]
+    file_max_list_entries: int
+    file_audit_denials: bool
 
     @classmethod
     def load(cls) -> "Settings":
@@ -97,6 +135,31 @@ class Settings:
         file_roots = parse_sandbox_roots(sandbox_raw, fallback=root)
         file_max_read = int(os.environ.get("ADA_FILE_MAX_READ_BYTES", str(512 * 1024)))
         file_max_write = int(os.environ.get("ADA_FILE_MAX_WRITE_BYTES", str(256 * 1024)))
+        deny_extra = os.environ.get("ADA_FILE_DENY_PREFIXES", "").strip()
+        deny_file_raw = os.environ.get("ADA_FILE_DENYLIST_FILE", "").strip()
+        deny_file_path: Path | None = None
+        if deny_file_raw:
+            deny_file_path = Path(deny_file_raw).expanduser()
+            if not deny_file_path.is_absolute():
+                deny_file_path = (root / deny_file_path).resolve()
+        file_deny_prefixes = build_file_deny_prefixes(
+            project_root=root,
+            data_dir=data_dir,
+            memory_dir=memory_dir,
+            primary_sandbox_root=file_roots[0],
+            extra_comma_separated=deny_extra,
+            denylist_file=deny_file_path,
+        )
+        extra_base_raw = os.environ.get("ADA_FILE_DENY_BASENAMES", "").strip()
+        file_deny_basenames_extra = frozenset(
+            p.strip() for p in extra_base_raw.split(",") if p.strip()
+        )
+        file_max_list_entries = max(
+            1, int(os.environ.get("ADA_FILE_MAX_LIST_ENTRIES", "200"))
+        )
+        file_audit_denials = os.environ.get(
+            "ADA_FILE_AUDIT_DENIALS", "1"
+        ).strip().lower() not in ("0", "false", "no")
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -127,6 +190,10 @@ class Settings:
             file_sandbox_roots=file_roots,
             file_max_read_bytes=file_max_read,
             file_max_write_bytes=file_max_write,
+            file_deny_prefixes=file_deny_prefixes,
+            file_deny_basenames_extra=file_deny_basenames_extra,
+            file_max_list_entries=file_max_list_entries,
+            file_audit_denials=file_audit_denials,
         )
 
     def ensure_data_dir(self) -> None:

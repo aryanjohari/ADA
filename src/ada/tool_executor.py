@@ -10,7 +10,10 @@ from typing import Any
 
 from ada.memory_io import append_markdown_block, format_master_section, format_soul_fragment
 from ada.stream_types import CompletedFunctionCall
-from ada.tools.file_sandbox import resolve_workspace_path
+from ada.tools.file_sandbox import (
+    list_directory_entries,
+    resolve_workspace_path_guarded,
+)
 from ada.tools.shell_allowlist import command_to_argv
 
 
@@ -44,6 +47,9 @@ class FileToolConfig:
     primary_root: Path
     max_read_bytes: int
     max_write_bytes: int
+    deny_prefixes: tuple[Path, ...] = ()
+    deny_basenames_extra: frozenset[str] = frozenset()
+    max_list_entries: int = 200
 
 
 class StreamingToolExecutor:
@@ -63,6 +69,8 @@ class StreamingToolExecutor:
         plan_hooks: PlanToolHooks | None = None,
         token_usage: Callable[[], Awaitable[dict[str, Any]]] | None = None,
         file_config: FileToolConfig | None = None,
+        on_file_guard_violation: Callable[[str, str, str], Awaitable[None]]
+        | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
@@ -71,6 +79,7 @@ class StreamingToolExecutor:
         self._plan_hooks = plan_hooks
         self._token_usage = token_usage
         self._file_config = file_config
+        self._on_file_guard_violation = on_file_guard_violation
         self.discarded = False
 
     def discard(self) -> None:
@@ -111,6 +120,8 @@ class StreamingToolExecutor:
             return await self._read_workspace_file(call)
         if call.name == "write_workspace_file":
             return await self._write_workspace_file(call)
+        if call.name == "list_workspace_directory":
+            return await self._list_workspace_directory(call)
         return {"error": f"unknown tool: {call.name}"}
 
     async def _check_token_usage(self) -> dict[str, Any]:
@@ -184,20 +195,35 @@ class StreamingToolExecutor:
             "command": cmd,
         }
 
+    async def _notify_file_guard(
+        self, tool: str, attempted_path: str, reason: str
+    ) -> None:
+        if self._on_file_guard_violation is None:
+            return
+        try:
+            await self._on_file_guard_violation(tool, attempted_path, reason)
+        except Exception:
+            pass
+
     async def _read_workspace_file(self, call: CompletedFunctionCall) -> dict[str, Any]:
         if self._file_config is None:
             return {"error": "file tools not configured"}
         rel = call.args.get("path")
         if rel is None or not str(rel).strip():
             return {"error": "missing path"}
+        rel_s = str(rel).strip()
         try:
-            path = resolve_workspace_path(
+            path = resolve_workspace_path_guarded(
                 roots=self._file_config.roots,
                 primary_root=self._file_config.primary_root,
-                user_path=str(rel),
+                user_path=rel_s,
+                deny_prefixes=self._file_config.deny_prefixes,
+                deny_basenames_extra=self._file_config.deny_basenames_extra,
             )
         except ValueError as e:
-            return {"error": str(e)}
+            msg = str(e)
+            await self._notify_file_guard("read_workspace_file", rel_s, msg)
+            return {"error": msg, "path": rel_s}
         max_b = self._file_config.max_read_bytes
 
         def _read() -> dict[str, Any]:
@@ -236,14 +262,19 @@ class StreamingToolExecutor:
         if mode not in ("write", "append"):
             return {"error": "mode must be 'write' or 'append'"}
         create_parents = bool(call.args.get("create_parents"))
+        rel_s = str(rel).strip()
         try:
-            path = resolve_workspace_path(
+            path = resolve_workspace_path_guarded(
                 roots=self._file_config.roots,
                 primary_root=self._file_config.primary_root,
-                user_path=str(rel),
+                user_path=rel_s,
+                deny_prefixes=self._file_config.deny_prefixes,
+                deny_basenames_extra=self._file_config.deny_basenames_extra,
             )
         except ValueError as e:
-            return {"error": str(e)}
+            msg = str(e)
+            await self._notify_file_guard("write_workspace_file", rel_s, msg)
+            return {"error": msg, "path": rel_s}
         encoded = content.encode("utf-8")
         if len(encoded) > self._file_config.max_write_bytes:
             return {
@@ -271,6 +302,45 @@ class StreamingToolExecutor:
             return await asyncio.to_thread(_write)
         except OSError as e:
             return {"error": str(e), "path": str(path)}
+
+    async def _list_workspace_directory(
+        self, call: CompletedFunctionCall
+    ) -> dict[str, Any]:
+        if self._file_config is None:
+            return {"error": "file tools not configured"}
+        rel = call.args.get("path")
+        if rel is None:
+            rel_s = "."
+        else:
+            rel_s = str(rel).strip() or "."
+        raw_max = call.args.get("max_entries")
+        cap = self._file_config.max_list_entries
+        try:
+            if raw_max is not None:
+                cap = min(int(raw_max), self._file_config.max_list_entries)
+        except (TypeError, ValueError):
+            cap = self._file_config.max_list_entries
+        cap = max(1, cap)
+        try:
+            dir_path = resolve_workspace_path_guarded(
+                roots=self._file_config.roots,
+                primary_root=self._file_config.primary_root,
+                user_path=rel_s,
+                deny_prefixes=self._file_config.deny_prefixes,
+                deny_basenames_extra=self._file_config.deny_basenames_extra,
+            )
+        except ValueError as e:
+            msg = str(e)
+            await self._notify_file_guard("list_workspace_directory", rel_s, msg)
+            return {"error": msg, "path": rel_s}
+
+        def _list() -> dict[str, Any]:
+            return list_directory_entries(dir_path, max_entries=cap)
+
+        try:
+            return await asyncio.to_thread(_list)
+        except OSError as e:
+            return {"error": str(e), "path": str(dir_path)}
 
     async def _append_master(self, call: CompletedFunctionCall) -> dict[str, Any]:
         if self._memory is None:

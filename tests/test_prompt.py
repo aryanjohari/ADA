@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
+from ada.config import Settings
 from ada.prompt import (
     build_system_instruction,
     format_allowlist_summary,
@@ -51,13 +53,22 @@ def test_format_allowlist_summary_empty():
 
 
 def test_file_tools_note_in_harness():
+    base = Settings.load()
+    note = format_file_tools_note(
+        replace(
+            base,
+            file_sandbox_roots=(Path("/tmp/ada_sandbox").resolve(),),
+            file_deny_prefixes=(),
+        )
+    )
     s = build_system_instruction(
         soul_text="",
         master_text="",
         state_db_display_path="/data/state.db",
         allowlist_summary="(none)",
-        file_tools_note=format_file_tools_note((Path("/tmp/ada_sandbox"),)),
+        file_tools_note=note,
     )
     assert "read_workspace_file" in s
     assert "write_workspace_file" in s
-    assert "/tmp/ada_sandbox" in s
+    assert "list_workspace_directory" in s
+    assert "ada_sandbox" in s or "/tmp" in s

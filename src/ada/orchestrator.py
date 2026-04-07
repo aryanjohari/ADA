@@ -26,6 +26,26 @@ class SessionTokenLimitExceeded(Exception):
     """Raised when summed session usage_ledger tokens exceed ADA_MAX_SESSION_TOKENS."""
 
 
+def file_guard_audit_hook(
+    qe: QueryEngine,
+    session_id: int,
+    *,
+    enabled: bool,
+) -> Callable[[str, str, str], Coroutine[Any, Any, None]] | None:
+    """Optional callback for StreamingToolExecutor when a path hits the file sandbox deny rules."""
+    if not enabled:
+        return None
+
+    async def _cb(tool: str, path: str, reason: str) -> None:
+        await qe.append_action_log(
+            "file_access_denied",
+            {"tool": tool, "path": path, "reason": reason},
+            session_id=session_id,
+        )
+
+    return _cb
+
+
 async def orchestrate_turn(
     qe: QueryEngine,
     *,
@@ -48,6 +68,8 @@ async def orchestrate_turn(
     include_plan_tools: bool = False,
     file_config: FileToolConfig | None = None,
     max_session_tokens: int = 50000,
+    on_file_guard_violation: Callable[[str, str, str], Coroutine[Any, Any, None]]
+    | None = None,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -92,6 +114,7 @@ async def orchestrate_turn(
             plan_hooks=plan_hooks,
             token_usage=_token_usage_bound,
             file_config=file_config,
+            on_file_guard_violation=on_file_guard_violation,
         )
         try:
             return await _agentic_loop(
@@ -258,7 +281,12 @@ async def _agentic_loop(
             )
 
         needs_file = any(
-            c.name in ("read_workspace_file", "write_workspace_file")
+            c.name
+            in (
+                "read_workspace_file",
+                "write_workspace_file",
+                "list_workspace_directory",
+            )
             for c in leg.function_calls
         )
         if needs_file and not file_tools_configured:

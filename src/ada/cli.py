@@ -8,7 +8,11 @@ from pathlib import Path
 
 from ada.config import Settings
 from ada.dream.run import run_dream_job
-from ada.orchestrator import SessionTokenLimitExceeded, orchestrate_turn
+from ada.orchestrator import (
+    SessionTokenLimitExceeded,
+    file_guard_audit_hook,
+    orchestrate_turn,
+)
 from ada.prompt import (
     build_system_instruction,
     format_allowlist_summary,
@@ -43,6 +47,9 @@ def _file_tool_config(settings: Settings) -> FileToolConfig | None:
         primary_root=roots[0],
         max_read_bytes=settings.file_max_read_bytes,
         max_write_bytes=settings.file_max_write_bytes,
+        deny_prefixes=settings.file_deny_prefixes,
+        deny_basenames_extra=settings.file_deny_basenames_extra,
+        max_list_entries=settings.file_max_list_entries,
     )
 
 
@@ -77,7 +84,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
         master = read_text_file(settings.master_path)
         wakeup = read_text_file(settings.wakeup_path)
         file_note = (
-            format_file_tools_note(settings.file_sandbox_roots)
+            format_file_tools_note(settings)
             if settings.enable_file_tools
             else None
         )
@@ -121,6 +128,11 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     include_plan_tools=settings.enable_plan_tools,
                     file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
+                    on_file_guard_violation=file_guard_audit_hook(
+                        qe,
+                        task_id,
+                        enabled=settings.file_audit_denials,
+                    ),
                 )
                 print(flush=True)
                 await qe.state_set(_boot_state_key(task_id), "1")
@@ -164,6 +176,11 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     include_plan_tools=settings.enable_plan_tools,
                     file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
+                    on_file_guard_violation=file_guard_audit_hook(
+                        qe,
+                        task_id,
+                        enabled=settings.file_audit_denials,
+                    ),
                 )
                 await qe.update_task(
                     task_id,

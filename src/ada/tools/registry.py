@@ -68,6 +68,32 @@ def _memory_function_declarations() -> list[types.FunctionDeclaration]:
 def _file_function_declarations() -> list[types.FunctionDeclaration]:
     return [
         types.FunctionDeclaration(
+            name="list_workspace_directory",
+            description=(
+                "List files and subdirectories in one workspace directory (non-recursive). "
+                "Paths follow the same sandbox rules as read_workspace_file. "
+                "Symlink targets are not followed; entries may show kind symlink. "
+                "Result may be truncated if there are many entries; check `truncated`."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Directory path relative to primary sandbox root, or absolute under a root. "
+                            "Use '.' for the primary root."
+                        ),
+                    },
+                    "max_entries": {
+                        "type": "integer",
+                        "description": "Max entries to return (capped by harness).",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        types.FunctionDeclaration(
             name="read_workspace_file",
             description=(
                 "Read a text file from the configured workspace sandbox (UTF-8). "
