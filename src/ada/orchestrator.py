@@ -8,12 +8,14 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from ada.adapters.gemini_stream import chain_rows_to_contents, stream_one_model_leg
+from ada.stream_debug import is_stream_debug_on, log_stream
 from ada.query_engine import QueryEngine
 from ada.tool_executor import (
     FileToolConfig,
     MemoryToolConfig,
     PlanToolHooks,
     StreamingToolExecutor,
+    WebToolConfig,
 )
 from ada.tools.registry import build_agent_tools
 
@@ -70,12 +72,16 @@ async def orchestrate_turn(
     max_session_tokens: int = 50000,
     on_file_guard_violation: Callable[[str, str, str], Coroutine[Any, Any, None]]
     | None = None,
+    web_config: WebToolConfig | None = None,
+    enable_list_session_web_sources: bool = False,
+    debug_stream: bool = False,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
     Retries only if no tool results were persisted for this user turn.
     On retry: StreamingToolExecutor.discard() on the failed attempt's executor.
     """
+    dbg = is_stream_debug_on(debug_stream)
     user_uuid = await qe.persist_user(session_id, user_text)
     allow = shell_allowlist or frozenset()
     gemini_tool = build_agent_tools(
@@ -83,6 +89,18 @@ async def orchestrate_turn(
         include_memory_tools=enable_memory_tools,
         include_plan_tools=include_plan_tools,
         include_file_tools=file_config is not None,
+        include_web_search=web_config is not None and bool(web_config.serper_api_key),
+        include_web_fetch=web_config is not None,
+        include_list_session_web_sources=enable_list_session_web_sources,
+    )
+    log_stream(
+        dbg,
+        "orchestrator",
+        "turn_start",
+        f"session_id={session_id}",
+        f"include_web_search={web_config is not None and bool(web_config.serper_api_key)}",
+        f"include_web_fetch={web_config is not None}",
+        f"web_tools_enabled={web_config is not None}",
     )
     legs_cap = max(1, max_tool_rounds)
     memory = memory_config if enable_memory_tools else None
@@ -106,6 +124,9 @@ async def orchestrate_turn(
         async def _token_usage_bound() -> dict[str, Any]:
             return await qe.get_session_token_usage(session_id)
 
+        async def _web_sources_list_bound(lim: int) -> list[dict[str, Any]]:
+            return await qe.list_web_sources(session_id, limit=lim)
+
         executor = StreamingToolExecutor(
             allowlist_exact=allow,
             max_output_bytes=shell_max_output_bytes,
@@ -114,6 +135,10 @@ async def orchestrate_turn(
             plan_hooks=plan_hooks,
             token_usage=_token_usage_bound,
             file_config=file_config,
+            web=web_config,
+            web_sources_reader=_web_sources_list_bound
+            if enable_list_session_web_sources
+            else None,
             on_file_guard_violation=on_file_guard_violation,
         )
         try:
@@ -135,7 +160,12 @@ async def orchestrate_turn(
                 rewire_after_tombstone=rewire_after_tombstone,
                 plan_tools_configured=plan_hooks is not None,
                 file_tools_configured=file_config is not None,
+                web_search_configured=web_config is not None
+                and bool(web_config.serper_api_key),
+                web_fetch_configured=web_config is not None,
+                web_sources_list_configured=enable_list_session_web_sources,
                 max_session_tokens=max_session_tokens,
+                debug_stream=dbg,
             )
         except SessionTokenLimitExceeded:
             executor.discard()
@@ -172,7 +202,11 @@ async def _agentic_loop(
     rewire_after_tombstone: bool,
     plan_tools_configured: bool,
     file_tools_configured: bool,
+    web_search_configured: bool,
+    web_fetch_configured: bool,
+    web_sources_list_configured: bool,
     max_session_tokens: int,
+    debug_stream: bool,
 ) -> str:
     parent = user_parent_uuid
 
@@ -259,6 +293,15 @@ async def _agentic_loop(
 
         if not leg.function_calls:
             if not leg.text.strip():
+                log_stream(
+                    debug_stream,
+                    "orchestrator",
+                    "empty_model_output",
+                    f"finish_reason={leg.finish_reason!r}",
+                    f"usage={leg.usage!r}",
+                    f"function_calls={leg.function_calls!r}",
+                    f"text_len={len(leg.text)}",
+                )
                 raise StreamFailed("empty model output")
             await qe.state_set("session.active_model", model)
             if leg.finish_reason:
@@ -294,6 +337,26 @@ async def _agentic_loop(
                 "model requested file tools but file tools are not configured"
             )
 
+        needs_web_search = any(c.name == "web_search" for c in leg.function_calls)
+        if needs_web_search and not web_search_configured:
+            raise StreamFailed(
+                "model requested web_search but web search is not configured"
+            )
+
+        needs_web_fetch = any(c.name == "fetch_url_text" for c in leg.function_calls)
+        if needs_web_fetch and not web_fetch_configured:
+            raise StreamFailed(
+                "model requested fetch_url_text but web fetch is not configured"
+            )
+
+        needs_ws_list = any(
+            c.name == "list_session_web_sources" for c in leg.function_calls
+        )
+        if needs_ws_list and not web_sources_list_configured:
+            raise StreamFailed(
+                "model requested list_session_web_sources but it is not configured"
+            )
+
         results = await executor.run_ordered(leg.function_calls)
         for tr in results:
             tid = await qe.persist_tool_result(
@@ -304,6 +367,12 @@ async def _agentic_loop(
                 response=tr.response,
             )
             tool_rows_this_leg.append(tid)
+            await qe.record_web_tool_artifacts(
+                session_id,
+                tr.call.name,
+                tr.call.args,
+                tr.response,
+            )
         tools_were_persisted[0] = True
 
         head = await qe.chain_head_uuid(session_id)

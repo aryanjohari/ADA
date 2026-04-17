@@ -29,6 +29,23 @@ def test_worker_mode_adds_daemon_note():
     assert "ada daemon" not in base.lower()
     assert "ada daemon" in worker.lower()
     assert "read_task_plan" in worker
+    assert "architecture-proposal" in worker.lower()
+
+
+def test_schema_digest_note_in_harness():
+    from ada.prompt import format_schema_digest_note
+
+    note = format_schema_digest_note("# Hello\n\nSchema.")
+    assert note is not None
+    s = build_system_instruction(
+        soul_text="",
+        master_text="",
+        state_db_display_path="/data/state.db",
+        allowlist_summary="(none)",
+        schema_digest_note=note,
+    )
+    assert "Hello" in s
+    assert "schema digest" in s.lower()
 
 
 def test_system_instruction_wraps_soul():

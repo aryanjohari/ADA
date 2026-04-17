@@ -181,6 +181,81 @@ def _plan_function_declarations() -> list[types.FunctionDeclaration]:
     ]
 
 
+def _web_function_declarations(
+    *,
+    include_web_search: bool,
+    include_web_fetch: bool,
+) -> list[types.FunctionDeclaration]:
+    out: list[types.FunctionDeclaration] = []
+    if include_web_search:
+        out.append(
+            types.FunctionDeclaration(
+                name="web_search",
+                description=(
+                    "Search the public web via Serper and return organic results only "
+                    "(title, url, snippet per hit). No full page body. Prefer this before "
+                    "fetching full pages when snippets are enough."
+                ),
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Web search query.",
+                        },
+                        "num_results": {
+                            "type": "integer",
+                            "description": "Desired number of organic results; capped by the harness.",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            )
+        )
+    if include_web_fetch:
+        out.append(
+            types.FunctionDeclaration(
+                name="fetch_url_text",
+                description=(
+                    "Fetch readable full text for HTTPS URLs (e.g. Jina Reader or direct fetch). "
+                    "Use only when snippets are insufficient. Max URLs and response size are capped."
+                ),
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "urls": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "HTTPS URLs to retrieve as plain text; max per call enforced.",
+                        },
+                    },
+                    "required": ["urls"],
+                },
+            )
+        )
+    return out
+
+
+def _list_session_web_sources_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="list_session_web_sources",
+        description=(
+            "Read recent web_sources rows for the **current** task/session only (Phase B bounded logging). "
+            "Read-only; no new HTTP or DB writes."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max rows to return (harness caps; default 50).",
+                },
+            },
+            "required": [],
+        },
+    )
+
+
 def build_shell_declarations(*, allowed_exact_commands: frozenset[str]) -> list[types.FunctionDeclaration]:
     if not allowed_exact_commands:
         return []
@@ -217,6 +292,9 @@ def build_agent_tools(
     include_memory_tools: bool,
     include_plan_tools: bool = False,
     include_file_tools: bool = False,
+    include_web_search: bool = False,
+    include_web_fetch: bool = False,
+    include_list_session_web_sources: bool = False,
 ) -> types.Tool:
     decls: list[types.FunctionDeclaration] = [_check_token_usage_declaration()]
     decls.extend(build_shell_declarations(allowed_exact_commands=allowed_exact_commands))
@@ -226,6 +304,14 @@ def build_agent_tools(
         decls.extend(_plan_function_declarations())
     if include_file_tools:
         decls.extend(_file_function_declarations())
+    decls.extend(
+        _web_function_declarations(
+            include_web_search=include_web_search,
+            include_web_fetch=include_web_fetch,
+        )
+    )
+    if include_list_session_web_sources:
+        decls.append(_list_session_web_sources_declaration())
     return types.Tool(function_declarations=decls)
 
 

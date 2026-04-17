@@ -57,8 +57,55 @@ def format_file_tools_note(settings: Settings) -> str:
     )
 
 
+def format_schema_digest_note(text: str) -> str | None:
+    """Non-empty operator-maintained schema summary (e.g. memory/schema_digest.md)."""
+    t = text.strip()
+    if not t:
+        return None
+    return (
+        "**SQLite schema digest (operator-maintained file `memory/schema_digest.md`):**\n"
+        f"{t}\n\n"
+        "(Use this as ground truth for `tasks`, `messages`, and `web_sources`; update the file when DDL changes.)"
+    )
+
+
+def format_session_web_sources_list_note(settings: Settings) -> str | None:
+    """One-line harness note when read-only list_session_web_sources is enabled."""
+    if not settings.enable_web_sources_tool:
+        return None
+    return (
+        "**Session web index:** when `ADA_ENABLE_WEB_SOURCES_TOOL=1`, tool `list_session_web_sources` "
+        "returns recent `web_sources` rows for the **current** task/session (read-only)."
+    )
+
+
+def format_web_tools_note(settings: Settings) -> str:
+    """Harness note when web search / fetch tools are enabled."""
+    allow = ", ".join(sorted(settings.web_fetch_host_allowlist)[:8])
+    more_allow = ""
+    if len(settings.web_fetch_host_allowlist) > 8:
+        more_allow = " …"
+    allow_line = (
+        f"**Host allowlist** (fetch): {allow}{more_allow}"
+        if settings.web_fetch_host_allowlist
+        else "**Host allowlist:** empty (public https only; SSRF guards apply)."
+    )
+    search_on = bool(settings.serper_api_key.strip())
+    return (
+        "**Web tools (`ADA_ENABLE_WEB_TOOLS=1`):** "
+        + ("`web_search` (Serper) is available. " if search_on else "`web_search` is disabled without Serper API key. ")
+        + "`fetch_url_text` retrieves page text (Jina Reader or direct httpx per `ADA_WEB_FETCH_MODE`). "
+        f"Caps: max {settings.web_search_max_results} search hits; "
+        f"max {settings.web_fetch_max_urls} URLs per fetch; "
+        f"max ~{settings.web_fetch_max_chars} chars total per fetch. "
+        f"{allow_line} "
+        "Prefer **search snippets first**; call `fetch_url_text` only when the task needs full-page evidence."
+    )
+
+
 _WORKER_MODE_NOTE = """**Worker context (`ada daemon`):** You are processing a **queued goal** task, not interactive `ada chat`.
 Prefer `read_task_plan` early if this run may resume multi-step work; update with `write_task_plan` as progress is made.
+For **architecture-proposal** goal tasks (Phase C in `<master>`), prefer completing `read_task_plan` → draft → `append_master_section` (or `write_workspace_file` if file tools are on) in **one** turn when possible; use a follow-up goal if you hit token or append limits.
 Still follow `<master>` and soul guardrails below."""
 
 
@@ -69,6 +116,9 @@ def build_system_instruction(
     state_db_display_path: str,
     allowlist_summary: str,
     file_tools_note: str | None = None,
+    web_tools_note: str | None = None,
+    schema_digest_note: str | None = None,
+    session_web_sources_list_note: str | None = None,
     worker_mode: bool = False,
 ) -> str:
     """
@@ -93,6 +143,15 @@ and optionally `append_master_section` / `append_soul_fragment` to persist small
             f"{harness}\n\n{file_tools_note.strip()}\n\n"
             "(When workspace file tools are enabled, follow the contract above.)"
         )
+    if web_tools_note:
+        harness = (
+            f"{harness}\n\n{web_tools_note.strip()}\n\n"
+            "(When web tools are enabled, follow snippet-first policy above.)"
+        )
+    if schema_digest_note:
+        harness = f"{harness}\n\n{schema_digest_note.strip()}"
+    if session_web_sources_list_note:
+        harness = f"{harness}\n\n{session_web_sources_list_note.strip()}"
     blocks: list[str] = [harness]
     master_block = master_text.strip()
     if master_block:

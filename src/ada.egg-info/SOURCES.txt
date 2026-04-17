@@ -4,6 +4,7 @@ src/ada/__init__.py
 src/ada/__main__.py
 src/ada/cli.py
 src/ada/config.py
+src/ada/goal_cli.py
 src/ada/main.py
 src/ada/memory_io.py
 src/ada/orchestrator.py
@@ -12,6 +13,7 @@ src/ada/query_engine.py
 src/ada/stream_types.py
 src/ada/tool_executor.py
 src/ada/transcript_format.py
+src/ada/web_persistence.py
 src/ada.egg-info/PKG-INFO
 src/ada.egg-info/SOURCES.txt
 src/ada.egg-info/dependency_links.txt
@@ -26,10 +28,19 @@ src/ada/dream/transcript_compact.py
 src/ada/persistent/__init__.py
 src/ada/persistent/store.py
 src/ada/tools/__init__.py
+src/ada/tools/file_sandbox.py
 src/ada/tools/registry.py
 src/ada/tools/shell_allowlist.py
+src/ada/tools/web_runtime.py
+tests/test_file_sandbox.py
+tests/test_gemini_stream.py
+tests/test_goal_cli.py
 tests/test_memory_io.py
 tests/test_orchestrator_mock.py
 tests/test_prompt.py
 tests/test_query_engine.py
+tests/test_tool_executor_file.py
+tests/test_tool_executor_plan.py
+tests/test_tool_executor_web.py
 tests/test_transcript_compact.py
+tests/test_web_sources.py

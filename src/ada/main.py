@@ -12,11 +12,18 @@ from ada.prompt import (
     build_system_instruction,
     format_allowlist_summary,
     format_file_tools_note,
+    format_schema_digest_note,
+    format_session_web_sources_list_note,
+    format_web_tools_note,
     read_soul_text,
     read_text_file,
 )
 from ada.query_engine import QueryEngine
-from ada.tool_executor import FileToolConfig, MemoryToolConfig
+from ada.tool_executor import (
+    FileToolConfig,
+    MemoryToolConfig,
+    build_web_tool_config,
+)
 from ada.tools.shell_allowlist import load_allowlist_exact_lines
 
 
@@ -70,15 +77,28 @@ async def run_daemon_loop(settings: Settings) -> None:
         if settings.enable_file_tools
         else None
     )
+    web_note = (
+        format_web_tools_note(settings)
+        if settings.enable_web_tools
+        else None
+    )
+    digest_note = format_schema_digest_note(
+        read_text_file(settings.memory_dir / "schema_digest.md")
+    )
+    ws_list_note = format_session_web_sources_list_note(settings)
     sys_instr = build_system_instruction(
         soul_text=soul,
         master_text=master,
         state_db_display_path=str(settings.state_db_path),
         allowlist_summary=format_allowlist_summary(allow),
         file_tools_note=file_note,
+        web_tools_note=web_note,
+        schema_digest_note=digest_note,
+        session_web_sources_list_note=ws_list_note,
         worker_mode=True,
     )
     file_cfg = _file_tool_config(settings)
+    web_cfg = build_web_tool_config(settings)
     if not settings.gemini_api_key:
         log.error("GEMINI_API_KEY not set; daemon idle")
     try:
@@ -118,6 +138,9 @@ async def run_daemon_loop(settings: Settings) -> None:
                         task_id,
                         enabled=settings.file_audit_denials,
                     ),
+                    web_config=web_cfg,
+                    enable_list_session_web_sources=settings.enable_web_sources_tool,
+                    debug_stream=settings.debug_stream,
                 )
                 await qe.update_task(
                     task_id,

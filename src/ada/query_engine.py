@@ -131,6 +131,24 @@ class QueryEngine:
             response=response,
         )
 
+    async def record_web_tool_artifacts(
+        self,
+        session_id: int,
+        tool_name: str,
+        args: dict[str, Any],
+        response: dict[str, Any],
+    ) -> None:
+        if tool_name not in ("web_search", "fetch_url_text"):
+            return
+        await self._store.record_web_tool_artifacts(
+            session_id, tool_name, args, response
+        )
+
+    async def list_web_sources(
+        self, session_id: int, *, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_web_sources(session_id, limit=limit)
+
     async def record_usage(
         self,
         session_id: int,

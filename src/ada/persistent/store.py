@@ -94,6 +94,29 @@ class PersistentState:
                 "CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id, created_at)"
             )
 
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='web_sources'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE web_sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    url TEXT NOT NULL,
+                    source_kind TEXT NOT NULL CHECK (source_kind IN ('search_hit', 'page_fetch')),
+                    query_text TEXT,
+                    content_excerpt TEXT NOT NULL DEFAULT '',
+                    content_sha256 TEXT,
+                    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_web_sources_session_fetched "
+                "ON web_sources(session_id, fetched_at DESC)"
+            )
+
     async def _next_sequence(self, session_id: int) -> int:
         assert self._conn is not None
         cur = await self._conn.execute(
@@ -217,6 +240,65 @@ class PersistentState:
         )
         await self._conn.commit()
         return mid
+
+    async def record_web_tool_artifacts(
+        self,
+        session_id: int,
+        tool_name: str,
+        args: dict[str, Any],
+        response: dict[str, Any],
+    ) -> None:
+        """Persist bounded rows for successful web_search / fetch_url_text tool results."""
+        from ada.web_persistence import rows_for_web_tool
+
+        rows = rows_for_web_tool(tool_name, args, response)
+        if not rows:
+            return
+        assert self._conn is not None
+        for url, kind, query_text, excerpt, sha in rows:
+            await self._conn.execute(
+                """
+                INSERT INTO web_sources (
+                    session_id, url, source_kind, query_text, content_excerpt, content_sha256
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, url, kind, query_text, excerpt, sha),
+            )
+        await self._conn.commit()
+
+    async def list_web_sources(
+        self, session_id: int, *, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        lim = max(1, min(limit, 200))
+        cur = await self._conn.execute(
+            """
+            SELECT id, session_id, url, source_kind, query_text, content_excerpt,
+                   content_sha256, fetched_at
+            FROM web_sources
+            WHERE session_id = ?
+            ORDER BY datetime(fetched_at) DESC
+            LIMIT ?
+            """,
+            (session_id, lim),
+        )
+        raw = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in raw:
+            out.append(
+                {
+                    "id": row[0],
+                    "session_id": row[1],
+                    "url": row[2],
+                    "source_kind": row[3],
+                    "query_text": row[4],
+                    "content_excerpt": row[5],
+                    "content_sha256": row[6],
+                    "fetched_at": row[7],
+                }
+            )
+        return out
 
     async def record_usage(
         self,

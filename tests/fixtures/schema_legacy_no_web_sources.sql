@@ -1,4 +1,4 @@
--- ADA schema: tasks, messages (transcript), state (KV), usage_ledger
+-- Snapshot without web_sources (for migration tests)
 
 PRAGMA foreign_keys = ON;
 
@@ -60,17 +60,3 @@ CREATE INDEX IF NOT EXISTS idx_action_log_created
 
 CREATE INDEX IF NOT EXISTS idx_action_log_session
     ON action_log(session_id, created_at);
-
-CREATE TABLE IF NOT EXISTS web_sources (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    url TEXT NOT NULL,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('search_hit', 'page_fetch')),
-    query_text TEXT,
-    content_excerpt TEXT NOT NULL DEFAULT '',
-    content_sha256 TEXT,
-    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_web_sources_session_fetched
-    ON web_sources(session_id, fetched_at DESC);

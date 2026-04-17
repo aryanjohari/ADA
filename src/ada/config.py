@@ -8,8 +8,8 @@ from pathlib import Path
 
 from ada.tools.file_sandbox import load_denylist_paths_from_file, parse_sandbox_roots
 
-# Default Gemini model: Flash-Lite tier (verify against current API model list).
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite"
+# Default Gemini model: 2.5 Flash-Lite (verify against https://ai.google.dev/gemini-api/docs/models ).
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 
 def _find_project_root() -> Path:
@@ -90,6 +90,20 @@ class Settings:
     file_deny_basenames_extra: frozenset[str]
     file_max_list_entries: int
     file_audit_denials: bool
+    enable_web_tools: bool
+    serper_api_key: str
+    web_search_max_results: int
+    web_search_timeout_sec: float
+    web_fetch_mode: str
+    web_fetch_max_urls: int
+    web_fetch_max_chars: int
+    web_fetch_max_bytes: int
+    web_fetch_timeout_sec: float
+    web_fetch_host_allowlist: frozenset[str]
+    jina_reader_base_url: str
+    jina_api_key: str
+    enable_web_sources_tool: bool
+    debug_stream: bool
 
     @classmethod
     def load(cls) -> "Settings":
@@ -160,6 +174,50 @@ class Settings:
         file_audit_denials = os.environ.get(
             "ADA_FILE_AUDIT_DENIALS", "1"
         ).strip().lower() not in ("0", "false", "no")
+        web_tools = os.environ.get("ADA_ENABLE_WEB_TOOLS", "0").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        serper = (
+            os.environ.get("ADA_SERPER_API_KEY", "").strip()
+            or os.environ.get("SERPER_API_KEY", "").strip()
+        )
+        web_search_max = max(
+            1, int(os.environ.get("ADA_WEB_SEARCH_MAX_RESULTS", "10"))
+        )
+        web_search_to = float(os.environ.get("ADA_WEB_SEARCH_TIMEOUT_SEC", "30"))
+        fetch_mode = os.environ.get("ADA_WEB_FETCH_MODE", "jina").strip().lower()
+        if fetch_mode not in ("jina", "httpx"):
+            fetch_mode = "jina"
+        fetch_max_urls = max(1, int(os.environ.get("ADA_WEB_FETCH_MAX_URLS", "3")))
+        fetch_max_chars = max(
+            1024, int(os.environ.get("ADA_WEB_FETCH_MAX_CHARS", "65536"))
+        )
+        fetch_max_bytes = max(
+            4096, int(os.environ.get("ADA_WEB_FETCH_MAX_BYTES", str(1024 * 512)))
+        )
+        fetch_to = float(os.environ.get("ADA_WEB_FETCH_TIMEOUT_SEC", "45"))
+        allow_raw = os.environ.get("ADA_WEB_FETCH_HOST_ALLOWLIST", "").strip()
+        host_allow = frozenset(
+            p.strip().lower() for p in allow_raw.split(",") if p.strip()
+        )
+        jina_base = os.environ.get(
+            "ADA_JINA_READER_URL",
+            os.environ.get("JINA_READER_BASE_URL", "https://r.jina.ai/"),
+        ).strip()
+        if not jina_base.endswith("/"):
+            jina_base = jina_base + "/"
+        jina_key = os.environ.get("ADA_JINA_API_KEY", "").strip()
+        web_sources_tool = os.environ.get(
+            "ADA_ENABLE_WEB_SOURCES_TOOL", "0"
+        ).strip().lower() not in ("0", "false", "no")
+        debug_stream = os.environ.get("ADA_DEBUG_STREAM", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -194,6 +252,20 @@ class Settings:
             file_deny_basenames_extra=file_deny_basenames_extra,
             file_max_list_entries=file_max_list_entries,
             file_audit_denials=file_audit_denials,
+            enable_web_tools=web_tools,
+            serper_api_key=serper,
+            web_search_max_results=web_search_max,
+            web_search_timeout_sec=web_search_to,
+            web_fetch_mode=fetch_mode,
+            web_fetch_max_urls=fetch_max_urls,
+            web_fetch_max_chars=fetch_max_chars,
+            web_fetch_max_bytes=fetch_max_bytes,
+            web_fetch_timeout_sec=fetch_to,
+            web_fetch_host_allowlist=host_allow,
+            jina_reader_base_url=jina_base,
+            jina_api_key=jina_key,
+            enable_web_sources_tool=web_sources_tool,
+            debug_stream=debug_stream,
         )
 
     def ensure_data_dir(self) -> None:

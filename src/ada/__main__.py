@@ -29,7 +29,13 @@ def main() -> None:
 
     sub.add_parser("daemon", help="Poll pending tasks in SQLite")
 
-    sub.add_parser("goal", help="Enqueue and inspect background goal tasks")
+    goal_p = sub.add_parser("goal", help="Enqueue and inspect background goal tasks")
+    goal_p.add_argument(
+        "goal_argv",
+        nargs=argparse.REMAINDER,
+        default=[],
+        help=argparse.SUPPRESS,
+    )
 
     dream_p = sub.add_parser(
         "dream",
@@ -60,11 +66,9 @@ def main() -> None:
     elif args.cmd == "daemon":
         main_daemon()
     elif args.cmd == "goal":
-        try:
-            i = sys.argv.index("goal")
-        except ValueError:
-            i = -1
-        rest = sys.argv[i + 1 :] if i >= 0 else []
+        rest = list(args.goal_argv)
+        while rest and rest[0] == "--":
+            rest.pop(0)
         raise SystemExit(asyncio.run(goal_async_main(rest)))
     elif args.cmd == "dream":
         settings = Settings.load()
