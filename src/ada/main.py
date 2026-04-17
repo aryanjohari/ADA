@@ -76,6 +76,7 @@ async def run_daemon_loop(settings: Settings) -> None:
         state_db_display_path=str(settings.state_db_path),
         allowlist_summary=format_allowlist_summary(allow),
         file_tools_note=file_note,
+        worker_mode=True,
     )
     file_cfg = _file_tool_config(settings)
     if not settings.gemini_api_key:

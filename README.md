@@ -26,7 +26,7 @@
 | Theme | **Implemented today** | **Not implemented (north-star / your broader plan)** |
 |--------|------------------------|------------------------------------------------------|
 | **Transcript** | `messages` chain (`user` / `assistant` / `tool`), `parent_uuid`, `sequence`, **tombstone** on failed legs, **rewire** of live children after tombstone (optional) | Full Claude-parity edge cases only in spec; optional dedicated `api_metadata` column; advanced compaction / snip |
-| **Operational “clipboard”** | `tasks` row per chat session or daemon job; `status`, `goal`, `current_output`; **`plan_json`** read/write via **`read_task_plan`** / **`write_task_plan`** (session-bound; toggle **`ADA_ENABLE_PLAN_TOOLS`**) | Surfacing **`plan_json`** in the system prompt or daemon steps (model still learns tools from declarations only unless you extend prompts) |
+| **Operational “clipboard”** | `tasks` row per chat session (`task_kind=chat`) or queued goal (`task_kind=goal`); `status`, `goal`, `current_output`; **`plan_json`** read/write via **`read_task_plan`** / **`write_task_plan`** (session-bound; toggle **`ADA_ENABLE_PLAN_TOOLS`**) | Surfacing **`plan_json`** in the system prompt (optional future); worker mode adds harness text for **`ada daemon**` |
 | **Usage / cost** | `usage_ledger` per model leg; `state` keys `session.last_leg_input_tokens`, `session.last_leg_output_tokens`, `session.last_usage_extras_json`; totals **not** naïvely summed across tool legs | Operator-facing “session totals” policy; chat-native answers for “how many tokens?” (needs **tool or allowlisted query**, not automatic) |
 | **Static / dynamic memory files** | `memory/soul.md`, `master.md`, `wakeup.md`, `shell_allowlist.txt`; loaded into system prompt; **append** tools + **timestamped backups** | Automated **cron** dream (only **manual** `ada dream` today); richer merge / “dream” policies |
 | **Tools** | **Allowlisted shell** (`exec`, exact line match); **append_master_section** / **append_soul_fragment** (bounded writes under `memory/`); **read_task_plan** / **write_task_plan** (SQLite **`tasks.plan_json`**, same session only) | Arbitrary filesystem read, ad-hoc SQL, web/search, plugin DAGs |
@@ -102,7 +102,7 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 
 | Table | Role |
 |-------|------|
-| **`tasks`** | Queue / session anchor: `goal`, `status`, `current_output`, **`plan_json`** (default `'{}'`; **read/write** via **`read_task_plan`** / **`write_task_plan`** when **`ADA_ENABLE_PLAN_TOOLS`** is on), timestamps |
+| **`tasks`** | Queue / session anchor: `goal`, `status`, `current_output`, **`plan_json`** (default `'{}'`; **read/write** via **`read_task_plan`** / **`write_task_plan`** when **`ADA_ENABLE_PLAN_TOOLS`** is on), **`task_kind`** (`chat` \| `goal`), timestamps |
 | **`messages`** | Transcript: `uuid`, `session_id` → `tasks.id`, `parent_uuid`, `role` (`user` \| `assistant` \| `tool` \| `system`), `content_json`, `tombstone`, `sequence`, `created_at` |
 | **`state`** | String KV cache (e.g. boot flags, last leg tokens, `dream.last_run_at`) |
 | **`usage_ledger`** | Append-only-ish log: `session_id`, `model`, `input_tokens`, `output_tokens`, `recorded_at` |
@@ -130,12 +130,15 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 
 | Command | Purpose |
 |---------|---------|
-| **`ada chat`** | REPL: one **`tasks`** row for “Interactive session” (reuse or `--new-session`), boot via `wakeup.md` once, then `you>` turns |
+| **`ada chat`** | REPL: one **`tasks`** row for “Interactive session” (`task_kind=chat`; reuse or `--new-session`), boot via `wakeup.md` once, then `you>` turns |
 | **`ada chat --new-session`** | New `tasks.id` / transcript chain |
-| **`ada daemon`** | Poll `tasks WHERE status='pending'`, run one turn per goal, set `completed` / `failed` |
+| **`ada goal add …`** | Enqueue a **`task_kind=goal`** row with `status=pending` (optional **`--plan-json`**). **Does not** call the model; **`GEMINI_API_KEY`** not required. |
+| **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--limit`**). |
+| **`ada goal show <id>`** | Print one goal task’s goal, status, and `plan_json`. |
+| **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**, run **one** `orchestrate_turn` per dequeue, set `completed` / `failed`. Run under **systemd** (or similar), not cron. |
 | **`ada dream`** | **Manual** compression: model summarizes recent transcript + usage → append **master** / optional **soul**; logs **`action_log`**; **`--dry-run`**, **`--session N`**, **`--max-messages`** |
 
-All require **`GEMINI_API_KEY`** for model calls (except pure DB inspection).
+**`GEMINI_API_KEY`** is required for **`ada chat`**, **`ada daemon`**, and **`ada dream`**. **`ada goal`** subcommands only touch SQLite (no model).
 
 ---
 
@@ -216,6 +219,8 @@ cp .env.example .env        # set GEMINI_API_KEY
 ```bash
 ada chat
 ada chat --new-session
+ada goal add "background objective"
+ada goal list
 ada daemon
 ada dream --dry-run
 ada dream

@@ -11,6 +11,26 @@ from ada.prompt import (
 )
 
 
+def test_worker_mode_adds_daemon_note():
+    base = build_system_instruction(
+        soul_text="",
+        master_text="",
+        state_db_display_path="/data/state.db",
+        allowlist_summary="(none)",
+        worker_mode=False,
+    )
+    worker = build_system_instruction(
+        soul_text="",
+        master_text="",
+        state_db_display_path="/data/state.db",
+        allowlist_summary="(none)",
+        worker_mode=True,
+    )
+    assert "ada daemon" not in base.lower()
+    assert "ada daemon" in worker.lower()
+    assert "read_task_plan" in worker
+
+
 def test_system_instruction_wraps_soul():
     s = build_system_instruction(
         soul_text="Be brief.",

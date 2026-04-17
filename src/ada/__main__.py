@@ -1,4 +1,4 @@
-"""`python -m ada [chat|daemon]`."""
+"""`python -m ada [chat|daemon|goal|dream]`."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import sys
 
 from ada.config import Settings, load_dotenv_if_present
 from ada.cli import run_chat, run_dream_cli
+from ada.goal_cli import async_main as goal_async_main
 from ada.main import main_daemon
 
 
@@ -27,6 +28,8 @@ def main() -> None:
     )
 
     sub.add_parser("daemon", help="Poll pending tasks in SQLite")
+
+    sub.add_parser("goal", help="Enqueue and inspect background goal tasks")
 
     dream_p = sub.add_parser(
         "dream",
@@ -56,6 +59,13 @@ def main() -> None:
         asyncio.run(run_chat(settings, new_session=args.new_session))
     elif args.cmd == "daemon":
         main_daemon()
+    elif args.cmd == "goal":
+        try:
+            i = sys.argv.index("goal")
+        except ValueError:
+            i = -1
+        rest = sys.argv[i + 1 :] if i >= 0 else []
+        raise SystemExit(asyncio.run(goal_async_main(rest)))
     elif args.cmd == "dream":
         settings = Settings.load()
         max_m = (

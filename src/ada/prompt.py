@@ -57,6 +57,11 @@ def format_file_tools_note(settings: Settings) -> str:
     )
 
 
+_WORKER_MODE_NOTE = """**Worker context (`ada daemon`):** You are processing a **queued goal** task, not interactive `ada chat`.
+Prefer `read_task_plan` early if this run may resume multi-step work; update with `write_task_plan` as progress is made.
+Still follow `<master>` and soul guardrails below."""
+
+
 def build_system_instruction(
     *,
     soul_text: str,
@@ -64,6 +69,7 @@ def build_system_instruction(
     state_db_display_path: str,
     allowlist_summary: str,
     file_tools_note: str | None = None,
+    worker_mode: bool = False,
 ) -> str:
     """
     Trusted harness + optional <master> + <user_soul>.
@@ -80,6 +86,8 @@ and optionally `append_master_section` / `append_soul_fragment` to persist small
 {allowlist_summary}
 """
     harness = harness.strip()
+    if worker_mode:
+        harness = f"{harness}\n\n{_WORKER_MODE_NOTE}"
     if file_tools_note:
         harness = (
             f"{harness}\n\n{file_tools_note.strip()}\n\n"

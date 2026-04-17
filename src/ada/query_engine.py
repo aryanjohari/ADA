@@ -8,7 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ada.persistent.store import PersistentState
+from ada.persistent.store import (
+    TASK_KIND_CHAT,
+    TASK_KIND_GOAL,
+    PersistentState,
+    TaskKind,
+)
 from ada.transcript_format import (
     ROLE_ASSISTANT,
     ROLE_SYSTEM,
@@ -23,6 +28,9 @@ __all__ = [
     "ROLE_SYSTEM",
     "ROLE_TOOL",
     "ROLE_USER",
+    "TASK_KIND_CHAT",
+    "TASK_KIND_GOAL",
+    "TaskKind",
 ]
 
 
@@ -185,14 +193,31 @@ class QueryEngine:
             task_id, status=status, current_output=current_output
         )
 
-    async def insert_task(self, goal: str, status: str = "pending") -> int:
-        return await self._store.insert_task(goal, status)
+    async def insert_task(
+        self,
+        goal: str,
+        status: str = "pending",
+        *,
+        task_kind: TaskKind = TASK_KIND_GOAL,
+    ) -> int:
+        return await self._store.insert_task(goal, status, task_kind=task_kind)
 
     async def fetch_pending_task(self) -> tuple[int, str] | None:
         return await self._store.fetch_pending_task()
 
     async def latest_cli_session_task_id(self) -> int | None:
         return await self._store.latest_cli_session_task_id()
+
+    async def list_goal_tasks(
+        self,
+        *,
+        limit: int = 50,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_goal_tasks(limit=limit, status=status)
+
+    async def get_goal_task(self, task_id: int) -> dict[str, Any]:
+        return await self._store.get_goal_task(task_id)
 
     async def append_action_log(
         self,

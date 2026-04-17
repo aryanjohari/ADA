@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL DEFAULT 'pending',
     current_output TEXT NOT NULL DEFAULT '',
     plan_json TEXT NOT NULL DEFAULT '{}',
+    task_kind TEXT NOT NULL DEFAULT 'goal',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

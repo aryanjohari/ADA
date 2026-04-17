@@ -6,9 +6,13 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import aiosqlite
+
+TaskKind = Literal["chat", "goal"]
+TASK_KIND_CHAT: TaskKind = "chat"
+TASK_KIND_GOAL: TaskKind = "goal"
 
 from ada.transcript_format import (
     ROLE_ASSISTANT,
@@ -58,6 +62,16 @@ class PersistentState:
             await self._conn.execute(
                 "ALTER TABLE tasks ADD COLUMN plan_json TEXT NOT NULL DEFAULT '{}'"
             )
+        cur = await self._conn.execute("PRAGMA table_info(tasks)")
+        cols = {str(row[1]) for row in await cur.fetchall()}
+        if "task_kind" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE tasks ADD COLUMN task_kind TEXT NOT NULL DEFAULT 'goal'"
+            )
+        await self._conn.execute(
+            "UPDATE tasks SET task_kind = ? WHERE goal = 'Interactive session'",
+            (TASK_KIND_CHAT,),
+        )
         cur = await self._conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='action_log'"
         )
@@ -398,14 +412,22 @@ class PersistentState:
         )
         await self._conn.commit()
 
-    async def insert_task(self, goal: str, status: str = "pending") -> int:
+    async def insert_task(
+        self,
+        goal: str,
+        status: str = "pending",
+        *,
+        task_kind: TaskKind = TASK_KIND_GOAL,
+    ) -> int:
+        if task_kind not in ("chat", "goal"):
+            raise ValueError(f"invalid task_kind: {task_kind!r}")
         assert self._conn is not None
         cur = await self._conn.execute(
             """
-            INSERT INTO tasks (goal, status, current_output)
-            VALUES (?, ?, '')
+            INSERT INTO tasks (goal, status, current_output, task_kind)
+            VALUES (?, ?, '', ?)
             """,
-            (goal, status),
+            (goal, status, task_kind),
         )
         await self._conn.commit()
         return int(cur.lastrowid)
@@ -415,10 +437,11 @@ class PersistentState:
         cur = await self._conn.execute(
             """
             SELECT id, goal FROM tasks
-            WHERE status = 'pending'
+            WHERE status = 'pending' AND task_kind = ?
             ORDER BY id ASC
             LIMIT 1
-            """
+            """,
+            (TASK_KIND_GOAL,),
         )
         row = await cur.fetchone()
         if not row:
@@ -430,13 +453,83 @@ class PersistentState:
         cur = await self._conn.execute(
             """
             SELECT id FROM tasks
-            WHERE goal = 'Interactive session'
+            WHERE task_kind = ?
             ORDER BY id DESC
             LIMIT 1
-            """
+            """,
+            (TASK_KIND_CHAT,),
         )
         row = await cur.fetchone()
         return int(row[0]) if row else None
+
+    async def list_goal_tasks(
+        self,
+        *,
+        limit: int = 50,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        limit = max(1, min(limit, 500))
+        if status is not None:
+            cur = await self._conn.execute(
+                """
+                SELECT id, goal, status, plan_json, created_at, updated_at
+                FROM tasks
+                WHERE task_kind = ? AND status = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (TASK_KIND_GOAL, status, limit),
+            )
+        else:
+            cur = await self._conn.execute(
+                """
+                SELECT id, goal, status, plan_json, created_at, updated_at
+                FROM tasks
+                WHERE task_kind = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (TASK_KIND_GOAL, limit),
+            )
+        rows = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "id": int(row[0]),
+                    "goal": str(row[1]),
+                    "status": str(row[2]),
+                    "plan_json": str(row[3]),
+                    "created_at": str(row[4]),
+                    "updated_at": str(row[5]),
+                }
+            )
+        return out
+
+    async def get_goal_task(self, task_id: int) -> dict[str, Any]:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, goal, status, plan_json, task_kind, created_at, updated_at
+            FROM tasks WHERE id = ?
+            """,
+            (task_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise LookupError(f"no task with id={task_id}")
+        if str(row[4]) != TASK_KIND_GOAL:
+            raise ValueError(f"task {task_id} is not a goal task (task_kind={row[4]!r})")
+        return {
+            "id": int(row[0]),
+            "goal": str(row[1]),
+            "status": str(row[2]),
+            "plan_json": str(row[3]),
+            "task_kind": str(row[4]),
+            "created_at": str(row[5]),
+            "updated_at": str(row[6]),
+        }
 
     async def append_action_log(
         self,

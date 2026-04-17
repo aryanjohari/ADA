@@ -4,7 +4,7 @@ import aiosqlite
 import pytest
 
 import ada.orchestrator as orch
-from ada.query_engine import QueryEngine
+from ada.query_engine import TASK_KIND_CHAT, QueryEngine
 from ada.stream_types import CompletedFunctionCall, StreamLegResult
 from ada.tool_executor import FileToolConfig
 
@@ -22,7 +22,9 @@ async def test_orchestrate_turn_streams_and_persists(
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
     await qe.connect()
     try:
-        tid = await qe.insert_task("Interactive", status="executing")
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
         out = await orch.orchestrate_turn(
             qe,
             session_id=tid,
@@ -60,7 +62,9 @@ async def test_orchestrator_retry_tombstones_failed_assistant(
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
     await qe.connect()
     try:
-        tid = await qe.insert_task("Interactive", status="executing")
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
         text = await orch.orchestrate_turn(
             qe,
             session_id=tid,
@@ -113,7 +117,9 @@ async def test_orchestrator_tool_round_persists_tool_row(
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
     await qe.connect()
     try:
-        tid = await qe.insert_task("Interactive", status="executing")
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
         out = await orch.orchestrate_turn(
             qe,
             session_id=tid,
@@ -163,7 +169,9 @@ async def test_orchestrator_plan_tool_round_persists_plan_json(
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
     await qe.connect()
     try:
-        tid = await qe.insert_task("Interactive", status="executing")
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
         out = await orch.orchestrate_turn(
             qe,
             session_id=tid,
@@ -234,7 +242,9 @@ async def test_orchestrator_file_tool_round_writes_file(
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
     await qe.connect()
     try:
-        tid = await qe.insert_task("Interactive", status="executing")
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
         out = await orch.orchestrate_turn(
             qe,
             session_id=tid,
@@ -271,7 +281,9 @@ async def test_orchestrator_session_token_limit_kill_switch(
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
     await qe.connect()
     try:
-        tid = await qe.insert_task("Interactive", status="executing")
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
         with pytest.raises(orch.SessionTokenLimitExceeded):
             await orch.orchestrate_turn(
                 qe,

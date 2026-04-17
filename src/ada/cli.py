@@ -20,7 +20,7 @@ from ada.prompt import (
     read_soul_text,
     read_text_file,
 )
-from ada.query_engine import QueryEngine
+from ada.query_engine import TASK_KIND_CHAT, QueryEngine
 from ada.tool_executor import FileToolConfig, MemoryToolConfig
 from ada.tools.shell_allowlist import load_allowlist_exact_lines
 
@@ -68,7 +68,9 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
     await qe.connect()
     try:
         if new_session:
-            task_id = await qe.insert_task("Interactive session", status="executing")
+            task_id = await qe.insert_task(
+                "Interactive session", status="executing", task_kind=TASK_KIND_CHAT
+            )
         else:
             existing = await qe.latest_cli_session_task_id()
             if existing is not None:
@@ -76,7 +78,9 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                 await qe.update_task(task_id, status="executing")
             else:
                 task_id = await qe.insert_task(
-                    "Interactive session", status="executing"
+                    "Interactive session",
+                    status="executing",
+                    task_kind=TASK_KIND_CHAT,
                 )
 
         allow = load_allowlist_exact_lines(settings.allowlist_path)
@@ -94,6 +98,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
             state_db_display_path=str(settings.state_db_path),
             allowlist_summary=format_allowlist_summary(allow),
             file_tools_note=file_note,
+            worker_mode=False,
         )
         file_cfg = _file_tool_config(settings)
 

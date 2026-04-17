@@ -149,8 +149,10 @@ def _plan_function_declarations() -> list[types.FunctionDeclaration]:
         types.FunctionDeclaration(
             name="read_task_plan",
             description=(
-                "Read the current task's plan_json from SQLite (session clipboard). "
-                "Returns the stored JSON text for the active session only."
+                "Read tasks.plan_json from SQLite for this task/session id only. "
+                "In interactive chat: optional scratchpad for long threads. "
+                "In queued goal tasks (ada daemon): prefer calling early each worker turn "
+                "to resume state—primary durable plan for multi-step work."
             ),
             parameters_json_schema={
                 "type": "object",
@@ -161,8 +163,9 @@ def _plan_function_declarations() -> list[types.FunctionDeclaration]:
         types.FunctionDeclaration(
             name="write_task_plan",
             description=(
-                "Replace the current task's plan_json in SQLite. "
-                "Argument must be a string containing valid JSON (typically a JSON object)."
+                "Replace tasks.plan_json for this task/session id. "
+                "Must be a string of valid JSON (typically an object). "
+                "Chat: optional whiteboard. Goal/daemon runs: update as steps complete or priorities change."
             ),
             parameters_json_schema={
                 "type": "object",
