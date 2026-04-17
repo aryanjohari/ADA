@@ -1,6 +1,13 @@
 # ADA
 
-**ADA** is a **headless Python 3.11+ asyncio harness** for a local “agent” on edge devices (e.g. Raspberry Pi): **SQLite** for durable transcript and ops metadata, **Google GenAI (`google-genai`)** for streaming chat with **manual function calling**, **allowlisted shell probes**, optional **memory file writes**, and a **manual dream / compression** job. Behavior is aligned with the norms in [`docs/claude_logic.md`](docs/claude_logic.md); high-level shape is described in [`docs/system_architecure.md`](docs/system_architecure.md) (note: that doc is **Phase-1–oriented** and predates several features below—this README is the **current** status).
+**ADA** is a **headless Python 3.11+ asyncio harness** for a local “agent” on edge devices (e.g. Raspberry Pi): **SQLite** for durable transcript and ops metadata, **Google GenAI (`google-genai`)** for streaming chat with **manual function calling**, **allowlisted shell probes**, optional **memory file writes**, a **goal queue** (`ada goal` + `ada daemon` with `task_kind`), optional **web search / URL fetch** tools (Serper + Jina or direct fetch, env-gated), optional **bounded logging** to **`web_sources`**, and a **manual dream / compression** job. Behavior is aligned with the norms in [`docs/claude_logic.md`](docs/claude_logic.md); high-level shape is described in [`docs/system_architecure.md`](docs/system_architecure.md) (note: that doc is **Phase-1–oriented** and predates several features below—this README is the **current** status).
+
+### Recently added (keep reading for full detail)
+
+- **`task_kind`** (`chat` \| `goal`), **`ada goal`** subcommands (`add` / `list` / `show`), and **daemon dequeue** of **pending goals only**; **worker-mode** extra system text for `ada daemon`.
+- **Web tools** (when **`ADA_ENABLE_WEB_TOOLS=1`**): **`web_search`** (Serper), **`fetch_url_text`** (Jina Reader or httpx per **`ADA_WEB_FETCH_MODE`**), with caps and optional fetch host allowlist.
+- **Phase B persistence**: **`web_sources`** table (bounded excerpts for `search_hit` \| `page_fetch`); optional read-only tool **`list_session_web_sources`** when **`ADA_ENABLE_WEB_SOURCES_TOOL=1`**.
+- **Optional** operator file **`memory/schema_digest.md`** — if present, a short digest can be injected into the system prompt (see `src/ada/prompt.py`).
 
 ---
 
@@ -26,15 +33,15 @@
 | Theme | **Implemented today** | **Not implemented (north-star / your broader plan)** |
 |--------|------------------------|------------------------------------------------------|
 | **Transcript** | `messages` chain (`user` / `assistant` / `tool`), `parent_uuid`, `sequence`, **tombstone** on failed legs, **rewire** of live children after tombstone (optional) | Full Claude-parity edge cases only in spec; optional dedicated `api_metadata` column; advanced compaction / snip |
-| **Operational “clipboard”** | `tasks` row per chat session (`task_kind=chat`) or queued goal (`task_kind=goal`); `status`, `goal`, `current_output`; **`plan_json`** read/write via **`read_task_plan`** / **`write_task_plan`** (session-bound; toggle **`ADA_ENABLE_PLAN_TOOLS`**) | Surfacing **`plan_json`** in the system prompt (optional future); worker mode adds harness text for **`ada daemon**` |
+| **Operational “clipboard”** | `tasks` row per chat session (`task_kind=chat`) or queued goal (`task_kind=goal`); `status`, `goal`, `current_output`; **`plan_json`** read/write via **`read_task_plan`** / **`write_task_plan`** (session-bound; toggle **`ADA_ENABLE_PLAN_TOOLS`**); **worker-mode** extra harness text for **`ada daemon`** | Auto-injecting full **`plan_json`** into the system prompt on every leg (optional future; model still uses **`read_task_plan`** for explicit reads) |
 | **Usage / cost** | `usage_ledger` per model leg; `state` keys `session.last_leg_input_tokens`, `session.last_leg_output_tokens`, `session.last_usage_extras_json`; totals **not** naïvely summed across tool legs | Operator-facing “session totals” policy; chat-native answers for “how many tokens?” (needs **tool or allowlisted query**, not automatic) |
 | **Static / dynamic memory files** | `memory/soul.md`, `master.md`, `wakeup.md`, `shell_allowlist.txt`; loaded into system prompt; **append** tools + **timestamped backups** | Automated **cron** dream (only **manual** `ada dream` today); richer merge / “dream” policies |
-| **Tools** | **Allowlisted shell** (`exec`, exact line match); **append_master_section** / **append_soul_fragment** (bounded writes under `memory/`); **read_task_plan** / **write_task_plan** (SQLite **`tasks.plan_json`**, same session only) | Arbitrary filesystem read, ad-hoc SQL, web/search, plugin DAGs |
+| **Tools** | **Allowlisted shell**; **append_master_section** / **append_soul_fragment**; **read_task_plan** / **write_task_plan**; optional **workspace file** tools; optional **`web_search`** / **`fetch_url_text`** (see §7); optional **`list_session_web_sources`** (read-only index of `web_sources` for the current session) | **Plugin DAGs**; **arbitrary** ad-hoc SQL from the model; unconstrained web beyond configured tools |
 | **Persistence layering** | **`PersistentState`** (`ada/persistent/store.py`) owns SQL; **`QueryEngine`** adds debounced assistant streaming | Optional further split to match every line of a separate `ARCHITECTURE.md` if you maintain one |
-| **Data lakes / RAG** | — | Structured datalake tables, **Chroma** (or other vector store), skill/pipeline library |
+| **Data lakes / RAG** | Bounded **`web_sources`** rows (excerpts + metadata; not embeddings) when web tools persist | **Embeddings**, semantic retrieval over all history, **Chroma** (or other vector store), full **datalake** pipelines, skill library as in north-star docs |
 | **Scheduling** | Daemon polls **pending** tasks | Daily dream job, external orchestration left to **cron** + `ada dream` |
 
-**Summary:** ADA is a **working local agent loop** with **Gemini streaming**, **multi-leg tool rounds**, **durable SQLite transcript**, **memory file evolution** (chat tools + manual dream), **task clipboard** (`plan_json` tools), and **hardening** (idle/wall stream timeouts, executor `discard()` on retry). It is **not** yet the full “consciousness + lakes + automated dream” product end-to-end—especially **RAG/datalake** and **scheduled** compression.
+**Summary:** ADA is a **working local agent loop** with **Gemini streaming**, **multi-leg tool rounds**, **durable SQLite transcript**, **memory file evolution** (chat tools + manual dream), **task clipboard** (`plan_json` tools), **goal queue + worker**, optional **web search/fetch** and **`web_sources`** logging, and **hardening** (idle/wall stream timeouts, executor `discard()` on retry). It is **not** yet the full “consciousness + lakes + automated dream” product end-to-end—especially **semantic RAG / embeddings**, a full **datalake**, and **scheduled** compression.
 
 ---
 
@@ -60,6 +67,7 @@ Rough data and control flow:
 flowchart LR
   subgraph entry [Entry]
     Chat[ada chat]
+    GoalCLI[ada goal]
     Daemon[ada daemon]
     Dream[ada dream]
   end
@@ -75,6 +83,7 @@ flowchart LR
     Mem[memory/*.md]
   end
   Chat --> QE
+  GoalCLI --> DB
   Daemon --> QE
   Dream --> QE
   QE --> PS
@@ -90,7 +99,7 @@ flowchart LR
 - **`QueryEngine`**: same public API for app code; owns **debounced** partial assistant text flushes during streaming; delegates persistence to `PersistentState`.
 - **`orchestrator`**: one **user** row per turn, then a **loop** of model **legs** (stream → optional tool calls → persist tool rows → next leg) up to `ADA_MAX_TOOL_ROUNDS`.
 - **`adapters/gemini_stream`**: normalizes stream chunks (text + function calls), **manual** function calling (`AutomaticFunctionCallingConfig(disable=True)`), optional **chunk idle** and **leg wall-clock** timeouts (`StreamTimeout`).
-- **`tool_executor`**: ordered execution; **shell** via allowlist + `asyncio.create_subprocess_exec`; **memory** appends via `memory_io` (locked + backup); **plan** tools via session-bound hooks into **`QueryEngine`** (no extra DB connections).
+- **`tool_executor`**: ordered execution; **shell** via allowlist + `asyncio.create_subprocess_exec`; **memory** appends via `memory_io` (locked + backup); **plan** tools via session-bound hooks into **`QueryEngine`** (no extra DB connections); optional **web** HTTP (Serper / fetch) and **bounded inserts** into **`web_sources`** via `web_persistence` when web tools are enabled.
 
 Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logic.md).
 
@@ -107,6 +116,7 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 | **`state`** | String KV cache (e.g. boot flags, last leg tokens, `dream.last_run_at`) |
 | **`usage_ledger`** | Append-only-ish log: `session_id`, `model`, `input_tokens`, `output_tokens`, `recorded_at` |
 | **`action_log`** | Audit: `kind`, `payload_json`, optional `session_id`, `created_at` (dream start/complete/fail, **`file_access_denied`**, etc.) |
+| **`web_sources`** | Bounded **Phase B** log per session: `url`, `source_kind` (`search_hit` \| `page_fetch`), optional `query_text`, `content_excerpt`, `content_sha256`, `fetched_at` (written when web tools persist; not a vector index) |
 
 Indexes: messages by `(session_id, sequence)` and `(session_id, tombstone)`; usage and action_log by time/session as in `src/ada/db/schema.sql`.
 
@@ -134,7 +144,7 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **`ada chat --new-session`** | New `tasks.id` / transcript chain |
 | **`ada goal add …`** | Enqueue a **`task_kind=goal`** row with `status=pending` (optional **`--plan-json`**). **Does not** call the model; **`GEMINI_API_KEY`** not required. |
 | **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--limit`**). |
-| **`ada goal show <id>`** | Print one goal task’s goal, status, and `plan_json`. |
+| **`ada goal show <id>`** | Print one goal task’s metadata (`goal`, status, `plan_json`, timestamps). The **final model reply** for a completed goal is in **`tasks.current_output`** and in **`messages`** for that `tasks.id` (use SQLite or a small query if you need the full text in the terminal). |
 | **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**, run **one** `orchestrate_turn` per dequeue, set `completed` / `failed`. Run under **systemd** (or similar), not cron. |
 | **`ada dream`** | **Manual** compression: model summarizes recent transcript + usage → append **master** / optional **soul**; logs **`action_log`**; **`--dry-run`**, **`--session N`**, **`--max-messages`** |
 
@@ -145,7 +155,7 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 ## 6. Agentic turn (how one user message runs)
 
 1. **`persist_user`** — user row committed before streaming.
-2. For each **model leg** (up to cap): load chain → **`chain_rows_to_contents`** → **`stream_one_model_leg`** with merged **Tool** declarations (shell ± memory ± plan clipboard).
+2. For each **model leg** (up to cap): load chain → **`chain_rows_to_contents`** → **`stream_one_model_leg`** with merged **Tool** declarations (shell ± memory ± plan clipboard ± file ± web ± `list_session_web_sources` as configured).
 3. **Assistant** row updated with final text + optional `function_call` parts + **`meta`** (usage/finish_reason).
 4. **`record_usage`** → `usage_ledger` + `state` last-leg keys when token ints exist.
 5. If the model returned **tool calls**, **`StreamingToolExecutor.run_ordered`** runs them; **`persist_tool_result`** rows; next leg’s parent is **chain head** (usually last tool row).
@@ -165,8 +175,12 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **`write_task_plan`** | Replaces **`plan_json`** after **`json.loads`** validation | Same session only; invalid JSON returns a tool error (no commit) |
 | **`list_workspace_directory`** | Non-recursive `scandir` under sandbox roots | Same path rules as read/write; entry cap **`ADA_FILE_MAX_LIST_ENTRIES`** |
 | **`read_workspace_file`** / **`write_workspace_file`** | Resolved path must lie under **`ADA_FILE_SANDBOX_ROOTS`** | **Denylist:** always **`ADA_DATA_DIR`** and **`memory/`**; **ADA project root** is denied when the sandbox root strictly contains the repo (e.g. `/home/pi` with ADA in `/home/pi/ADA`). Basenames **`.env`**, **`id_rsa`**, **`*.pem`** blocked; optional **`ADA_FILE_DENY_PREFIXES`**, **`ADA_FILE_DENYLIST_FILE`**, **`ADA_FILE_DENY_BASENAMES`**. Denied attempts can be logged to **`action_log`** as **`file_access_denied`** when **`ADA_FILE_AUDIT_DENIALS=1`**. |
+| **`web_search`** | Serper Google organic JSON API; returns titles, URLs, snippets | Requires **`ADA_SERPER_API_KEY`** or **`SERPER_API_KEY`**; capped by **`ADA_WEB_SEARCH_MAX_RESULTS`** / timeout envs |
+| **`fetch_url_text`** | HTTPS page text (Jina Reader prefix or direct **httpx** per **`ADA_WEB_FETCH_MODE`**) | Caps: max URLs, chars, bytes, timeout; optional **`ADA_WEB_FETCH_HOST_ALLOWLIST`** (SSRF-minded); content may be **truncated** |
+| **`list_session_web_sources`** | Read recent **`web_sources`** rows for the **current** `tasks.id` only | **`ADA_ENABLE_WEB_SOURCES_TOOL=1`**; read-only; no HTTP |
 | **Disable memory tools** | `ADA_ENABLE_MEMORY_TOOLS=0` | Shell-only declarations remain if allowlist non-empty |
 | **Disable plan tools** | `ADA_ENABLE_PLAN_TOOLS=0` | Clipboard declarations omitted |
+| **Disable web tools** | `ADA_ENABLE_WEB_TOOLS=0` (default) | No `web_search` / `fetch_url_text` declarations; no Serper spend |
 
 The model **cannot** run arbitrary SQL or read arbitrary files unless you **explicitly** add allowlisted commands or new tools. **Symlink following** for read/write uses `Path.resolve()` like before—treat untrusted trees with care.
 
@@ -202,6 +216,7 @@ See **`.env.example`** for the full list. Important groups:
 - **Memory / dream:** `ADA_ENABLE_MEMORY_TOOLS`, `ADA_MEMORY_MAX_APPEND_BYTES`, `ADA_MEMORY_MAX_FILE_BYTES`, `ADA_DREAM_MAX_SOUL_BYTES`, `ADA_DREAM_MAX_MESSAGES`
 - **Clipboard:** `ADA_ENABLE_PLAN_TOOLS` (default on: **`read_task_plan`** / **`write_task_plan`**)
 - **Workspace file tools:** `ADA_ENABLE_FILE_TOOLS`, `ADA_FILE_SANDBOX_ROOTS`, read/write/list caps, **`ADA_FILE_MAX_LIST_ENTRIES`**, **`ADA_FILE_DENY_PREFIXES`**, **`ADA_FILE_DENYLIST_FILE`**, **`ADA_FILE_DENY_BASENAMES`**, **`ADA_FILE_AUDIT_DENIALS`**
+- **Web tools & `web_sources`:** `ADA_ENABLE_WEB_TOOLS`, `ADA_SERPER_API_KEY` / `SERPER_API_KEY`, search/fetch caps and timeouts, **`ADA_WEB_FETCH_MODE`**, **`ADA_JINA_API_KEY`** (if using Jina), **`ADA_ENABLE_WEB_SOURCES_TOOL`** — see **`.env.example`**
 
 `Settings.load()` in `src/ada/config.py` is the single source of parsed values.
 
@@ -235,8 +250,9 @@ Suggested **next planning** items (prioritize as you like):
 
 1. **Operator observability** — read-only **`get_usage_summary`** tool or allowlisted `sqlite3` one-liner so “tokens used” questions are grounded.
 2. **Scheduled dream** — `cron` / systemd timer calling `ada dream` (no in-repo scheduler yet).
-3. **Datalake / RAG / skills** — new storage and ingestion paths (out of scope for current package).
-4. **Docs sync** — refresh [`docs/system_architecure.md`](docs/system_architecure.md) to match this README (tools, tables, dream).
+3. **Datalake / RAG / skills** — embeddings / semantic retrieval over stored chunks, graph memory, richer ingestion pipelines (north-star; **`web_sources`** today is audit-grade excerpts, not vector RAG).
+4. **Docs sync** — refresh [`docs/system_architecure.md`](docs/system_architecure.md) to match this README (tools, tables, dream, goals, web).
+5. **Cross-session recall** — tools or prompts so **`ada chat`** can pull **`tasks.current_output`** / transcripts from **goal** `tasks.id` without manual SQLite (optional UX improvement).
 
 ---
 
@@ -248,4 +264,4 @@ Suggested **next planning** items (prioritize as you like):
 
 ---
 
-*Version note: README reflects the **repository as of the last update**; grep `plan_json`, `read_task_plan`, and `action_log` in `src/ada` to confirm behavior if you fork or refactor.*
+*Version note: README reflects the **repository as of the last update**; grep `web_sources`, `web_search`, `task_kind`, `plan_json`, `read_task_plan`, and `action_log` in `src/ada` to confirm behavior if you fork or refactor.*
