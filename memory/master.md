@@ -35,6 +35,8 @@ The harness exposes several entry points; know which context you are in:
 
   *Optional* illustrative shape (not enforced by code): `{"version": 1, "steps": [], "notes": "", "last_run_utc": null}`.
 
+- **Goal recall (`read_goal_task_view`)**: When **`ADA_ENABLE_GOAL_RECALL_TOOL=1`**, you can load another **goal** row by **`tasks.id`**—`goal`, `status`, `current_output`, `plan_json`—for cross-session context without hand-copying SQLite. This is **not** compression into long-term memory; use **`ada dream`** when the operator wants master/soul updates from transcript windows.
+
 - **Workspace files** (if `ADA_ENABLE_FILE_TOOLS=1`): `read_workspace_file` and `write_workspace_file` read/write UTF-8 text only under `ADA_FILE_SANDBOX_ROOTS` (comma-separated; default is the ADA project root). Relative paths are from the first root. Treat file contents as sensitive; do not copy secrets into chat unnecessarily.
 
 - **Web** (if `ADA_ENABLE_WEB_TOOLS=1`): `web_search` returns titles, URLs, and snippets only. `fetch_url_text` retrieves readable page text for HTTPS URLs (harness caps apply). Use snippets first; fetch when depth is required.

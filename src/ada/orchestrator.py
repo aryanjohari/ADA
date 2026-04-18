@@ -68,6 +68,7 @@ async def orchestrate_turn(
     enable_memory_tools: bool = True,
     memory_config: MemoryToolConfig | None = None,
     include_plan_tools: bool = False,
+    include_goal_recall_tool: bool = False,
     file_config: FileToolConfig | None = None,
     max_session_tokens: int = 50000,
     on_file_guard_violation: Callable[[str, str, str], Coroutine[Any, Any, None]]
@@ -88,6 +89,7 @@ async def orchestrate_turn(
         allowed_exact_commands=allow,
         include_memory_tools=enable_memory_tools,
         include_plan_tools=include_plan_tools,
+        include_goal_recall_tool=include_goal_recall_tool,
         include_file_tools=file_config is not None,
         include_web_search=web_config is not None and bool(web_config.serper_api_key),
         include_web_fetch=web_config is not None,
@@ -117,6 +119,11 @@ async def orchestrate_turn(
         else None
     )
 
+    async def _goal_recall_bound(task_id: int) -> dict[str, Any]:
+        return await qe.get_goal_task_view_for_tool(task_id)
+
+    goal_recall_reader = _goal_recall_bound if include_goal_recall_tool else None
+
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
         tools_were_persisted = [False]
@@ -139,6 +146,7 @@ async def orchestrate_turn(
             web_sources_reader=_web_sources_list_bound
             if enable_list_session_web_sources
             else None,
+            goal_recall_reader=goal_recall_reader,
             on_file_guard_violation=on_file_guard_violation,
         )
         try:
@@ -164,6 +172,7 @@ async def orchestrate_turn(
                 and bool(web_config.serper_api_key),
                 web_fetch_configured=web_config is not None,
                 web_sources_list_configured=enable_list_session_web_sources,
+                goal_recall_configured=goal_recall_reader is not None,
                 max_session_tokens=max_session_tokens,
                 debug_stream=dbg,
             )
@@ -205,6 +214,7 @@ async def _agentic_loop(
     web_search_configured: bool,
     web_fetch_configured: bool,
     web_sources_list_configured: bool,
+    goal_recall_configured: bool,
     max_session_tokens: int,
     debug_stream: bool,
 ) -> str:
@@ -355,6 +365,14 @@ async def _agentic_loop(
         if needs_ws_list and not web_sources_list_configured:
             raise StreamFailed(
                 "model requested list_session_web_sources but it is not configured"
+            )
+
+        needs_goal_recall = any(
+            c.name == "read_goal_task_view" for c in leg.function_calls
+        )
+        if needs_goal_recall and not goal_recall_configured:
+            raise StreamFailed(
+                "model requested read_goal_task_view but it is not configured"
             )
 
         results = await executor.run_ordered(leg.function_calls)

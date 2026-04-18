@@ -144,6 +144,27 @@ def _file_function_declarations() -> list[types.FunctionDeclaration]:
     ]
 
 
+def _goal_recall_function_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="read_goal_task_view",
+        description=(
+            "Read-only: load one queued/completed goal task by tasks.id from SQLite. "
+            "Use to recall another goal's outcome (goal text, status, current_output, plan_json) "
+            "across sessions—unlike read_task_plan, which is bound to the current session task id."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "integer",
+                    "description": "tasks.id for a task_kind=goal row.",
+                },
+            },
+            "required": ["task_id"],
+        },
+    )
+
+
 def _plan_function_declarations() -> list[types.FunctionDeclaration]:
     return [
         types.FunctionDeclaration(
@@ -291,6 +312,7 @@ def build_agent_tools(
     allowed_exact_commands: frozenset[str],
     include_memory_tools: bool,
     include_plan_tools: bool = False,
+    include_goal_recall_tool: bool = False,
     include_file_tools: bool = False,
     include_web_search: bool = False,
     include_web_fetch: bool = False,
@@ -302,6 +324,8 @@ def build_agent_tools(
         decls.extend(_memory_function_declarations())
     if include_plan_tools:
         decls.extend(_plan_function_declarations())
+    if include_goal_recall_tool:
+        decls.append(_goal_recall_function_declaration())
     if include_file_tools:
         decls.extend(_file_function_declarations())
     decls.extend(

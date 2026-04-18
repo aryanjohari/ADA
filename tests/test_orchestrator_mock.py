@@ -315,3 +315,111 @@ async def test_orchestrator_session_token_limit_kill_switch(
         assert row[0] == "session_token_limit_exceeded"
     finally:
         await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_read_goal_task_view_not_configured_raises(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    async def leg_with_goal_view(**kwargs: object) -> StreamLegResult:
+        return StreamLegResult(
+            "",
+            [
+                CompletedFunctionCall(
+                    name="read_goal_task_view",
+                    args={"task_id": 1},
+                    id="gv1",
+                )
+            ],
+            {},
+            None,
+        )
+
+    monkeypatch.setattr(orch, "stream_one_model_leg", leg_with_goal_view)
+
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
+        with pytest.raises(orch.StreamFailed, match="read_goal_task_view"):
+            await orch.orchestrate_turn(
+                qe,
+                session_id=tid,
+                user_text="hi",
+                system_instruction="sys",
+                api_key="k",
+                model="m",
+                max_retries=0,
+                enable_memory_tools=False,
+                include_plan_tools=False,
+                include_goal_recall_tool=False,
+            )
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_goal_recall_tool_round(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    from ada.query_engine import TASK_KIND_GOAL
+
+    calls = {"n": 0}
+
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        gid = await qe.insert_task("recall me", status="completed", task_kind=TASK_KIND_GOAL)
+        await qe.update_task(gid, current_output="stored")
+
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
+
+        async def two_leg_bound(**kwargs: object) -> StreamLegResult:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return StreamLegResult(
+                    "",
+                    [
+                        CompletedFunctionCall(
+                            name="read_goal_task_view",
+                            args={"task_id": gid},
+                            id="gv1",
+                        )
+                    ],
+                    {},
+                    None,
+                )
+            return StreamLegResult("Done after recall.", [], {}, None)
+
+        monkeypatch.setattr(orch, "stream_one_model_leg", two_leg_bound)
+
+        out = await orch.orchestrate_turn(
+            qe,
+            session_id=tid,
+            user_text="hi",
+            system_instruction="sys",
+            api_key="k",
+            model="m",
+            max_retries=0,
+            enable_memory_tools=False,
+            include_plan_tools=False,
+            include_goal_recall_tool=True,
+        )
+        assert out == "Done after recall."
+        chain = await qe.load_chain_for_api(tid)
+        tool_parts = [
+            p
+            for row in chain
+            if row["role"] == "tool"
+            for p in row["parts"]
+            if p.get("type") == "function_response"
+        ]
+        assert any(p.get("name") == "read_goal_task_view" for p in tool_parts)
+    finally:
+        await qe.close()

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import io
+from contextlib import redirect_stderr, redirect_stdout
+
 import pytest
 
-from ada.goal_cli import async_main
+from ada.goal_cli import GOAL_SHOW_OUTPUT_PREVIEW_CHARS, async_main
 from ada.query_engine import TASK_KIND_CHAT, TASK_KIND_GOAL, QueryEngine
 
 
@@ -24,6 +27,20 @@ async def test_fetch_pending_skips_pending_chat_tasks(tmp_path, schema_sql_path)
         assert p is not None
         assert p[0] == gid
         assert p[1] == "background work"
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_get_goal_task_includes_current_output(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        gid = await qe.insert_task("g", status="completed", task_kind=TASK_KIND_GOAL)
+        await qe.update_task(gid, current_output="final answer")
+        r = await qe.get_goal_task(gid)
+        assert r["current_output"] == "final answer"
     finally:
         await qe.close()
 
@@ -57,8 +74,47 @@ async def test_goal_cli_add_list_show(tmp_path, schema_sql_path, monkeypatch):
         assert len(rows) >= 1
         assert any(r["goal"] == "hello world" for r in rows)
         tid = next(r["id"] for r in rows if r["goal"] == "hello world")
-        assert await async_main(["show", str(tid)]) == 0
+        await qe.update_task(tid, current_output="daemon reply")
+        buf = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(err):
+            rc = await async_main(["show", str(tid)])
+        assert rc == 0
+        out = buf.getvalue()
+        assert "current_output:" in out
+        assert "daemon reply" in out
         assert await async_main(["list", "--limit", "5"]) == 0
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_goal_cli_show_truncates_long_output(tmp_path, schema_sql_path, monkeypatch):
+    monkeypatch.setenv("ADA_DATA_DIR", str(tmp_path))
+    assert await async_main(["add", "x"]) == 0
+    db_file = tmp_path / "state.db"
+    qe = QueryEngine(db_file, schema_sql_path)
+    await qe.connect()
+    try:
+        rows = await qe.list_goal_tasks(limit=1)
+        tid = rows[0]["id"]
+        long_out = "Z" * (GOAL_SHOW_OUTPUT_PREVIEW_CHARS + 500)
+        await qe.update_task(tid, current_output=long_out)
+        buf = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(err):
+            rc = await async_main(["show", str(tid)])
+        assert rc == 0
+        body = buf.getvalue().split("current_output:\n", 1)[1]
+        assert len(body.rstrip("\n")) == GOAL_SHOW_OUTPUT_PREVIEW_CHARS
+        assert "truncated" in err.getvalue()
+        assert "--full" in err.getvalue()
+        buf2 = io.StringIO()
+        with redirect_stdout(buf2), redirect_stderr(io.StringIO()):
+            rc2 = await async_main(["show", str(tid), "--full"])
+        assert rc2 == 0
+        full_body = buf2.getvalue().split("current_output:\n", 1)[1]
+        assert full_body.rstrip("\n") == long_out
     finally:
         await qe.close()
 

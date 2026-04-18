@@ -76,6 +76,7 @@ class Settings:
     rewire_after_tombstone: bool
     enable_memory_tools: bool
     enable_plan_tools: bool
+    enable_goal_recall_tool: bool
     memory_backups_dir: Path
     memory_max_append_bytes: int
     memory_max_file_bytes: int
@@ -135,6 +136,9 @@ class Settings:
             "false",
             "no",
         )
+        goal_recall_tool = os.environ.get(
+            "ADA_ENABLE_GOAL_RECALL_TOOL", "1"
+        ).strip().lower() not in ("0", "false", "no")
         mem_append = int(os.environ.get("ADA_MEMORY_MAX_APPEND_BYTES", "8192"))
         mem_file = int(os.environ.get("ADA_MEMORY_MAX_FILE_BYTES", str(512 * 1024)))
         dream_soul = int(os.environ.get("ADA_DREAM_MAX_SOUL_BYTES", "1024"))
@@ -238,6 +242,7 @@ class Settings:
             rewire_after_tombstone=rewire,
             enable_memory_tools=mem_tools,
             enable_plan_tools=plan_tools,
+            enable_goal_recall_tool=goal_recall_tool,
             memory_backups_dir=memory_dir / "backups",
             memory_max_append_bytes=mem_append,
             memory_max_file_bytes=mem_file,

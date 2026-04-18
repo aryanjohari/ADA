@@ -151,6 +151,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
+                    include_goal_recall_tool=settings.enable_goal_recall_tool,
                     file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
                     on_file_guard_violation=file_guard_audit_hook(
@@ -202,6 +203,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     enable_memory_tools=settings.enable_memory_tools,
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
+                    include_goal_recall_tool=settings.enable_goal_recall_tool,
                     file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
                     on_file_guard_violation=file_guard_audit_hook(

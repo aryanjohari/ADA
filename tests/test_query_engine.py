@@ -3,7 +3,30 @@ from __future__ import annotations
 import aiosqlite
 import pytest
 
-from ada.query_engine import QueryEngine, ROLE_ASSISTANT, ROLE_USER
+from ada.query_engine import (
+    TASK_KIND_GOAL,
+    QueryEngine,
+    ROLE_ASSISTANT,
+    ROLE_USER,
+)
+
+
+@pytest.mark.asyncio
+async def test_get_goal_task_view_for_tool(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        gid = await qe.insert_task("g", status="completed", task_kind=TASK_KIND_GOAL)
+        await qe.update_task(gid, current_output="out")
+        v = await qe.get_goal_task_view_for_tool(gid)
+        assert v["task_id"] == gid
+        assert v["goal"] == "g"
+        assert v["status"] == "completed"
+        assert v["current_output"] == "out"
+        assert v["plan_json"] == "{}"
+    finally:
+        await qe.close()
 
 
 @pytest.mark.asyncio

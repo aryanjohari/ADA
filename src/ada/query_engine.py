@@ -237,6 +237,19 @@ class QueryEngine:
     async def get_goal_task(self, task_id: int) -> dict[str, Any]:
         return await self._store.get_goal_task(task_id)
 
+    async def get_goal_task_view_for_tool(self, task_id: int) -> dict[str, Any]:
+        """Read-only goal row fields for the read_goal_task_view tool (raises like get_goal_task)."""
+        r = await self.get_goal_task(task_id)
+        return {
+            "task_id": r["id"],
+            "goal": r["goal"],
+            "status": r["status"],
+            "current_output": r["current_output"],
+            "plan_json": r["plan_json"],
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+        }
+
     async def append_action_log(
         self,
         kind: str,

@@ -13,6 +13,8 @@ from ada.query_engine import TASK_KIND_GOAL, QueryEngine
 
 # Max goal text length (bytes) — pathological input guard
 GOAL_TEXT_MAX_CHARS = 32 * 1024
+# Default terminal preview for tasks.current_output in `goal show` (use --full for all)
+GOAL_SHOW_OUTPUT_PREVIEW_CHARS = 4000
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -51,6 +53,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
     show_p = sub.add_parser("show", help="Show one goal task by id")
     show_p.add_argument("task_id", type=int, help="tasks.id")
+    show_p.add_argument(
+        "--full",
+        action="store_true",
+        help="Print full current_output (default: preview if very long)",
+    )
 
     return p.parse_args(argv)
 
@@ -110,6 +117,18 @@ async def _run_show(qe: QueryEngine, args: argparse.Namespace) -> int:
     print(f"updated_at:\t{r['updated_at']}")
     print(f"goal:\t{r['goal']}")
     print(f"plan_json:\t{r['plan_json']}")
+    out = r.get("current_output", "")
+    print("current_output:")
+    if args.full or len(out) <= GOAL_SHOW_OUTPUT_PREVIEW_CHARS:
+        print(out)
+    else:
+        preview = out[:GOAL_SHOW_OUTPUT_PREVIEW_CHARS]
+        print(preview)
+        print(
+            f"\n… truncated ({len(out)} characters total). "
+            f"Re-run with: ada goal show {args.task_id} --full",
+            file=sys.stderr,
+        )
     return 0
 
 

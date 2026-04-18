@@ -593,7 +593,7 @@ class PersistentState:
         assert self._conn is not None
         cur = await self._conn.execute(
             """
-            SELECT id, goal, status, plan_json, task_kind, created_at, updated_at
+            SELECT id, goal, status, plan_json, current_output, task_kind, created_at, updated_at
             FROM tasks WHERE id = ?
             """,
             (task_id,),
@@ -601,16 +601,17 @@ class PersistentState:
         row = await cur.fetchone()
         if not row:
             raise LookupError(f"no task with id={task_id}")
-        if str(row[4]) != TASK_KIND_GOAL:
-            raise ValueError(f"task {task_id} is not a goal task (task_kind={row[4]!r})")
+        if str(row[5]) != TASK_KIND_GOAL:
+            raise ValueError(f"task {task_id} is not a goal task (task_kind={row[5]!r})")
         return {
             "id": int(row[0]),
             "goal": str(row[1]),
             "status": str(row[2]),
             "plan_json": str(row[3]),
-            "task_kind": str(row[4]),
-            "created_at": str(row[5]),
-            "updated_at": str(row[6]),
+            "current_output": str(row[4]),
+            "task_kind": str(row[5]),
+            "created_at": str(row[6]),
+            "updated_at": str(row[7]),
         }
 
     async def append_action_log(

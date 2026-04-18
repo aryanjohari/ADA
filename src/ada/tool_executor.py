@@ -97,7 +97,7 @@ def build_web_tool_config(settings: Settings) -> WebToolConfig | None:
 class StreamingToolExecutor:
     """
     Dispatches allowlisted shell, optional memory-append tools, optional plan_json hooks,
-    and optional sandboxed workspace file read/write.
+    optional read_goal_task_view (goal recall), and optional sandboxed workspace file read/write.
     Single-writer memory I/O uses memory_io global lock.
     """
 
@@ -114,6 +114,8 @@ class StreamingToolExecutor:
         web: WebToolConfig | None = None,
         web_sources_reader: Callable[[int], Awaitable[list[dict[str, Any]]]]
         | None = None,
+        goal_recall_reader: Callable[[int], Awaitable[dict[str, Any]]]
+        | None = None,
         on_file_guard_violation: Callable[[str, str, str], Awaitable[None]]
         | None = None,
     ) -> None:
@@ -126,6 +128,7 @@ class StreamingToolExecutor:
         self._file_config = file_config
         self._web = web
         self._web_sources_reader = web_sources_reader
+        self._goal_recall_reader = goal_recall_reader
         self._on_file_guard_violation = on_file_guard_violation
         self.discarded = False
 
@@ -175,6 +178,8 @@ class StreamingToolExecutor:
             return await self._fetch_url_text(call)
         if call.name == "list_session_web_sources":
             return await self._list_session_web_sources(call)
+        if call.name == "read_goal_task_view":
+            return await self._read_goal_task_view(call)
         return {"error": f"unknown tool: {call.name}"}
 
     async def _list_session_web_sources(
@@ -277,6 +282,23 @@ class StreamingToolExecutor:
         except (LookupError, ValueError) as e:
             return {"error": str(e)}
         return {"ok": True, "chars": len(text)}
+
+    async def _read_goal_task_view(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._goal_recall_reader is None:
+            return {"error": "read_goal_task_view not configured"}
+        raw = call.args.get("task_id")
+        if raw is None:
+            return {"error": "task_id required"}
+        try:
+            task_id = int(raw)
+        except (TypeError, ValueError):
+            return {"error": "task_id must be an integer"}
+        try:
+            return await self._goal_recall_reader(task_id)
+        except LookupError as e:
+            return {"error": str(e)}
+        except ValueError as e:
+            return {"error": str(e)}
 
     async def _shell(self, call: CompletedFunctionCall) -> dict[str, Any]:
         cmd = (call.args.get("command") or "").strip()
