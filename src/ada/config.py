@@ -105,6 +105,15 @@ class Settings:
     jina_api_key: str
     enable_web_sources_tool: bool
     debug_stream: bool
+    enable_knowledge_tools: bool
+    knowledge_feed_host_allowlist: frozenset[str]
+    ingest_rss_max_items: int
+    ingest_rss_max_response_bytes: int
+    ingest_rss_timeout_sec: float
+    enable_knowledge_embeddings: bool
+    knowledge_embedding_model: str
+    knowledge_embedding_dim: int
+    knowledge_embedding_min_cosine: float
 
     @classmethod
     def load(cls) -> "Settings":
@@ -222,6 +231,26 @@ class Settings:
             "yes",
             "on",
         )
+        knowledge_tools = os.environ.get(
+            "ADA_ENABLE_KNOWLEDGE_TOOLS", "0"
+        ).strip().lower() not in ("0", "false", "no")
+        know_hosts_raw = os.environ.get("ADA_KNOWLEDGE_FEED_HOST_ALLOWLIST", "").strip()
+        knowledge_feed_host_allowlist = frozenset(
+            h.strip().lower() for h in know_hosts_raw.split(",") if h.strip()
+        )
+        ingest_rss_max_items = max(1, int(os.environ.get("ADA_INGEST_RSS_MAX_ITEMS", "50")))
+        ingest_rss_max_response_bytes = max(
+            4096, int(os.environ.get("ADA_INGEST_RSS_MAX_RESPONSE_BYTES", "2000000"))
+        )
+        ingest_rss_timeout_sec = float(os.environ.get("ADA_INGEST_RSS_TIMEOUT_SEC", "45"))
+        know_embed = os.environ.get(
+            "ADA_KNOWLEDGE_EMBEDDINGS", "0"
+        ).strip().lower() not in ("0", "false", "no")
+        know_emb_model = os.environ.get(
+            "ADA_KNOWLEDGE_EMBEDDING_MODEL", "gemini-embedding-001"
+        ).strip()
+        know_emb_dim = max(8, int(os.environ.get("ADA_KNOWLEDGE_EMBEDDING_DIM", "768")))
+        know_emb_min = float(os.environ.get("ADA_KNOWLEDGE_EMBEDDING_MIN_COSINE", "0.25"))
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -271,6 +300,15 @@ class Settings:
             jina_api_key=jina_key,
             enable_web_sources_tool=web_sources_tool,
             debug_stream=debug_stream,
+            enable_knowledge_tools=knowledge_tools,
+            knowledge_feed_host_allowlist=knowledge_feed_host_allowlist,
+            ingest_rss_max_items=ingest_rss_max_items,
+            ingest_rss_max_response_bytes=ingest_rss_max_response_bytes,
+            ingest_rss_timeout_sec=ingest_rss_timeout_sec,
+            enable_knowledge_embeddings=know_embed,
+            knowledge_embedding_model=know_emb_model or "gemini-embedding-001",
+            knowledge_embedding_dim=know_emb_dim,
+            knowledge_embedding_min_cosine=know_emb_min,
         )
 
     def ensure_data_dir(self) -> None:

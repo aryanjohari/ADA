@@ -257,6 +257,111 @@ def _web_function_declarations(
     return out
 
 
+def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
+    return [
+        types.FunctionDeclaration(
+            name="search_knowledge",
+            description=(
+                "Search the local knowledge base (ingested RSS items and other facts). "
+                "Uses keyword search (OR of tokens, BM25-ranked) and optionally Gemini embeddings "
+                "when ADA_KNOWLEDGE_EMBEDDINGS=1 (semantic/hybrid modes). "
+                "Returns items with id, title, link (when present), and excerpt — cite by id. "
+                "Call before claiming facts from memory when the topic may have stored evidence."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Short phrase or keywords (natural language ok; stopwords ignored).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max items to return (harness caps).",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Optional: filter to items whose tags include this string.",
+                    },
+                    "ingested_after": {
+                        "type": "string",
+                        "description": "Optional ISO-like time lower bound for ingested_at.",
+                    },
+                    "ingested_before": {
+                        "type": "string",
+                        "description": "Optional ISO-like time upper bound for ingested_at.",
+                    },
+                    "prefer_fts": {
+                        "type": "boolean",
+                        "description": "Prefer FTS5 search; false uses substring fallback.",
+                    },
+                    "search_mode": {
+                        "type": "string",
+                        "description": "lexical (keywords only), semantic (vectors only, needs embeddings), "
+                        "or hybrid (RRF merge; default when embeddings enabled).",
+                        "enum": ["lexical", "semantic", "hybrid"],
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="record_synthesis",
+            description=(
+                "Store a short synthesis or conclusion tied to knowledge item ids (citations). "
+                "Use after search_knowledge when you consolidate evidence. "
+                "ref_item_ids must list integer ids from search_knowledge results."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "body": {
+                        "type": "string",
+                        "description": "Synthesis text (Markdown ok).",
+                    },
+                    "ref_item_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Knowledge item ids this synthesis is grounded in.",
+                    },
+                    "task_id": {
+                        "type": "integer",
+                        "description": "Optional tasks.id; defaults to current session task when omitted.",
+                    },
+                },
+                "required": ["body", "ref_item_ids"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="add_knowledge_source",
+            description=(
+                "Register a new RSS or web feed URL in SQLite (knowledge_sources). "
+                "RSS feeds are fetched into knowledge_items by the operator job `ada ingest-rss` (e.g. cron). "
+                "Only http(s) URLs; optional host allowlist from ADA_KNOWLEDGE_FEED_HOST_ALLOWLIST."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "description": "Source kind: 'rss' (Atom/RSS feed) or 'web' (placeholder for future use).",
+                        "enum": ["rss", "web"],
+                    },
+                    "base_url": {
+                        "type": "string",
+                        "description": "Feed or site URL (https recommended).",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Optional human-readable label.",
+                    },
+                },
+                "required": ["kind", "base_url"],
+            },
+        ),
+    ]
+
+
 def _list_session_web_sources_declaration() -> types.FunctionDeclaration:
     return types.FunctionDeclaration(
         name="list_session_web_sources",
@@ -317,6 +422,7 @@ def build_agent_tools(
     include_web_search: bool = False,
     include_web_fetch: bool = False,
     include_list_session_web_sources: bool = False,
+    include_knowledge_tools: bool = False,
 ) -> types.Tool:
     decls: list[types.FunctionDeclaration] = [_check_token_usage_declaration()]
     decls.extend(build_shell_declarations(allowed_exact_commands=allowed_exact_commands))
@@ -336,6 +442,8 @@ def build_agent_tools(
     )
     if include_list_session_web_sources:
         decls.append(_list_session_web_sources_declaration())
+    if include_knowledge_tools:
+        decls.extend(_knowledge_function_declarations())
     return types.Tool(function_declarations=decls)
 
 

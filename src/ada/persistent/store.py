@@ -11,9 +11,20 @@ from typing import Any, Literal
 import aiosqlite
 
 TaskKind = Literal["chat", "goal"]
+KnowledgeKind = Literal["api", "rss", "web"]
 TASK_KIND_CHAT: TaskKind = "chat"
 TASK_KIND_GOAL: TaskKind = "goal"
 
+
+@dataclass(frozen=True)
+class KnowledgeItemInsertResult:
+    """Result of insert_knowledge_item (dedupe may skip insert)."""
+
+    id: int
+    inserted: bool
+
+from ada.knowledge_embeddings import blob_to_float32_list, cosine_similarity
+from ada.knowledge_search import build_fts_match_query, reciprocal_rank_fusion
 from ada.transcript_format import (
     ROLE_ASSISTANT,
     ROLE_SYSTEM,
@@ -116,6 +127,241 @@ class PersistentState:
                 "CREATE INDEX IF NOT EXISTS idx_web_sources_session_fetched "
                 "ON web_sources(session_id, fetched_at DESC)"
             )
+
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_sources'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE knowledge_sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web')),
+                    label TEXT,
+                    base_url TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            await self._conn.execute(
+                """
+                CREATE TABLE knowledge_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_id INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+                    external_id TEXT,
+                    published_at TEXT,
+                    ingested_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    content_excerpt TEXT NOT NULL DEFAULT '',
+                    payload_json TEXT,
+                    content_hash TEXT NOT NULL
+                )
+                """
+            )
+            await self._conn.execute(
+                """
+                CREATE INDEX idx_knowledge_items_source_ingested
+                    ON knowledge_items(source_id, ingested_at DESC)
+                """
+            )
+            await self._conn.execute(
+                """
+                CREATE UNIQUE INDEX idx_knowledge_items_source_external
+                    ON knowledge_items(source_id, external_id)
+                    WHERE external_id IS NOT NULL
+                """
+            )
+            await self._conn.execute(
+                """
+                CREATE TABLE knowledge_synthesis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    body TEXT NOT NULL,
+                    ref_item_ids_json TEXT NOT NULL DEFAULT '[]',
+                    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            await self._conn.executescript(self._knowledge_fts_ddl())
+
+        await self._ensure_knowledge_item_embeddings_table()
+        await self._migrate_knowledge_fts_if_needed()
+        await self._migrate_knowledge_fts_payload_doc_v1()
+
+    async def _ensure_knowledge_item_embeddings_table(self) -> None:
+        """Create knowledge_item_embeddings when upgrading older DBs."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_item_embeddings'"
+        )
+        if await cur.fetchone() is not None:
+            return
+        await self._conn.executescript(
+            """
+            CREATE TABLE knowledge_item_embeddings (
+                item_id INTEGER NOT NULL REFERENCES knowledge_items(id) ON DELETE CASCADE,
+                model TEXT NOT NULL,
+                dim INTEGER NOT NULL,
+                embedding BLOB NOT NULL,
+                content_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (item_id, model)
+            );
+            CREATE INDEX idx_knowledge_embeddings_model
+                ON knowledge_item_embeddings(model);
+            """
+        )
+        await self._conn.commit()
+
+    @staticmethod
+    def _knowledge_fts_doc_select_expr(alias: str = "") -> str:
+        """SQL expression for indexed doc text (keep in sync with FTS triggers)."""
+        p = f"{alias}." if alias else ""
+        return (
+            f"{p}content_excerpt || ' ' || {p}tags_json || ' ' || "
+            f"COALESCE(json_extract({p}payload_json, '$.link'), '') || ' ' || "
+            f"COALESCE(json_extract({p}payload_json, '$.title'), '') || ' ' || "
+            f"COALESCE(json_extract({p}payload_json, '$.feed_url'), '')"
+        )
+
+    def _knowledge_fts_ddl(self) -> str:
+        return """
+            CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_items_fts USING fts5(
+                doc,
+                content='',
+                tokenize='porter unicode61'
+            );
+            CREATE TRIGGER IF NOT EXISTS knowledge_items_ai AFTER INSERT ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(rowid, doc)
+                VALUES (
+                    new.id,
+                    new.content_excerpt || ' ' || new.tags_json || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.link'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.title'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.feed_url'), '')
+                );
+            END;
+            CREATE TRIGGER IF NOT EXISTS knowledge_items_ad AFTER DELETE ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid)
+                VALUES('delete', old.id);
+            END;
+            CREATE TRIGGER IF NOT EXISTS knowledge_items_au AFTER UPDATE ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid)
+                VALUES('delete', old.id);
+                INSERT INTO knowledge_items_fts(rowid, doc)
+                VALUES (
+                    new.id,
+                    new.content_excerpt || ' ' || new.tags_json || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.link'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.title'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.feed_url'), '')
+                );
+            END;
+            """
+
+    async def _migrate_knowledge_fts_if_needed(self) -> None:
+        """Add FTS + triggers + backfill when upgrading DBs that have items but no FTS."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items_fts'"
+        )
+        if await cur.fetchone() is not None:
+            return
+        await self._conn.executescript(self._knowledge_fts_ddl())
+        expr = self._knowledge_fts_doc_select_expr()
+        await self._conn.execute(
+            f"""
+            INSERT INTO knowledge_items_fts(rowid, doc)
+            SELECT id, {expr} FROM knowledge_items
+            """
+        )
+        await self._conn.commit()
+
+    async def _migrate_knowledge_fts_payload_doc_v1(self) -> None:
+        """Rebuild FTS doc to include payload title/link/feed_url; refresh triggers."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT value FROM state WHERE key = ?",
+            ("schema.knowledge_fts.payload_doc_v1",),
+        )
+        row = await cur.fetchone()
+        if row and str(row[0]) == "1":
+            return
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items_fts'"
+        )
+        if await cur.fetchone() is None:
+            return
+        await self._conn.executescript(
+            """
+            DROP TRIGGER IF EXISTS knowledge_items_ai;
+            DROP TRIGGER IF EXISTS knowledge_items_ad;
+            DROP TRIGGER IF EXISTS knowledge_items_au;
+            """
+        )
+        await self._conn.executescript(
+            """
+            CREATE TRIGGER knowledge_items_ai AFTER INSERT ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(rowid, doc)
+                VALUES (
+                    new.id,
+                    new.content_excerpt || ' ' || new.tags_json || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.link'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.title'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.feed_url'), '')
+                );
+            END;
+            CREATE TRIGGER knowledge_items_ad AFTER DELETE ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid)
+                VALUES('delete', old.id);
+            END;
+            CREATE TRIGGER knowledge_items_au AFTER UPDATE ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid)
+                VALUES('delete', old.id);
+                INSERT INTO knowledge_items_fts(rowid, doc)
+                VALUES (
+                    new.id,
+                    new.content_excerpt || ' ' || new.tags_json || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.link'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.title'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.feed_url'), '')
+                );
+            END;
+            """
+        )
+        # Contentless FTS5 does not support "DELETE FROM ..."; remove rows by rowid.
+        cur = await self._conn.execute("SELECT id FROM knowledge_items")
+        for row in await cur.fetchall():
+            rid = int(row[0])
+            await self._conn.execute(
+                "INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid) VALUES('delete', ?)",
+                (rid,),
+            )
+        expr = self._knowledge_fts_doc_select_expr()
+        await self._conn.execute(
+            f"""
+            INSERT INTO knowledge_items_fts(rowid, doc)
+            SELECT id, {expr} FROM knowledge_items
+            """
+        )
+        await self._conn.execute(
+            """
+            INSERT INTO state(key, value) VALUES(?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            ("schema.knowledge_fts.payload_doc_v1", "1"),
+        )
+        await self._conn.commit()
 
     async def _next_sequence(self, session_id: int) -> int:
         assert self._conn is not None
@@ -683,3 +929,595 @@ class PersistentState:
                 f"task={sid} model={model or ''} in={inp} out={out} at={rec}"
             )
         return lines
+
+    @staticmethod
+    def _tags_to_json(tags: list[str] | None) -> str:
+        if tags is None:
+            return "[]"
+        if not all(isinstance(t, str) for t in tags):
+            raise TypeError("tags must be a list of strings")
+        return json.dumps(tags, ensure_ascii=False)
+
+    @staticmethod
+    def _tags_from_json(tags_json: str) -> list[str]:
+        try:
+            v = json.loads(tags_json)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"invalid tags_json: {e}") from e
+        if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+            raise ValueError("tags_json must be a JSON array of strings")
+        return v
+
+    @staticmethod
+    def _ref_item_ids_to_json(ref_item_ids: list[int]) -> str:
+        if not all(isinstance(x, int) for x in ref_item_ids):
+            raise TypeError("ref_item_ids must be a list of int")
+        return json.dumps(ref_item_ids, ensure_ascii=False)
+
+    @staticmethod
+    def _ref_item_ids_from_json(raw: str) -> list[int]:
+        try:
+            v = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"invalid ref_item_ids_json: {e}") from e
+        if not isinstance(v, list) or not all(isinstance(x, int) for x in v):
+            raise ValueError("ref_item_ids_json must be a JSON array of integers")
+        return v
+
+    async def insert_knowledge_source(
+        self,
+        kind: KnowledgeKind,
+        *,
+        label: str | None = None,
+        base_url: str = "",
+    ) -> int:
+        if kind not in ("api", "rss", "web"):
+            raise ValueError(f"invalid knowledge source kind: {kind!r}")
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            INSERT INTO knowledge_sources (kind, label, base_url)
+            VALUES (?, ?, ?)
+            """,
+            (kind, label, base_url),
+        )
+        await self._conn.commit()
+        return int(cur.lastrowid)
+
+    async def list_knowledge_sources(
+        self, *, kind: str | None = None
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        if kind is not None:
+            cur = await self._conn.execute(
+                """
+                SELECT id, kind, label, base_url, created_at
+                FROM knowledge_sources
+                WHERE kind = ?
+                ORDER BY id ASC
+                """,
+                (kind,),
+            )
+        else:
+            cur = await self._conn.execute(
+                """
+                SELECT id, kind, label, base_url, created_at
+                FROM knowledge_sources
+                ORDER BY id ASC
+                """
+            )
+        rows = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "id": int(row[0]),
+                    "kind": str(row[1]),
+                    "label": row[2],
+                    "base_url": str(row[3]),
+                    "created_at": str(row[4]),
+                }
+            )
+        return out
+
+    async def insert_knowledge_item(
+        self,
+        source_id: int,
+        content_hash: str,
+        *,
+        tags: list[str] | None = None,
+        content_excerpt: str = "",
+        payload: dict[str, Any] | None = None,
+        external_id: str | None = None,
+        published_at: str | None = None,
+    ) -> KnowledgeItemInsertResult:
+        assert self._conn is not None
+        if external_id is not None:
+            cur = await self._conn.execute(
+                """
+                SELECT id FROM knowledge_items
+                WHERE source_id = ? AND external_id = ?
+                LIMIT 1
+                """,
+                (source_id, external_id),
+            )
+            row = await cur.fetchone()
+            if row is not None:
+                return KnowledgeItemInsertResult(int(row[0]), False)
+        else:
+            cur = await self._conn.execute(
+                """
+                SELECT id FROM knowledge_items
+                WHERE source_id = ? AND content_hash = ? AND external_id IS NULL
+                LIMIT 1
+                """,
+                (source_id, content_hash),
+            )
+            row = await cur.fetchone()
+            if row is not None:
+                return KnowledgeItemInsertResult(int(row[0]), False)
+
+        tags_json = self._tags_to_json(tags)
+        payload_json: str | None
+        if payload is not None:
+            payload_json = json.dumps(payload, ensure_ascii=False)
+        else:
+            payload_json = None
+        cur = await self._conn.execute(
+            """
+            INSERT INTO knowledge_items (
+                source_id, external_id, published_at, tags_json,
+                content_excerpt, payload_json, content_hash
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source_id,
+                external_id,
+                published_at,
+                tags_json,
+                content_excerpt,
+                payload_json,
+                content_hash,
+            ),
+        )
+        await self._conn.commit()
+        return KnowledgeItemInsertResult(int(cur.lastrowid), True)
+
+    async def insert_knowledge_synthesis(
+        self,
+        body: str,
+        ref_item_ids: list[int],
+        *,
+        task_id: int | None = None,
+    ) -> int:
+        assert self._conn is not None
+        ref_json = self._ref_item_ids_to_json(ref_item_ids)
+        cur = await self._conn.execute(
+            """
+            INSERT INTO knowledge_synthesis (body, ref_item_ids_json, task_id)
+            VALUES (?, ?, ?)
+            """,
+            (body, ref_json, task_id),
+        )
+        await self._conn.commit()
+        return int(cur.lastrowid)
+
+    def _row_to_knowledge_item(self, row: tuple[Any, ...]) -> dict[str, Any]:
+        (
+            iid,
+            source_id,
+            external_id,
+            published_at,
+            ingested_at,
+            tags_json,
+            content_excerpt,
+            payload_json,
+            content_hash,
+        ) = row
+        payload: dict[str, Any] | None
+        if payload_json is None:
+            payload = None
+        else:
+            payload = json.loads(str(payload_json))
+        return {
+            "id": int(iid),
+            "source_id": int(source_id),
+            "external_id": external_id,
+            "published_at": published_at,
+            "ingested_at": str(ingested_at),
+            "tags": self._tags_from_json(str(tags_json)),
+            "content_excerpt": str(content_excerpt),
+            "payload": payload,
+            "content_hash": str(content_hash),
+        }
+
+    async def get_knowledge_item(self, item_id: int) -> dict[str, Any]:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, source_id, external_id, published_at, ingested_at,
+                   tags_json, content_excerpt, payload_json, content_hash
+            FROM knowledge_items WHERE id = ?
+            """,
+            (item_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise LookupError(f"no knowledge item with id={item_id}")
+        return self._row_to_knowledge_item(row)
+
+    async def list_knowledge_items(
+        self,
+        *,
+        source_id: int | None = None,
+        limit: int = 100,
+        ingested_after: str | None = None,
+        ingested_before: str | None = None,
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        lim = max(1, min(limit, 500))
+        conds: list[str] = []
+        args: list[Any] = []
+        if source_id is not None:
+            conds.append("source_id = ?")
+            args.append(source_id)
+        if ingested_after is not None:
+            conds.append("datetime(ingested_at) >= datetime(?)")
+            args.append(ingested_after)
+        if ingested_before is not None:
+            conds.append("datetime(ingested_at) <= datetime(?)")
+            args.append(ingested_before)
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        args.append(lim)
+        cur = await self._conn.execute(
+            f"""
+            SELECT id, source_id, external_id, published_at, ingested_at,
+                   tags_json, content_excerpt, payload_json, content_hash
+            FROM knowledge_items
+            {where}
+            ORDER BY datetime(ingested_at) DESC
+            LIMIT ?
+            """,
+            args,
+        )
+        rows = await cur.fetchall()
+        return [self._row_to_knowledge_item(r) for r in rows]
+
+    async def _knowledge_fts_table_exists(self) -> bool:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_items_fts'"
+        )
+        return await cur.fetchone() is not None
+
+    def _knowledge_filter_sql(
+        self,
+        *,
+        table_alias: str,
+        tag: str | None,
+        ingested_after: str | None,
+        ingested_before: str | None,
+    ) -> tuple[str, list[Any]]:
+        conds: list[str] = []
+        args: list[Any] = []
+        prefix = f"{table_alias}." if table_alias else ""
+        if tag is not None:
+            conds.append(
+                f"EXISTS (SELECT 1 FROM json_each({prefix}tags_json) j WHERE j.value = ?)"
+            )
+            args.append(tag)
+        if ingested_after is not None:
+            conds.append(f"datetime({prefix}ingested_at) >= datetime(?)")
+            args.append(ingested_after)
+        if ingested_before is not None:
+            conds.append(f"datetime({prefix}ingested_at) <= datetime(?)")
+            args.append(ingested_before)
+        if not conds:
+            return "", []
+        return " AND " + " AND ".join(conds), args
+
+    async def upsert_knowledge_item_embedding(
+        self,
+        item_id: int,
+        *,
+        model: str,
+        dim: int,
+        embedding: bytes,
+        content_hash: str,
+    ) -> None:
+        assert self._conn is not None
+        await self._conn.execute(
+            """
+            INSERT INTO knowledge_item_embeddings (item_id, model, dim, embedding, content_hash)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(item_id, model) DO UPDATE SET
+                dim = excluded.dim,
+                embedding = excluded.embedding,
+                content_hash = excluded.content_hash,
+                created_at = datetime('now')
+            """,
+            (item_id, model, dim, embedding, content_hash),
+        )
+        await self._conn.commit()
+
+    async def _search_knowledge_items_lexical(
+        self,
+        query: str,
+        *,
+        limit: int,
+        tag: str | None,
+        ingested_after: str | None,
+        ingested_before: str | None,
+        prefer_fts: bool,
+    ) -> list[dict[str, Any]]:
+        mq = build_fts_match_query(query)
+        lim = max(1, min(limit, 500))
+        assert self._conn is not None
+        extra_fts, args_fts = self._knowledge_filter_sql(
+            table_alias="ki",
+            tag=tag,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+        )
+        if not mq:
+            return await self._search_knowledge_items_like(
+                query,
+                limit=lim,
+                tag=tag,
+                ingested_after=ingested_after,
+                ingested_before=ingested_before,
+            )
+        if prefer_fts and await self._knowledge_fts_table_exists():
+            try:
+                sql = f"""
+                    SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
+                           ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash
+                    FROM knowledge_items ki
+                    INNER JOIN knowledge_items_fts ON ki.id = knowledge_items_fts.rowid
+                    WHERE knowledge_items_fts MATCH ?{extra_fts}
+                    ORDER BY bm25(knowledge_items_fts) ASC, datetime(ki.ingested_at) DESC
+                    LIMIT ?
+                    """
+                params: list[Any] = [mq, *args_fts, lim]
+                cur = await self._conn.execute(sql, params)
+                rows = await cur.fetchall()
+                return [self._row_to_knowledge_item(r) for r in rows]
+            except Exception:
+                pass
+        return await self._search_knowledge_items_like(
+            query,
+            limit=lim,
+            tag=tag,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+        )
+
+    async def _search_knowledge_items_semantic(
+        self,
+        query_vec: list[float],
+        *,
+        embedding_model: str,
+        limit: int,
+        min_cosine: float,
+        tag: str | None,
+        ingested_after: str | None,
+        ingested_before: str | None,
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        extra, args_extra = self._knowledge_filter_sql(
+            table_alias="ki",
+            tag=tag,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+        )
+        sql = f"""
+            SELECT e.item_id, e.embedding, e.dim
+            FROM knowledge_item_embeddings e
+            INNER JOIN knowledge_items ki ON ki.id = e.item_id
+            WHERE e.model = ?{extra}
+            """
+        params: list[Any] = [embedding_model, *args_extra]
+        cur = await self._conn.execute(sql, params)
+        raw_rows = await cur.fetchall()
+        scored: list[tuple[int, float]] = []
+        qdim = len(query_vec)
+        for iid, emb_blob, dim in raw_rows:
+            if int(dim) != qdim:
+                continue
+            vec = blob_to_float32_list(bytes(emb_blob))
+            if len(vec) != qdim:
+                continue
+            sim = cosine_similarity(query_vec, vec)
+            if sim >= min_cosine:
+                scored.append((int(iid), sim))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        ids = [i for i, _ in scored[: max(1, min(limit, 500))]]
+        return await self._knowledge_items_by_ids_ordered(ids)
+
+    async def _knowledge_items_by_ids_ordered(
+        self, ids: list[int]
+    ) -> list[dict[str, Any]]:
+        if not ids:
+            return []
+        assert self._conn is not None
+        ph = ",".join("?" * len(ids))
+        cur = await self._conn.execute(
+            f"""
+            SELECT id, source_id, external_id, published_at, ingested_at,
+                   tags_json, content_excerpt, payload_json, content_hash
+            FROM knowledge_items WHERE id IN ({ph})
+            """,
+            ids,
+        )
+        rows = await cur.fetchall()
+        by_id: dict[int, dict[str, Any]] = {}
+        for r in rows:
+            item = self._row_to_knowledge_item(r)
+            by_id[item["id"]] = item
+        return [by_id[i] for i in ids if i in by_id]
+
+    async def search_knowledge_items(
+        self,
+        query: str,
+        *,
+        limit: int = 50,
+        tag: str | None = None,
+        ingested_after: str | None = None,
+        ingested_before: str | None = None,
+        prefer_fts: bool = True,
+        search_mode: str = "lexical",
+        query_embedding: list[float] | None = None,
+        embedding_model: str | None = None,
+        embedding_min_cosine: float = 0.25,
+    ) -> list[dict[str, Any]]:
+        """
+        Lexical (FTS/LIKE), semantic (cosine on stored embeddings), or hybrid (RRF).
+        """
+        sm = (search_mode or "lexical").strip().lower()
+        if sm not in ("lexical", "semantic", "hybrid"):
+            sm = "lexical"
+        lim = max(1, min(limit, 500))
+        arm = max(lim, 60)
+
+        if sm == "semantic":
+            if (
+                query_embedding
+                and embedding_model
+                and len(query_embedding) > 0
+            ):
+                return await self._search_knowledge_items_semantic(
+                    query_embedding,
+                    embedding_model=embedding_model,
+                    limit=lim,
+                    min_cosine=embedding_min_cosine,
+                    tag=tag,
+                    ingested_after=ingested_after,
+                    ingested_before=ingested_before,
+                )
+            return await self._search_knowledge_items_lexical(
+                query,
+                limit=lim,
+                tag=tag,
+                ingested_after=ingested_after,
+                ingested_before=ingested_before,
+                prefer_fts=prefer_fts,
+            )
+
+        if sm == "hybrid":
+            if (
+                query_embedding
+                and embedding_model
+                and len(query_embedding) > 0
+            ):
+                lex = await self._search_knowledge_items_lexical(
+                    query,
+                    limit=arm,
+                    tag=tag,
+                    ingested_after=ingested_after,
+                    ingested_before=ingested_before,
+                    prefer_fts=prefer_fts,
+                )
+                sem = await self._search_knowledge_items_semantic(
+                    query_embedding,
+                    embedding_model=embedding_model,
+                    limit=arm,
+                    min_cosine=embedding_min_cosine,
+                    tag=tag,
+                    ingested_after=ingested_after,
+                    ingested_before=ingested_before,
+                )
+                lex_ids = [x["id"] for x in lex]
+                sem_ids = [x["id"] for x in sem]
+                fused = reciprocal_rank_fusion([lex_ids, sem_ids], k=60)
+                pick = fused[:lim]
+                return await self._knowledge_items_by_ids_ordered(pick)
+            return await self._search_knowledge_items_lexical(
+                query,
+                limit=lim,
+                tag=tag,
+                ingested_after=ingested_after,
+                ingested_before=ingested_before,
+                prefer_fts=prefer_fts,
+            )
+
+        return await self._search_knowledge_items_lexical(
+            query,
+            limit=lim,
+            tag=tag,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+            prefer_fts=prefer_fts,
+        )
+
+    async def _search_knowledge_items_like(
+        self,
+        query: str,
+        *,
+        limit: int,
+        tag: str | None,
+        ingested_after: str | None,
+        ingested_before: str | None,
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        token = query.strip()
+        if not token:
+            return []
+        esc = token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{esc}%"
+        extra, args_extra = self._knowledge_filter_sql(
+            table_alias="",
+            tag=tag,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+        )
+        sql = f"""
+            SELECT id, source_id, external_id, published_at, ingested_at,
+                   tags_json, content_excerpt, payload_json, content_hash
+            FROM knowledge_items
+            WHERE (content_excerpt LIKE ? ESCAPE '\\' OR tags_json LIKE ? ESCAPE '\\')
+            {extra}
+            ORDER BY datetime(ingested_at) DESC
+            LIMIT ?
+            """
+        params = [pattern, pattern, *args_extra, limit]
+        cur = await self._conn.execute(sql, params)
+        rows = await cur.fetchall()
+        return [self._row_to_knowledge_item(r) for r in rows]
+
+    async def list_knowledge_synthesis_for_task(
+        self, task_id: int
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, body, ref_item_ids_json, task_id, created_at
+            FROM knowledge_synthesis
+            WHERE task_id = ?
+            ORDER BY datetime(created_at) DESC
+            """,
+            (task_id,),
+        )
+        rows = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            iid, body, ref_json, tid, created_at = row
+            out.append(
+                {
+                    "id": int(iid),
+                    "body": str(body),
+                    "ref_item_ids": self._ref_item_ids_from_json(str(ref_json)),
+                    "task_id": int(tid) if tid is not None else None,
+                    "created_at": str(created_at),
+                }
+            )
+        return out
+
+    async def delete_knowledge_source(self, source_id: int) -> None:
+        """Delete a registered source and cascade knowledge_items (not synthesis refs)."""
+        assert self._conn is not None
+        await self._conn.execute(
+            "DELETE FROM knowledge_sources WHERE id = ?",
+            (source_id,),
+        )
+        await self._conn.commit()

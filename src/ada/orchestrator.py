@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
 from ada.adapters.gemini_stream import chain_rows_to_contents, stream_one_model_leg
+from ada.knowledge_urls import validate_knowledge_feed_url
 from ada.stream_debug import is_stream_debug_on, log_stream
+from ada.stream_types import CompletedFunctionCall
 from ada.query_engine import QueryEngine
 from ada.tool_executor import (
     FileToolConfig,
@@ -17,7 +20,10 @@ from ada.tool_executor import (
     StreamingToolExecutor,
     WebToolConfig,
 )
+from ada.knowledge_embeddings import embed_query_text
 from ada.tools.registry import build_agent_tools
+
+log = logging.getLogger("ada.orchestrator")
 
 
 class StreamFailed(Exception):
@@ -76,6 +82,12 @@ async def orchestrate_turn(
     web_config: WebToolConfig | None = None,
     enable_list_session_web_sources: bool = False,
     debug_stream: bool = False,
+    include_knowledge_tools: bool = False,
+    knowledge_feed_host_allowlist: frozenset[str] = frozenset(),
+    knowledge_embeddings_enabled: bool = False,
+    knowledge_embedding_model: str = "gemini-embedding-001",
+    knowledge_embedding_dim: int = 768,
+    knowledge_embedding_min_cosine: float = 0.25,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -94,6 +106,7 @@ async def orchestrate_turn(
         include_web_search=web_config is not None and bool(web_config.serper_api_key),
         include_web_fetch=web_config is not None,
         include_list_session_web_sources=enable_list_session_web_sources,
+        include_knowledge_tools=include_knowledge_tools,
     )
     log_stream(
         dbg,
@@ -124,6 +137,143 @@ async def orchestrate_turn(
 
     goal_recall_reader = _goal_recall_bound if include_goal_recall_tool else None
 
+    knowledge_search_fn = None
+    knowledge_record_fn = None
+    knowledge_add_fn = None
+    if include_knowledge_tools:
+        hosts = knowledge_feed_host_allowlist
+
+        async def _knowledge_search_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            q = str(call.args.get("query") or "").strip()
+            lim_raw = call.args.get("limit")
+            lim = 20
+            if lim_raw is not None:
+                try:
+                    lim = max(1, min(int(lim_raw), 100))
+                except (TypeError, ValueError):
+                    lim = 20
+            tag = call.args.get("tag")
+            tag_s = str(tag).strip() if tag is not None else None
+            if tag_s == "":
+                tag_s = None
+            ing_after = call.args.get("ingested_after")
+            ing_before = call.args.get("ingested_before")
+            pref = call.args.get("prefer_fts")
+            prefer_fts = True if pref is None else bool(pref)
+            mode_raw = call.args.get("search_mode")
+            mode_s = (
+                str(mode_raw).strip().lower()
+                if mode_raw is not None
+                else "hybrid"
+            )
+            if mode_s not in ("lexical", "semantic", "hybrid"):
+                mode_s = "hybrid"
+
+            qe_vec: list[float] | None = None
+            if (
+                knowledge_embeddings_enabled
+                and api_key.strip()
+                and mode_s in ("semantic", "hybrid")
+            ):
+                try:
+                    qe_vec = await embed_query_text(
+                        api_key,
+                        q,
+                        model=knowledge_embedding_model,
+                        output_dimensionality=knowledge_embedding_dim,
+                    )
+                except Exception as e:
+                    log.warning("knowledge query embedding failed: %s", e)
+
+            items = await qe.search_knowledge_items(
+                q,
+                limit=lim,
+                tag=tag_s,
+                ingested_after=str(ing_after) if ing_after is not None else None,
+                ingested_before=str(ing_before) if ing_before is not None else None,
+                prefer_fts=prefer_fts,
+                search_mode=mode_s,
+                query_embedding=qe_vec,
+                embedding_model=knowledge_embedding_model
+                if knowledge_embeddings_enabled
+                else None,
+                embedding_min_cosine=knowledge_embedding_min_cosine,
+            )
+            slim: list[dict[str, Any]] = []
+            for it in items[:25]:
+                ex = it.get("content_excerpt") or ""
+                if len(ex) > 4000:
+                    ex = ex[:3999] + "…"
+                pl = it.get("payload") if isinstance(it.get("payload"), dict) else {}
+                slim.append(
+                    {
+                        "id": it["id"],
+                        "source_id": it["source_id"],
+                        "title": pl.get("title"),
+                        "link": pl.get("link"),
+                        "feed_url": pl.get("feed_url"),
+                        "content_excerpt": ex,
+                        "tags": it.get("tags"),
+                        "ingested_at": it.get("ingested_at"),
+                        "published_at": it.get("published_at"),
+                    }
+                )
+            return {"items": slim, "count": len(items)}
+
+        async def _knowledge_record_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            body = str(call.args.get("body") or "").strip()
+            if not body:
+                return {"error": "body required"}
+            raw_ids = call.args.get("ref_item_ids")
+            if not isinstance(raw_ids, list) or not raw_ids:
+                return {"error": "ref_item_ids must be a non-empty list"}
+            refs: list[int] = []
+            for x in raw_ids:
+                try:
+                    refs.append(int(x))
+                except (TypeError, ValueError):
+                    return {"error": "ref_item_ids must be integers"}
+            tid_raw = call.args.get("task_id")
+            if tid_raw is None:
+                task_id = session_id
+            else:
+                try:
+                    task_id = int(tid_raw)
+                except (TypeError, ValueError):
+                    return {"error": "task_id must be integer"}
+            sid = await qe.insert_knowledge_synthesis(body, refs, task_id=task_id)
+            return {"synthesis_id": sid, "task_id": task_id}
+
+        async def _knowledge_add_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            kind = str(call.args.get("kind") or "").strip().lower()
+            if kind not in ("rss", "web"):
+                return {"error": "kind must be rss or web"}
+            base_url = str(call.args.get("base_url") or "").strip()
+            label = call.args.get("label")
+            label_s = str(label).strip() if label is not None else None
+            if label_s == "":
+                label_s = None
+            try:
+                validate_knowledge_feed_url(base_url, host_allowlist=hosts)
+            except ValueError as e:
+                return {"error": str(e)}
+            kid = await qe.insert_knowledge_source(
+                "rss" if kind == "rss" else "web",
+                label=label_s,
+                base_url=base_url,
+            )
+            return {"source_id": kid, "kind": kind, "base_url": base_url}
+
+        knowledge_search_fn = _knowledge_search_bound
+        knowledge_record_fn = _knowledge_record_bound
+        knowledge_add_fn = _knowledge_add_bound
+
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
         tools_were_persisted = [False]
@@ -148,6 +298,9 @@ async def orchestrate_turn(
             else None,
             goal_recall_reader=goal_recall_reader,
             on_file_guard_violation=on_file_guard_violation,
+            knowledge_search=knowledge_search_fn,
+            knowledge_record_synthesis=knowledge_record_fn,
+            knowledge_add_source=knowledge_add_fn,
         )
         try:
             return await _agentic_loop(
@@ -173,6 +326,7 @@ async def orchestrate_turn(
                 web_fetch_configured=web_config is not None,
                 web_sources_list_configured=enable_list_session_web_sources,
                 goal_recall_configured=goal_recall_reader is not None,
+                knowledge_tools_configured=include_knowledge_tools,
                 max_session_tokens=max_session_tokens,
                 debug_stream=dbg,
             )
@@ -215,6 +369,7 @@ async def _agentic_loop(
     web_fetch_configured: bool,
     web_sources_list_configured: bool,
     goal_recall_configured: bool,
+    knowledge_tools_configured: bool,
     max_session_tokens: int,
     debug_stream: bool,
 ) -> str:
@@ -373,6 +528,15 @@ async def _agentic_loop(
         if needs_goal_recall and not goal_recall_configured:
             raise StreamFailed(
                 "model requested read_goal_task_view but it is not configured"
+            )
+
+        needs_knowledge = any(
+            c.name in ("search_knowledge", "record_synthesis", "add_knowledge_source")
+            for c in leg.function_calls
+        )
+        if needs_knowledge and not knowledge_tools_configured:
+            raise StreamFailed(
+                "model requested knowledge tools but knowledge tools are not configured"
             )
 
         results = await executor.run_ordered(leg.function_calls)

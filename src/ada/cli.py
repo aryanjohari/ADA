@@ -17,6 +17,7 @@ from ada.prompt import (
     build_system_instruction,
     format_allowlist_summary,
     format_file_tools_note,
+    format_knowledge_tools_note,
     format_schema_digest_note,
     format_session_web_sources_list_note,
     format_web_tools_note,
@@ -108,6 +109,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
             read_text_file(settings.memory_dir / "schema_digest.md")
         )
         ws_list_note = format_session_web_sources_list_note(settings)
+        knowledge_note = format_knowledge_tools_note(settings)
         sys_instr = build_system_instruction(
             soul_text=soul,
             master_text=master,
@@ -117,6 +119,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
             web_tools_note=web_note,
             schema_digest_note=digest_note,
             session_web_sources_list_note=ws_list_note,
+            knowledge_tools_note=knowledge_note,
             worker_mode=False,
         )
         file_cfg = _file_tool_config(settings)
@@ -161,6 +164,12 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     ),
                     web_config=web_cfg,
                     enable_list_session_web_sources=settings.enable_web_sources_tool,
+                    include_knowledge_tools=settings.enable_knowledge_tools,
+                    knowledge_feed_host_allowlist=settings.knowledge_feed_host_allowlist,
+                    knowledge_embeddings_enabled=settings.enable_knowledge_embeddings,
+                    knowledge_embedding_model=settings.knowledge_embedding_model,
+                    knowledge_embedding_dim=settings.knowledge_embedding_dim,
+                    knowledge_embedding_min_cosine=settings.knowledge_embedding_min_cosine,
                     debug_stream=settings.debug_stream,
                 )
                 print(flush=True)
@@ -213,6 +222,12 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     ),
                     web_config=web_cfg,
                     enable_list_session_web_sources=settings.enable_web_sources_tool,
+                    include_knowledge_tools=settings.enable_knowledge_tools,
+                    knowledge_feed_host_allowlist=settings.knowledge_feed_host_allowlist,
+                    knowledge_embeddings_enabled=settings.enable_knowledge_embeddings,
+                    knowledge_embedding_model=settings.knowledge_embedding_model,
+                    knowledge_embedding_dim=settings.knowledge_embedding_dim,
+                    knowledge_embedding_min_cosine=settings.knowledge_embedding_min_cosine,
                     debug_stream=settings.debug_stream,
                 )
                 await qe.update_task(

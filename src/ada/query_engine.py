@@ -11,6 +11,8 @@ from typing import Any
 from ada.persistent.store import (
     TASK_KIND_CHAT,
     TASK_KIND_GOAL,
+    KnowledgeItemInsertResult,
+    KnowledgeKind,
     PersistentState,
     TaskKind,
 )
@@ -24,6 +26,8 @@ from ada.transcript_format import (
 # Backward-compatible re-exports for tests / adapters
 __all__ = [
     "QueryEngine",
+    "KnowledgeItemInsertResult",
+    "KnowledgeKind",
     "ROLE_ASSISTANT",
     "ROLE_SYSTEM",
     "ROLE_TOOL",
@@ -267,3 +271,121 @@ class QueryEngine:
 
     async def load_usage_ledger_lines(self, limit: int) -> list[str]:
         return await self._store.load_usage_ledger_lines(limit)
+
+    async def insert_knowledge_source(
+        self,
+        kind: KnowledgeKind,
+        *,
+        label: str | None = None,
+        base_url: str = "",
+    ) -> int:
+        return await self._store.insert_knowledge_source(
+            kind, label=label, base_url=base_url
+        )
+
+    async def list_knowledge_sources(
+        self, *, kind: str | None = None
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_knowledge_sources(kind=kind)
+
+    async def insert_knowledge_item(
+        self,
+        source_id: int,
+        content_hash: str,
+        *,
+        tags: list[str] | None = None,
+        content_excerpt: str = "",
+        payload: dict[str, Any] | None = None,
+        external_id: str | None = None,
+        published_at: str | None = None,
+    ) -> KnowledgeItemInsertResult:
+        return await self._store.insert_knowledge_item(
+            source_id,
+            content_hash,
+            tags=tags,
+            content_excerpt=content_excerpt,
+            payload=payload,
+            external_id=external_id,
+            published_at=published_at,
+        )
+
+    async def insert_knowledge_synthesis(
+        self,
+        body: str,
+        ref_item_ids: list[int],
+        *,
+        task_id: int | None = None,
+    ) -> int:
+        return await self._store.insert_knowledge_synthesis(
+            body, ref_item_ids, task_id=task_id
+        )
+
+    async def get_knowledge_item(self, item_id: int) -> dict[str, Any]:
+        return await self._store.get_knowledge_item(item_id)
+
+    async def list_knowledge_items(
+        self,
+        *,
+        source_id: int | None = None,
+        limit: int = 100,
+        ingested_after: str | None = None,
+        ingested_before: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_knowledge_items(
+            source_id=source_id,
+            limit=limit,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+        )
+
+    async def search_knowledge_items(
+        self,
+        query: str,
+        *,
+        limit: int = 50,
+        tag: str | None = None,
+        ingested_after: str | None = None,
+        ingested_before: str | None = None,
+        prefer_fts: bool = True,
+        search_mode: str = "lexical",
+        query_embedding: list[float] | None = None,
+        embedding_model: str | None = None,
+        embedding_min_cosine: float = 0.25,
+    ) -> list[dict[str, Any]]:
+        return await self._store.search_knowledge_items(
+            query,
+            limit=limit,
+            tag=tag,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+            prefer_fts=prefer_fts,
+            search_mode=search_mode,
+            query_embedding=query_embedding,
+            embedding_model=embedding_model,
+            embedding_min_cosine=embedding_min_cosine,
+        )
+
+    async def upsert_knowledge_item_embedding(
+        self,
+        item_id: int,
+        *,
+        model: str,
+        dim: int,
+        embedding: bytes,
+        content_hash: str,
+    ) -> None:
+        await self._store.upsert_knowledge_item_embedding(
+            item_id,
+            model=model,
+            dim=dim,
+            embedding=embedding,
+            content_hash=content_hash,
+        )
+
+    async def list_knowledge_synthesis_for_task(
+        self, task_id: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_knowledge_synthesis_for_task(task_id)
+
+    async def delete_knowledge_source(self, source_id: int) -> None:
+        await self._store.delete_knowledge_source(source_id)

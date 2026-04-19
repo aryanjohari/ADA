@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <link>https://example.com/news</link>
+    <description>Fixture</description>
+    <item>
+      <title>First headline</title>
+      <link>https://example.com/a/1</link>
+      <guid>urn:test:entry-1</guid>
+      <description>Alpha body text.</description>
+      <pubDate>Mon, 01 Jan 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Second headline</title>
+      <link>https://example.com/a/2</link>
+      <guid>urn:test:entry-2</guid>
+      <description>Beta body text.</description>
+    </item>
+  </channel>
+</rss>

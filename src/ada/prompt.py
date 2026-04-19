@@ -79,6 +79,29 @@ def format_session_web_sources_list_note(settings: Settings) -> str | None:
     )
 
 
+def format_knowledge_tools_note(settings: Settings) -> str | None:
+    """Harness note when search_knowledge / record_synthesis / add_knowledge_source are enabled."""
+    if not settings.enable_knowledge_tools:
+        return None
+    allow = ", ".join(sorted(settings.knowledge_feed_host_allowlist)[:12])
+    more = ""
+    if len(settings.knowledge_feed_host_allowlist) > 12:
+        more = " …"
+    allow_line = (
+        f"**Feed host allowlist** (add_knowledge_source): {allow}{more}"
+        if settings.knowledge_feed_host_allowlist
+        else "**Feed host allowlist:** empty (any https/http host allowed for new feeds — use ADA_KNOWLEDGE_FEED_HOST_ALLOWLIST to restrict)."
+    )
+    return (
+        "**Knowledge tools (`ADA_ENABLE_KNOWLEDGE_TOOLS=1`):** "
+        "`search_knowledge` searches stored `knowledge_items` (RSS ingest, etc.). "
+        "`record_synthesis` saves a short conclusion with `ref_item_ids` citing item ids from search results. "
+        "`add_knowledge_source` registers a new RSS (or web) feed URL in SQLite; "
+        "the operator or cron runs `ada ingest-rss` to fetch into `knowledge_items`. "
+        f"{allow_line}"
+    )
+
+
 def format_web_tools_note(settings: Settings) -> str:
     """Harness note when web search / fetch tools are enabled."""
     allow = ", ".join(sorted(settings.web_fetch_host_allowlist)[:8])
@@ -119,6 +142,7 @@ def build_system_instruction(
     web_tools_note: str | None = None,
     schema_digest_note: str | None = None,
     session_web_sources_list_note: str | None = None,
+    knowledge_tools_note: str | None = None,
     worker_mode: bool = False,
 ) -> str:
     """
@@ -152,6 +176,8 @@ and optionally `append_master_section` / `append_soul_fragment` to persist small
         harness = f"{harness}\n\n{schema_digest_note.strip()}"
     if session_web_sources_list_note:
         harness = f"{harness}\n\n{session_web_sources_list_note.strip()}"
+    if knowledge_tools_note:
+        harness = f"{harness}\n\n{knowledge_tools_note.strip()}"
     blocks: list[str] = [harness]
     master_block = master_text.strip()
     if master_block:

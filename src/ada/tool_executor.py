@@ -57,6 +57,11 @@ class FileToolConfig:
     max_list_entries: int = 200
 
 
+KnowledgeToolHandler = Callable[
+    [CompletedFunctionCall], Awaitable[dict[str, Any]]
+]
+
+
 @dataclass(frozen=True)
 class WebToolConfig:
     """Serper + fetch limits; optional search when serper_api_key is set."""
@@ -118,6 +123,9 @@ class StreamingToolExecutor:
         | None = None,
         on_file_guard_violation: Callable[[str, str, str], Awaitable[None]]
         | None = None,
+        knowledge_search: KnowledgeToolHandler | None = None,
+        knowledge_record_synthesis: KnowledgeToolHandler | None = None,
+        knowledge_add_source: KnowledgeToolHandler | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
@@ -130,6 +138,9 @@ class StreamingToolExecutor:
         self._web_sources_reader = web_sources_reader
         self._goal_recall_reader = goal_recall_reader
         self._on_file_guard_violation = on_file_guard_violation
+        self._knowledge_search = knowledge_search
+        self._knowledge_record_synthesis = knowledge_record_synthesis
+        self._knowledge_add_source = knowledge_add_source
         self.discarded = False
 
     def discard(self) -> None:
@@ -180,6 +191,12 @@ class StreamingToolExecutor:
             return await self._list_session_web_sources(call)
         if call.name == "read_goal_task_view":
             return await self._read_goal_task_view(call)
+        if call.name == "search_knowledge":
+            return await self._search_knowledge(call)
+        if call.name == "record_synthesis":
+            return await self._record_synthesis(call)
+        if call.name == "add_knowledge_source":
+            return await self._add_knowledge_source(call)
         return {"error": f"unknown tool: {call.name}"}
 
     async def _list_session_web_sources(
@@ -257,6 +274,33 @@ class StreamingToolExecutor:
         try:
             return await self._token_usage()
         except Exception as e:
+            return {"error": str(e)}
+
+    async def _search_knowledge(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._knowledge_search is None:
+            return {"error": "search_knowledge not configured"}
+        try:
+            return await self._knowledge_search(call)
+        except Exception as e:
+            log.warning("search_knowledge failed: %s", e)
+            return {"error": str(e)}
+
+    async def _record_synthesis(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._knowledge_record_synthesis is None:
+            return {"error": "record_synthesis not configured"}
+        try:
+            return await self._knowledge_record_synthesis(call)
+        except Exception as e:
+            log.warning("record_synthesis failed: %s", e)
+            return {"error": str(e)}
+
+    async def _add_knowledge_source(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._knowledge_add_source is None:
+            return {"error": "add_knowledge_source not configured"}
+        try:
+            return await self._knowledge_add_source(call)
+        except Exception as e:
+            log.warning("add_knowledge_source failed: %s", e)
             return {"error": str(e)}
 
     async def _read_task_plan(self) -> dict[str, Any]:

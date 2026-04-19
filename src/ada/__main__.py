@@ -1,4 +1,4 @@
-"""`python -m ada [chat|daemon|goal|dream]`."""
+"""`python -m ada [chat|daemon|goal|dream|ingest-rss]`."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import sys
 from ada.config import Settings, load_dotenv_if_present
 from ada.cli import run_chat, run_dream_cli
 from ada.goal_cli import async_main as goal_async_main
+from ada.ingest.rss import run_ingest_rss_cli
 from ada.main import main_daemon
 
 
@@ -28,6 +29,11 @@ def main() -> None:
     )
 
     sub.add_parser("daemon", help="Poll pending tasks in SQLite")
+
+    sub.add_parser(
+        "ingest-rss",
+        help="Fetch RSS/Atom feeds listed in knowledge_sources (kind=rss) into knowledge_items",
+    )
 
     goal_p = sub.add_parser("goal", help="Enqueue and inspect background goal tasks")
     goal_p.add_argument(
@@ -65,6 +71,9 @@ def main() -> None:
         asyncio.run(run_chat(settings, new_session=args.new_session))
     elif args.cmd == "daemon":
         main_daemon()
+    elif args.cmd == "ingest-rss":
+        settings = Settings.load()
+        raise SystemExit(asyncio.run(run_ingest_rss_cli(settings)))
     elif args.cmd == "goal":
         rest = list(args.goal_argv)
         while rest and rest[0] == "--":
