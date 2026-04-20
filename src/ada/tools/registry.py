@@ -341,6 +341,43 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
             },
         ),
         types.FunctionDeclaration(
+            name="record_market_edge",
+            description=(
+                "Store a numeric market metric and link it to a knowledge item with causal notes. "
+                "Use after search_knowledge when extracting concrete values (price, rate, index, etc.)."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "knowledge_id": {
+                        "type": "integer",
+                        "description": "knowledge_items.id to anchor this metric edge.",
+                    },
+                    "metric_name": {
+                        "type": "string",
+                        "description": "Short metric label, e.g. 'fuel_spend_march_nzd_m'.",
+                    },
+                    "metric_value": {
+                        "type": "number",
+                        "description": "Numeric value for the metric.",
+                    },
+                    "recorded_at": {
+                        "type": "string",
+                        "description": "Optional ISO-like timestamp for when metric applies.",
+                    },
+                    "api_source": {
+                        "type": "string",
+                        "description": "Optional source label/url for the metric row.",
+                    },
+                    "causality_notes": {
+                        "type": "string",
+                        "description": "Optional note describing why this metric links to the knowledge item.",
+                    },
+                },
+                "required": ["knowledge_id", "metric_name", "metric_value"],
+            },
+        ),
+        types.FunctionDeclaration(
             name="add_knowledge_source",
             description=(
                 "Register a new RSS or web feed URL in SQLite (knowledge_sources). "

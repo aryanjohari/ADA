@@ -121,6 +121,8 @@ class Settings:
     triage_model: str
     triage_batch_size: int
     triage_deep_dive_min_score: int
+    knowledge_tool_max_results: int
+    knowledge_tool_excerpt_chars: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -287,6 +289,16 @@ class Settings:
             triage_deep_dive_min_score = max(1, min(10, int(_dd_raw)))
         except ValueError:
             triage_deep_dive_min_score = 6
+        knowledge_tool_max_results = max(
+            1, min(25, int(os.environ.get("ADA_KNOWLEDGE_TOOL_MAX_RESULTS", "8")))
+        )
+        knowledge_tool_excerpt_chars = max(
+            200,
+            min(
+                4000,
+                int(os.environ.get("ADA_KNOWLEDGE_TOOL_EXCERPT_CHARS", "1200")),
+            ),
+        )
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -352,6 +364,8 @@ class Settings:
             triage_model=triage_model,
             triage_batch_size=triage_batch_size,
             triage_deep_dive_min_score=triage_deep_dive_min_score,
+            knowledge_tool_max_results=knowledge_tool_max_results,
+            knowledge_tool_excerpt_chars=knowledge_tool_excerpt_chars,
         )
 
     def ensure_data_dir(self) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import aiosqlite
 import pytest
 
 import ada.orchestrator as orch
@@ -93,5 +94,78 @@ async def test_orchestrator_knowledge_search_and_synthesis_mock(
         ]
         assert "search_knowledge" in tool_names
         assert "record_synthesis" in tool_names
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_record_market_edge_mock(tmp_path, schema_sql_path, monkeypatch):
+    """Offline: mocked model calls record_market_edge; metric + edge rows are persisted."""
+    calls = {"n": 0}
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        sid = await qe.insert_knowledge_source("rss", label="L", base_url="https://x.test/feed")
+        ins = await qe.insert_knowledge_item(
+            sid,
+            "hh2",
+            content_excerpt="Fuel spend up by 10 percent y/y",
+            payload={"title": "Fuel spending", "link": "https://example.com/fuel"},
+        )
+        item_id = ins.id
+
+        async def two_leg(**kwargs: object) -> StreamLegResult:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return StreamLegResult(
+                    "",
+                    [
+                        CompletedFunctionCall(
+                            name="record_market_edge",
+                            args={
+                                "knowledge_id": item_id,
+                                "metric_name": "fuel_spend_yoy_pct",
+                                "metric_value": 10.0,
+                                "api_source": "stats-nz",
+                                "causality_notes": "Fuel spending rose in latest data.",
+                            },
+                            id="k3",
+                        )
+                    ],
+                    {},
+                    None,
+                )
+            return StreamLegResult("Done.", [], {}, None)
+
+        monkeypatch.setattr(orch, "stream_one_model_leg", two_leg)
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
+        out = await orch.orchestrate_turn(
+            qe,
+            session_id=tid,
+            user_text="save edge",
+            system_instruction="sys",
+            api_key="k",
+            model="m",
+            max_retries=0,
+            enable_memory_tools=False,
+            include_plan_tools=False,
+            include_knowledge_tools=True,
+            knowledge_feed_host_allowlist=frozenset(),
+        )
+        assert out == "Done."
+
+        async with aiosqlite.connect(db) as raw:
+            cur = await raw.execute("SELECT COUNT(*) FROM market_metrics")
+            mm = await cur.fetchone()
+            assert mm is not None and int(mm[0]) == 1
+            cur = await raw.execute(
+                "SELECT COUNT(*) FROM synthesis_edges WHERE knowledge_id = ?",
+                (item_id,),
+            )
+            se = await cur.fetchone()
+            assert se is not None and int(se[0]) == 1
     finally:
         await qe.close()

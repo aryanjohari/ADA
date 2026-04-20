@@ -170,6 +170,8 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     knowledge_embedding_model=settings.knowledge_embedding_model,
                     knowledge_embedding_dim=settings.knowledge_embedding_dim,
                     knowledge_embedding_min_cosine=settings.knowledge_embedding_min_cosine,
+                    knowledge_tool_max_results=settings.knowledge_tool_max_results,
+                    knowledge_tool_excerpt_chars=settings.knowledge_tool_excerpt_chars,
                     debug_stream=settings.debug_stream,
                 )
                 print(flush=True)
@@ -228,6 +230,8 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     knowledge_embedding_model=settings.knowledge_embedding_model,
                     knowledge_embedding_dim=settings.knowledge_embedding_dim,
                     knowledge_embedding_min_cosine=settings.knowledge_embedding_min_cosine,
+                    knowledge_tool_max_results=settings.knowledge_tool_max_results,
+                    knowledge_tool_excerpt_chars=settings.knowledge_tool_excerpt_chars,
                     debug_stream=settings.debug_stream,
                 )
                 await qe.update_task(

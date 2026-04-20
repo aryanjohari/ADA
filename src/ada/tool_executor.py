@@ -125,6 +125,7 @@ class StreamingToolExecutor:
         | None = None,
         knowledge_search: KnowledgeToolHandler | None = None,
         knowledge_record_synthesis: KnowledgeToolHandler | None = None,
+        knowledge_record_market_edge: KnowledgeToolHandler | None = None,
         knowledge_add_source: KnowledgeToolHandler | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
@@ -140,6 +141,7 @@ class StreamingToolExecutor:
         self._on_file_guard_violation = on_file_guard_violation
         self._knowledge_search = knowledge_search
         self._knowledge_record_synthesis = knowledge_record_synthesis
+        self._knowledge_record_market_edge = knowledge_record_market_edge
         self._knowledge_add_source = knowledge_add_source
         self.discarded = False
 
@@ -195,6 +197,8 @@ class StreamingToolExecutor:
             return await self._search_knowledge(call)
         if call.name == "record_synthesis":
             return await self._record_synthesis(call)
+        if call.name == "record_market_edge":
+            return await self._record_market_edge(call)
         if call.name == "add_knowledge_source":
             return await self._add_knowledge_source(call)
         return {"error": f"unknown tool: {call.name}"}
@@ -301,6 +305,15 @@ class StreamingToolExecutor:
             return await self._knowledge_add_source(call)
         except Exception as e:
             log.warning("add_knowledge_source failed: %s", e)
+            return {"error": str(e)}
+
+    async def _record_market_edge(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._knowledge_record_market_edge is None:
+            return {"error": "record_market_edge not configured"}
+        try:
+            return await self._knowledge_record_market_edge(call)
+        except Exception as e:
+            log.warning("record_market_edge failed: %s", e)
             return {"error": str(e)}
 
     async def _read_task_plan(self) -> dict[str, Any]:

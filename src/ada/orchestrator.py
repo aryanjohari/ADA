@@ -88,6 +88,8 @@ async def orchestrate_turn(
     knowledge_embedding_model: str = "gemini-embedding-001",
     knowledge_embedding_dim: int = 768,
     knowledge_embedding_min_cosine: float = 0.25,
+    knowledge_tool_max_results: int = 8,
+    knowledge_tool_excerpt_chars: int = 1200,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -139,6 +141,7 @@ async def orchestrate_turn(
 
     knowledge_search_fn = None
     knowledge_record_fn = None
+    knowledge_record_market_edge_fn = None
     knowledge_add_fn = None
     if include_knowledge_tools:
         hosts = knowledge_feed_host_allowlist
@@ -154,6 +157,8 @@ async def orchestrate_turn(
                     lim = max(1, min(int(lim_raw), 100))
                 except (TypeError, ValueError):
                     lim = 20
+            # Keep result payload bounded to avoid token bleed in chat/daemon loops.
+            response_cap = max(1, min(25, knowledge_tool_max_results))
             tag = call.args.get("tag")
             tag_s = str(tag).strip() if tag is not None else None
             if tag_s == "":
@@ -214,10 +219,10 @@ async def orchestrate_turn(
                 valid_at_now=valid_at_now,
             )
             slim: list[dict[str, Any]] = []
-            for it in items[:25]:
+            for it in items[:response_cap]:
                 ex = it.get("content_excerpt") or ""
-                if len(ex) > 4000:
-                    ex = ex[:3999] + "…"
+                if len(ex) > knowledge_tool_excerpt_chars:
+                    ex = ex[: max(1, knowledge_tool_excerpt_chars - 1)] + "…"
                 pl = it.get("payload") if isinstance(it.get("payload"), dict) else {}
                 slim.append(
                     {
@@ -234,7 +239,12 @@ async def orchestrate_turn(
                         "expires_at": it.get("expires_at"),
                     }
                 )
-            return {"items": slim, "count": len(items)}
+            return {
+                "items": slim,
+                "count": len(items),
+                "returned_count": len(slim),
+                "truncated": len(items) > len(slim),
+            }
 
         async def _knowledge_record_bound(
             call: CompletedFunctionCall,
@@ -284,8 +294,58 @@ async def orchestrate_turn(
             )
             return {"source_id": kid, "kind": kind, "base_url": base_url}
 
+        async def _knowledge_record_market_edge_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            try:
+                knowledge_id = int(call.args.get("knowledge_id"))
+            except (TypeError, ValueError):
+                return {"error": "knowledge_id must be integer"}
+            metric_name = str(call.args.get("metric_name") or "").strip()
+            if not metric_name:
+                return {"error": "metric_name required"}
+            try:
+                metric_value = float(call.args.get("metric_value"))
+            except (TypeError, ValueError):
+                return {"error": "metric_value must be numeric"}
+            recorded_at_raw = call.args.get("recorded_at")
+            recorded_at = (
+                str(recorded_at_raw).strip() if recorded_at_raw is not None else None
+            )
+            if recorded_at == "":
+                recorded_at = None
+            api_source_raw = call.args.get("api_source")
+            api_source = (
+                str(api_source_raw).strip() if api_source_raw is not None else ""
+            )
+            notes_raw = call.args.get("causality_notes")
+            causality_notes = str(notes_raw).strip() if notes_raw is not None else ""
+
+            try:
+                metric_id = await qe.insert_market_metric(
+                    metric_name,
+                    metric_value,
+                    recorded_at=recorded_at,
+                    api_source=api_source,
+                )
+                edge_id = await qe.insert_synthesis_edge(
+                    knowledge_id,
+                    metric_id,
+                    causality_notes=causality_notes,
+                )
+            except LookupError as e:
+                return {"error": str(e)}
+            except Exception as e:
+                return {"error": str(e)}
+            return {
+                "knowledge_id": knowledge_id,
+                "metric_id": metric_id,
+                "edge_id": edge_id,
+            }
+
         knowledge_search_fn = _knowledge_search_bound
         knowledge_record_fn = _knowledge_record_bound
+        knowledge_record_market_edge_fn = _knowledge_record_market_edge_bound
         knowledge_add_fn = _knowledge_add_bound
 
     last_err: Exception | None = None
@@ -314,6 +374,7 @@ async def orchestrate_turn(
             on_file_guard_violation=on_file_guard_violation,
             knowledge_search=knowledge_search_fn,
             knowledge_record_synthesis=knowledge_record_fn,
+            knowledge_record_market_edge=knowledge_record_market_edge_fn,
             knowledge_add_source=knowledge_add_fn,
         )
         try:
@@ -545,7 +606,13 @@ async def _agentic_loop(
             )
 
         needs_knowledge = any(
-            c.name in ("search_knowledge", "record_synthesis", "add_knowledge_source")
+            c.name
+            in (
+                "search_knowledge",
+                "record_synthesis",
+                "record_market_edge",
+                "add_knowledge_source",
+            )
             for c in leg.function_calls
         )
         if needs_knowledge and not knowledge_tools_configured:
