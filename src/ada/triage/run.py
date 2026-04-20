@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,22 @@ Return JSON only with exactly one key:
 
 Example: {"impact_score": 6}
 No markdown, no other keys, no explanation."""
+
+_TIER1_MACRO_GOAL = """[tier:macro] Perform deep-dive synthesis on high-impact knowledge item ID: {kid}
+
+Contract:
+- Treat this as a macro/hard-signal task (score 8-10).
+- Ground claims in retrieved evidence from search_knowledge.
+- Only use record_market_edge when concrete numeric/policy evidence exists.
+- Also write record_synthesis with concise evidence-linked conclusions."""
+
+_TIER2_LEAD_GOAL = """[tier:lead] Perform deep-dive synthesis on high-impact knowledge item ID: {kid}
+
+Contract:
+- Treat this as a qualitative lead task (score 6-7).
+- Prioritize sector trends, supply/demand gaps, and business pain points.
+- Default to record_synthesis.
+- Do NOT use record_market_edge unless concrete numeric evidence is present in retrieved sources."""
 
 
 def _build_user_block(item: dict[str, Any]) -> str:
@@ -98,6 +115,10 @@ class TriageStats:
     deep_dives_enqueued: int = 0
 
 
+def _today_key_local(prefix: str) -> str:
+    return f"{prefix}.{datetime.now().date().isoformat()}"
+
+
 async def run_triage_cli(
     settings: Settings,
     *,
@@ -132,6 +153,14 @@ async def run_triage_cli(
 
         client = client_cls(api_key=settings.gemini_api_key)
         model = settings.triage_model
+        lead_cap = max(0, int(settings.triage_lead_daily_cap))
+        trigger_min = max(1, min(10, int(settings.triage_deep_dive_min_score)))
+        lead_day_key = _today_key_local("triage.lead_enqueued")
+        raw_lead_count = await qe.state_get(lead_day_key)
+        try:
+            lead_count_today = int(raw_lead_count) if raw_lead_count is not None else 0
+        except ValueError:
+            lead_count_today = 0
 
         for item in rows:
             kid = int(item["id"])
@@ -187,11 +216,45 @@ async def run_triage_cli(
                 continue
 
             stats.scored += 1
-            if score >= settings.triage_deep_dive_min_score:
-                goal = (
-                    f"Perform deep-dive synthesis on high-impact knowledge item ID: {kid}"
+            if score >= 8 and score >= trigger_min:
+                goal = _TIER1_MACRO_GOAL.format(kid=kid)
+                task_id = await qe.insert_task(
+                    goal, status="pending", task_kind=TASK_KIND_GOAL
                 )
-                await qe.insert_task(goal, status="pending", task_kind=TASK_KIND_GOAL)
+                await qe.set_task_plan_json(
+                    task_id,
+                    json.dumps(
+                        {
+                            "tier": "macro",
+                            "knowledge_id": kid,
+                            "impact_score": score,
+                            "contract": "tiered_v1",
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                stats.deep_dives_enqueued += 1
+            elif score >= 6 and score >= trigger_min:
+                if lead_cap == 0 or lead_count_today >= lead_cap:
+                    continue
+                goal = _TIER2_LEAD_GOAL.format(kid=kid)
+                task_id = await qe.insert_task(
+                    goal, status="pending", task_kind=TASK_KIND_GOAL
+                )
+                await qe.set_task_plan_json(
+                    task_id,
+                    json.dumps(
+                        {
+                            "tier": "lead",
+                            "knowledge_id": kid,
+                            "impact_score": score,
+                            "contract": "tiered_v1",
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                lead_count_today += 1
+                await qe.state_set(lead_day_key, str(lead_count_today))
                 stats.deep_dives_enqueued += 1
 
         return stats, 0
