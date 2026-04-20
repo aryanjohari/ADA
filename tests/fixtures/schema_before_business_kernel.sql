@@ -1,6 +1,4 @@
--- ADA schema: tasks, messages (transcript), state (KV), usage_ledger,
--- web_sources, knowledge_sources / knowledge_items / knowledge_synthesis,
--- market_metrics / synthesis_edges (Business Kernel triage)
+-- Snapshot of schema before Business Kernel (impact_score, market_metrics, synthesis_edges).
 
 PRAGMA foreign_keys = ON;
 
@@ -77,9 +75,6 @@ CREATE TABLE IF NOT EXISTS web_sources (
 CREATE INDEX IF NOT EXISTS idx_web_sources_session_fetched
     ON web_sources(session_id, fetched_at DESC);
 
--- Knowledge layer: registered sources, ingested items, synthesis with soft refs.
--- knowledge_items_fts: contentless FTS5 (rowid = knowledge_items.id), triggers keep doc in sync.
-
 CREATE TABLE IF NOT EXISTS knowledge_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web')),
@@ -99,7 +94,6 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
     payload_json TEXT,
     content_hash TEXT NOT NULL,
     relevance_score REAL,
-    impact_score INTEGER CHECK (impact_score IS NULL OR (impact_score >= 1 AND impact_score <= 10)),
     expires_at TEXT,
     tombstoned INTEGER NOT NULL DEFAULT 0 CHECK (tombstoned IN (0, 1))
 );
@@ -111,9 +105,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_items_source_external
     ON knowledge_items(source_id, external_id)
     WHERE external_id IS NOT NULL;
 
--- Partial indexes on impact_score are created in PersistentState._ensure_impact_score_and_kernel_indexes
--- so executescript succeeds on DBs that still need ALTER ADD COLUMN impact_score.
-
 CREATE TABLE IF NOT EXISTS knowledge_synthesis (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     body TEXT NOT NULL,
@@ -122,34 +113,6 @@ CREATE TABLE IF NOT EXISTS knowledge_synthesis (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS market_metrics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    metric_name TEXT NOT NULL,
-    numeric_value REAL NOT NULL,
-    recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
-    api_source TEXT NOT NULL DEFAULT ''
-);
-
-CREATE INDEX IF NOT EXISTS idx_market_metrics_recorded
-    ON market_metrics(recorded_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_market_metrics_name_recorded
-    ON market_metrics(metric_name, recorded_at DESC);
-
-CREATE TABLE IF NOT EXISTS synthesis_edges (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    knowledge_id INTEGER NOT NULL REFERENCES knowledge_items(id) ON DELETE CASCADE,
-    metric_id INTEGER NOT NULL REFERENCES market_metrics(id) ON DELETE CASCADE,
-    causality_notes TEXT NOT NULL DEFAULT ''
-);
-
-CREATE INDEX IF NOT EXISTS idx_synthesis_edges_knowledge
-    ON synthesis_edges(knowledge_id);
-
-CREATE INDEX IF NOT EXISTS idx_synthesis_edges_metric
-    ON synthesis_edges(metric_id);
-
--- Optional Gemini embeddings for semantic / hybrid search (see ada/knowledge_embeddings.py).
 CREATE TABLE IF NOT EXISTS knowledge_item_embeddings (
     item_id INTEGER NOT NULL REFERENCES knowledge_items(id) ON DELETE CASCADE,
     model TEXT NOT NULL,
@@ -163,7 +126,6 @@ CREATE TABLE IF NOT EXISTS knowledge_item_embeddings (
 CREATE INDEX IF NOT EXISTS idx_knowledge_embeddings_model
     ON knowledge_item_embeddings(model);
 
--- Contentless FTS5: rowid aligns with knowledge_items.id; maintained by triggers.
 CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_items_fts USING fts5(
     doc,
     content='',

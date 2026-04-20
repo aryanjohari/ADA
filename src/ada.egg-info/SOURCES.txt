@@ -5,6 +5,7 @@ src/ada/__main__.py
 src/ada/cli.py
 src/ada/config.py
 src/ada/goal_cli.py
+src/ada/knowledge_embeddings.py
 src/ada/knowledge_search.py
 src/ada/knowledge_urls.py
 src/ada/main.py
@@ -29,6 +30,7 @@ src/ada/dream/__init__.py
 src/ada/dream/run.py
 src/ada/dream/transcript_compact.py
 src/ada/ingest/__init__.py
+src/ada/ingest/gate.py
 src/ada/ingest/rss.py
 src/ada/persistent/__init__.py
 src/ada/persistent/store.py
@@ -40,6 +42,7 @@ src/ada/tools/web_runtime.py
 tests/test_file_sandbox.py
 tests/test_gemini_stream.py
 tests/test_goal_cli.py
+tests/test_ingest_gate.py
 tests/test_ingest_rss.py
 tests/test_knowledge_schema.py
 tests/test_knowledge_search.py

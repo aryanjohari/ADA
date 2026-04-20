@@ -298,6 +298,9 @@ class QueryEngine:
         payload: dict[str, Any] | None = None,
         external_id: str | None = None,
         published_at: str | None = None,
+        relevance_score: float | None = None,
+        expires_at: str | None = None,
+        tombstoned: int = 0,
     ) -> KnowledgeItemInsertResult:
         return await self._store.insert_knowledge_item(
             source_id,
@@ -307,6 +310,9 @@ class QueryEngine:
             payload=payload,
             external_id=external_id,
             published_at=published_at,
+            relevance_score=relevance_score,
+            expires_at=expires_at,
+            tombstoned=tombstoned,
         )
 
     async def insert_knowledge_synthesis(
@@ -330,12 +336,16 @@ class QueryEngine:
         limit: int = 100,
         ingested_after: str | None = None,
         ingested_before: str | None = None,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
     ) -> list[dict[str, Any]]:
         return await self._store.list_knowledge_items(
             source_id=source_id,
             limit=limit,
             ingested_after=ingested_after,
             ingested_before=ingested_before,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
         )
 
     async def search_knowledge_items(
@@ -351,6 +361,8 @@ class QueryEngine:
         query_embedding: list[float] | None = None,
         embedding_model: str | None = None,
         embedding_min_cosine: float = 0.25,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
     ) -> list[dict[str, Any]]:
         return await self._store.search_knowledge_items(
             query,
@@ -363,6 +375,8 @@ class QueryEngine:
             query_embedding=query_embedding,
             embedding_model=embedding_model,
             embedding_min_cosine=embedding_min_cosine,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
         )
 
     async def upsert_knowledge_item_embedding(
@@ -389,3 +403,34 @@ class QueryEngine:
 
     async def delete_knowledge_source(self, source_id: int) -> None:
         await self._store.delete_knowledge_source(source_id)
+
+    async def list_unscored_knowledge(self, limit: int = 20) -> list[dict[str, Any]]:
+        return await self._store.list_unscored_knowledge(limit)
+
+    async def update_impact_score(self, knowledge_id: int, score: int) -> None:
+        await self._store.update_impact_score(knowledge_id, score)
+
+    async def insert_market_metric(
+        self,
+        metric_name: str,
+        numeric_value: float,
+        *,
+        recorded_at: str | None = None,
+        api_source: str = "",
+    ) -> int:
+        return await self._store.insert_market_metric(
+            metric_name,
+            numeric_value,
+            recorded_at=recorded_at,
+            api_source=api_source,
+        )
+
+    async def insert_synthesis_edge(
+        self,
+        knowledge_id: int,
+        metric_id: int,
+        causality_notes: str = "",
+    ) -> int:
+        return await self._store.insert_synthesis_edge(
+            knowledge_id, metric_id, causality_notes
+        )

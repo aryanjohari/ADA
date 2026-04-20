@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from urllib.parse import urlparse, urlunparse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -35,6 +36,50 @@ from ada.transcript_format import (
     pack_assistant_text,
     pack_user_text,
 )
+
+
+def _canonical_story_link(url: str) -> str | None:
+    """Normalize http(s) URLs for cross-feed dedupe (scheme, host, path; drop fragment)."""
+    raw = (url or "").strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        return raw
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    path = parsed.path or ""
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    return urlunparse((scheme, netloc, path, "", parsed.query, ""))
+
+
+def _story_link_sql_match_values(url: str) -> list[str]:
+    """Distinct lower(trim(...)) values to match json payload link across feeds."""
+    raw = (url or "").strip()
+    if not raw:
+        return []
+    canon = _canonical_story_link(url)
+    if not canon:
+        return [raw.lower().strip()]
+    candidates = [raw, canon]
+    p = urlparse(canon)
+    if p.scheme == "https":
+        candidates.append(
+            urlunparse(("http", p.netloc, p.path, "", p.query, ""))
+        )
+    elif p.scheme == "http":
+        candidates.append(
+            urlunparse(("https", p.netloc, p.path, "", p.query, ""))
+        )
+    seen: set[str] = set()
+    out: list[str] = []
+    for c in candidates:
+        k = c.strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
 
 
 @dataclass
@@ -154,7 +199,11 @@ class PersistentState:
                     tags_json TEXT NOT NULL DEFAULT '[]',
                     content_excerpt TEXT NOT NULL DEFAULT '',
                     payload_json TEXT,
-                    content_hash TEXT NOT NULL
+                    content_hash TEXT NOT NULL,
+                    relevance_score REAL,
+                    impact_score INTEGER CHECK (impact_score IS NULL OR (impact_score >= 1 AND impact_score <= 10)),
+                    expires_at TEXT,
+                    tombstoned INTEGER NOT NULL DEFAULT 0 CHECK (tombstoned IN (0, 1))
                 )
                 """
             )
@@ -187,6 +236,129 @@ class PersistentState:
         await self._ensure_knowledge_item_embeddings_table()
         await self._migrate_knowledge_fts_if_needed()
         await self._migrate_knowledge_fts_payload_doc_v1()
+        await self._ensure_knowledge_items_score_ttl_columns()
+        await self._ensure_impact_score_and_kernel_indexes()
+        await self._ensure_market_metrics_and_synthesis_edges()
+
+    async def _ensure_impact_score_and_kernel_indexes(self) -> None:
+        """Add impact_score + triage indexes for upgraded DBs."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(knowledge_items)")
+        cols = {str(row[1]) for row in await cur.fetchall()}
+        if "impact_score" not in cols:
+            await self._conn.execute(
+                """
+                ALTER TABLE knowledge_items ADD COLUMN impact_score INTEGER
+                CHECK (impact_score IS NULL OR (impact_score >= 1 AND impact_score <= 10))
+                """
+            )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_unscored_ingested "
+            "ON knowledge_items(ingested_at DESC) WHERE impact_score IS NULL"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_impact_score "
+            "ON knowledge_items(impact_score) WHERE impact_score IS NOT NULL"
+        )
+        await self._conn.commit()
+
+    async def _ensure_market_metrics_and_synthesis_edges(self) -> None:
+        """Create market_metrics and synthesis_edges when upgrading older DBs."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='market_metrics'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE market_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    metric_name TEXT NOT NULL,
+                    numeric_value REAL NOT NULL,
+                    recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    api_source TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_market_metrics_recorded "
+                "ON market_metrics(recorded_at DESC)"
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_market_metrics_name_recorded "
+                "ON market_metrics(metric_name, recorded_at DESC)"
+            )
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='synthesis_edges'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE synthesis_edges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    knowledge_id INTEGER NOT NULL REFERENCES knowledge_items(id) ON DELETE CASCADE,
+                    metric_id INTEGER NOT NULL REFERENCES market_metrics(id) ON DELETE CASCADE,
+                    causality_notes TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_synthesis_edges_knowledge "
+                "ON synthesis_edges(knowledge_id)"
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_synthesis_edges_metric "
+                "ON synthesis_edges(metric_id)"
+            )
+        await self._conn.commit()
+
+    async def _ensure_knowledge_items_score_ttl_columns(self) -> None:
+        """Add relevance_score, expires_at, tombstoned + indexes for upgraded DBs."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(knowledge_items)")
+        cols = {str(row[1]) for row in await cur.fetchall()}
+        if "relevance_score" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE knowledge_items ADD COLUMN relevance_score REAL"
+            )
+        if "expires_at" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE knowledge_items ADD COLUMN expires_at TEXT"
+            )
+        if "tombstoned" not in cols:
+            await self._conn.execute(
+                """
+                ALTER TABLE knowledge_items ADD COLUMN tombstoned INTEGER NOT NULL DEFAULT 0
+                """
+            )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_ingested_at "
+            "ON knowledge_items(ingested_at DESC)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_relevance "
+            "ON knowledge_items(relevance_score)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_expires_at "
+            "ON knowledge_items(expires_at)"
+        )
+        await self._conn.commit()
 
     async def _ensure_knowledge_item_embeddings_table(self) -> None:
         """Create knowledge_item_embeddings when upgrading older DBs."""
@@ -1030,6 +1202,9 @@ class PersistentState:
         payload: dict[str, Any] | None = None,
         external_id: str | None = None,
         published_at: str | None = None,
+        relevance_score: float | None = None,
+        expires_at: str | None = None,
+        tombstoned: int = 0,
     ) -> KnowledgeItemInsertResult:
         assert self._conn is not None
         if external_id is not None:
@@ -1057,6 +1232,26 @@ class PersistentState:
             if row is not None:
                 return KnowledgeItemInsertResult(int(row[0]), False)
 
+        if payload is not None:
+            raw_link = payload.get("link")
+            if isinstance(raw_link, str):
+                match_vals = _story_link_sql_match_values(raw_link)
+                if match_vals:
+                    ph = ",".join("?" * len(match_vals))
+                    cur = await self._conn.execute(
+                        f"""
+                        SELECT id FROM knowledge_items
+                        WHERE payload_json IS NOT NULL
+                          AND json_extract(payload_json, '$.link') IS NOT NULL
+                          AND lower(trim(json_extract(payload_json, '$.link'))) IN ({ph})
+                        LIMIT 1
+                        """,
+                        match_vals,
+                    )
+                    row = await cur.fetchone()
+                    if row is not None:
+                        return KnowledgeItemInsertResult(int(row[0]), False)
+
         tags_json = self._tags_to_json(tags)
         payload_json: str | None
         if payload is not None:
@@ -1067,9 +1262,10 @@ class PersistentState:
             """
             INSERT INTO knowledge_items (
                 source_id, external_id, published_at, tags_json,
-                content_excerpt, payload_json, content_hash
+                content_excerpt, payload_json, content_hash,
+                relevance_score, expires_at, tombstoned
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 source_id,
@@ -1079,6 +1275,9 @@ class PersistentState:
                 content_excerpt,
                 payload_json,
                 content_hash,
+                relevance_score,
+                expires_at,
+                tombstoned,
             ),
         )
         await self._conn.commit()
@@ -1114,12 +1313,26 @@ class PersistentState:
             content_excerpt,
             payload_json,
             content_hash,
+            relevance_score,
+            impact_score,
+            expires_at,
+            tombstoned,
         ) = row
         payload: dict[str, Any] | None
         if payload_json is None:
             payload = None
         else:
             payload = json.loads(str(payload_json))
+        rs: float | None
+        if relevance_score is None:
+            rs = None
+        else:
+            rs = float(relevance_score)
+        imp: int | None
+        if impact_score is None:
+            imp = None
+        else:
+            imp = int(impact_score)
         return {
             "id": int(iid),
             "source_id": int(source_id),
@@ -1130,6 +1343,10 @@ class PersistentState:
             "content_excerpt": str(content_excerpt),
             "payload": payload,
             "content_hash": str(content_hash),
+            "relevance_score": rs,
+            "impact_score": imp,
+            "expires_at": str(expires_at) if expires_at is not None else None,
+            "tombstoned": int(tombstoned),
         }
 
     async def get_knowledge_item(self, item_id: int) -> dict[str, Any]:
@@ -1137,7 +1354,8 @@ class PersistentState:
         cur = await self._conn.execute(
             """
             SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash
+                   tags_json, content_excerpt, payload_json, content_hash,
+                   relevance_score, impact_score, expires_at, tombstoned
             FROM knowledge_items WHERE id = ?
             """,
             (item_id,),
@@ -1154,6 +1372,8 @@ class PersistentState:
         limit: int = 100,
         ingested_after: str | None = None,
         ingested_before: str | None = None,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         lim = max(1, min(limit, 500))
@@ -1168,12 +1388,23 @@ class PersistentState:
         if ingested_before is not None:
             conds.append("datetime(ingested_at) <= datetime(?)")
             args.append(ingested_before)
+        vf_parts, vf_args = self._knowledge_filter_parts(
+            table_alias="",
+            tag=None,
+            ingested_after=None,
+            ingested_before=None,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
+        )
+        conds.extend(vf_parts)
+        args.extend(vf_args)
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
         args.append(lim)
         cur = await self._conn.execute(
             f"""
             SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash
+                   tags_json, content_excerpt, payload_json, content_hash,
+                   relevance_score, impact_score, expires_at, tombstoned
             FROM knowledge_items
             {where}
             ORDER BY datetime(ingested_at) DESC
@@ -1191,17 +1422,27 @@ class PersistentState:
         )
         return await cur.fetchone() is not None
 
-    def _knowledge_filter_sql(
+    def _knowledge_filter_parts(
         self,
         *,
         table_alias: str,
         tag: str | None,
         ingested_after: str | None,
         ingested_before: str | None,
-    ) -> tuple[str, list[Any]]:
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
+    ) -> tuple[list[str], list[Any]]:
         conds: list[str] = []
         args: list[Any] = []
         prefix = f"{table_alias}." if table_alias else ""
+        if valid_at_now:
+            conds.append(f"{prefix}tombstoned = 0")
+            conds.append(
+                f"({prefix}expires_at IS NULL OR datetime({prefix}expires_at) > datetime('now'))"
+            )
+        if min_relevance_score is not None:
+            conds.append(f"COALESCE({prefix}relevance_score, 1.0) >= ?")
+            args.append(min_relevance_score)
         if tag is not None:
             conds.append(
                 f"EXISTS (SELECT 1 FROM json_each({prefix}tags_json) j WHERE j.value = ?)"
@@ -1213,6 +1454,26 @@ class PersistentState:
         if ingested_before is not None:
             conds.append(f"datetime({prefix}ingested_at) <= datetime(?)")
             args.append(ingested_before)
+        return conds, args
+
+    def _knowledge_filter_sql(
+        self,
+        *,
+        table_alias: str,
+        tag: str | None,
+        ingested_after: str | None,
+        ingested_before: str | None,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
+    ) -> tuple[str, list[Any]]:
+        conds, args = self._knowledge_filter_parts(
+            table_alias=table_alias,
+            tag=tag,
+            ingested_after=ingested_after,
+            ingested_before=ingested_before,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
+        )
         if not conds:
             return "", []
         return " AND " + " AND ".join(conds), args
@@ -1250,6 +1511,8 @@ class PersistentState:
         ingested_after: str | None,
         ingested_before: str | None,
         prefer_fts: bool,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
     ) -> list[dict[str, Any]]:
         mq = build_fts_match_query(query)
         lim = max(1, min(limit, 500))
@@ -1259,6 +1522,8 @@ class PersistentState:
             tag=tag,
             ingested_after=ingested_after,
             ingested_before=ingested_before,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
         )
         if not mq:
             return await self._search_knowledge_items_like(
@@ -1267,12 +1532,15 @@ class PersistentState:
                 tag=tag,
                 ingested_after=ingested_after,
                 ingested_before=ingested_before,
+                min_relevance_score=min_relevance_score,
+                valid_at_now=valid_at_now,
             )
         if prefer_fts and await self._knowledge_fts_table_exists():
             try:
                 sql = f"""
                     SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
-                           ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash
+                           ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash,
+                           ki.relevance_score, ki.impact_score, ki.expires_at, ki.tombstoned
                     FROM knowledge_items ki
                     INNER JOIN knowledge_items_fts ON ki.id = knowledge_items_fts.rowid
                     WHERE knowledge_items_fts MATCH ?{extra_fts}
@@ -1291,6 +1559,8 @@ class PersistentState:
             tag=tag,
             ingested_after=ingested_after,
             ingested_before=ingested_before,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
         )
 
     async def _search_knowledge_items_semantic(
@@ -1303,6 +1573,8 @@ class PersistentState:
         tag: str | None,
         ingested_after: str | None,
         ingested_before: str | None,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         extra, args_extra = self._knowledge_filter_sql(
@@ -1310,6 +1582,8 @@ class PersistentState:
             tag=tag,
             ingested_after=ingested_after,
             ingested_before=ingested_before,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
         )
         sql = f"""
             SELECT e.item_id, e.embedding, e.dim
@@ -1345,7 +1619,8 @@ class PersistentState:
         cur = await self._conn.execute(
             f"""
             SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash
+                   tags_json, content_excerpt, payload_json, content_hash,
+                   relevance_score, impact_score, expires_at, tombstoned
             FROM knowledge_items WHERE id IN ({ph})
             """,
             ids,
@@ -1370,6 +1645,8 @@ class PersistentState:
         query_embedding: list[float] | None = None,
         embedding_model: str | None = None,
         embedding_min_cosine: float = 0.25,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
     ) -> list[dict[str, Any]]:
         """
         Lexical (FTS/LIKE), semantic (cosine on stored embeddings), or hybrid (RRF).
@@ -1394,6 +1671,8 @@ class PersistentState:
                     tag=tag,
                     ingested_after=ingested_after,
                     ingested_before=ingested_before,
+                    min_relevance_score=min_relevance_score,
+                    valid_at_now=valid_at_now,
                 )
             return await self._search_knowledge_items_lexical(
                 query,
@@ -1402,6 +1681,8 @@ class PersistentState:
                 ingested_after=ingested_after,
                 ingested_before=ingested_before,
                 prefer_fts=prefer_fts,
+                min_relevance_score=min_relevance_score,
+                valid_at_now=valid_at_now,
             )
 
         if sm == "hybrid":
@@ -1417,6 +1698,8 @@ class PersistentState:
                     ingested_after=ingested_after,
                     ingested_before=ingested_before,
                     prefer_fts=prefer_fts,
+                    min_relevance_score=min_relevance_score,
+                    valid_at_now=valid_at_now,
                 )
                 sem = await self._search_knowledge_items_semantic(
                     query_embedding,
@@ -1426,6 +1709,8 @@ class PersistentState:
                     tag=tag,
                     ingested_after=ingested_after,
                     ingested_before=ingested_before,
+                    min_relevance_score=min_relevance_score,
+                    valid_at_now=valid_at_now,
                 )
                 lex_ids = [x["id"] for x in lex]
                 sem_ids = [x["id"] for x in sem]
@@ -1439,6 +1724,8 @@ class PersistentState:
                 ingested_after=ingested_after,
                 ingested_before=ingested_before,
                 prefer_fts=prefer_fts,
+                min_relevance_score=min_relevance_score,
+                valid_at_now=valid_at_now,
             )
 
         return await self._search_knowledge_items_lexical(
@@ -1448,6 +1735,8 @@ class PersistentState:
             ingested_after=ingested_after,
             ingested_before=ingested_before,
             prefer_fts=prefer_fts,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
         )
 
     async def _search_knowledge_items_like(
@@ -1458,6 +1747,8 @@ class PersistentState:
         tag: str | None,
         ingested_after: str | None,
         ingested_before: str | None,
+        min_relevance_score: float | None = None,
+        valid_at_now: bool = True,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         token = query.strip()
@@ -1470,10 +1761,13 @@ class PersistentState:
             tag=tag,
             ingested_after=ingested_after,
             ingested_before=ingested_before,
+            min_relevance_score=min_relevance_score,
+            valid_at_now=valid_at_now,
         )
         sql = f"""
             SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash
+                   tags_json, content_excerpt, payload_json, content_hash,
+                   relevance_score, impact_score, expires_at, tombstoned
             FROM knowledge_items
             WHERE (content_excerpt LIKE ? ESCAPE '\\' OR tags_json LIKE ? ESCAPE '\\')
             {extra}
@@ -1512,6 +1806,88 @@ class PersistentState:
                 }
             )
         return out
+
+    async def list_unscored_knowledge(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return active knowledge rows with ``impact_score IS NULL`` (newest first).
+
+        Excludes tombstoned rows and rows past ``expires_at`` — same validity rules as
+        :meth:`list_knowledge_items` with ``valid_at_now=True``.
+        """
+        assert self._conn is not None
+        lim = max(1, min(limit, 500))
+        cur = await self._conn.execute(
+            """
+            SELECT id, source_id, external_id, published_at, ingested_at,
+                   tags_json, content_excerpt, payload_json, content_hash,
+                   relevance_score, impact_score, expires_at, tombstoned
+            FROM knowledge_items
+            WHERE impact_score IS NULL
+              AND tombstoned = 0
+              AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
+            ORDER BY datetime(ingested_at) DESC
+            LIMIT ?
+            """,
+            (lim,),
+        )
+        rows = await cur.fetchall()
+        return [self._row_to_knowledge_item(r) for r in rows]
+
+    async def update_impact_score(self, knowledge_id: int, score: int) -> None:
+        if not isinstance(score, int) or score < 1 or score > 10:
+            raise ValueError("score must be an integer from 1 to 10")
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "UPDATE knowledge_items SET impact_score = ? WHERE id = ?",
+            (score, knowledge_id),
+        )
+        if cur.rowcount == 0:
+            raise LookupError(f"no knowledge item with id={knowledge_id}")
+        await self._conn.commit()
+
+    async def insert_market_metric(
+        self,
+        metric_name: str,
+        numeric_value: float,
+        *,
+        recorded_at: str | None = None,
+        api_source: str = "",
+    ) -> int:
+        assert self._conn is not None
+        if recorded_at is None:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO market_metrics (metric_name, numeric_value, api_source)
+                VALUES (?, ?, ?)
+                """,
+                (metric_name, numeric_value, api_source),
+            )
+        else:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO market_metrics (metric_name, numeric_value, recorded_at, api_source)
+                VALUES (?, ?, ?, ?)
+                """,
+                (metric_name, numeric_value, recorded_at, api_source),
+            )
+        await self._conn.commit()
+        return int(cur.lastrowid)
+
+    async def insert_synthesis_edge(
+        self,
+        knowledge_id: int,
+        metric_id: int,
+        causality_notes: str = "",
+    ) -> int:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            INSERT INTO synthesis_edges (knowledge_id, metric_id, causality_notes)
+            VALUES (?, ?, ?)
+            """,
+            (knowledge_id, metric_id, causality_notes),
+        )
+        await self._conn.commit()
+        return int(cur.lastrowid)
 
     async def delete_knowledge_source(self, source_id: int) -> None:
         """Delete a registered source and cascade knowledge_items (not synthesis refs)."""

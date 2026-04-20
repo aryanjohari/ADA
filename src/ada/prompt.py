@@ -94,7 +94,8 @@ def format_knowledge_tools_note(settings: Settings) -> str | None:
     )
     return (
         "**Knowledge tools (`ADA_ENABLE_KNOWLEDGE_TOOLS=1`):** "
-        "`search_knowledge` searches stored `knowledge_items` (RSS ingest, etc.). "
+        "`search_knowledge` searches stored `knowledge_items` (RSS ingest, etc.); optional "
+        "`min_relevance_score` and `valid_only` filter by score/TTL. "
         "`record_synthesis` saves a short conclusion with `ref_item_ids` citing item ids from search results. "
         "`add_knowledge_source` registers a new RSS (or web) feed URL in SQLite; "
         "the operator or cron runs `ada ingest-rss` to fetch into `knowledge_items`. "

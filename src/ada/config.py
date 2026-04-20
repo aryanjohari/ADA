@@ -114,6 +114,13 @@ class Settings:
     knowledge_embedding_model: str
     knowledge_embedding_dim: int
     knowledge_embedding_min_cosine: float
+    knowledge_default_retention_days: int | None
+    ingest_gatekeeper: bool
+    ingest_gate_model: str
+    ingest_gate_max_output_tokens: int | None
+    triage_model: str
+    triage_batch_size: int
+    triage_deep_dive_min_score: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -251,6 +258,35 @@ class Settings:
         ).strip()
         know_emb_dim = max(8, int(os.environ.get("ADA_KNOWLEDGE_EMBEDDING_DIM", "768")))
         know_emb_min = float(os.environ.get("ADA_KNOWLEDGE_EMBEDDING_MIN_COSINE", "0.25"))
+        retention_raw = os.environ.get("ADA_KNOWLEDGE_DEFAULT_RETENTION_DAYS", "").strip()
+        knowledge_default_retention_days: int | None = None
+        if retention_raw:
+            try:
+                rd = int(retention_raw)
+                if rd > 0:
+                    knowledge_default_retention_days = rd
+            except ValueError:
+                knowledge_default_retention_days = None
+        ingest_gatekeeper = os.environ.get(
+            "ADA_INGEST_GATEKEEPER", "0"
+        ).strip().lower() not in ("0", "false", "no")
+        ingest_gate_model = os.environ.get(
+            "ADA_INGEST_GATE_MODEL", DEFAULT_GEMINI_MODEL
+        ).strip() or DEFAULT_GEMINI_MODEL
+        gate_tok_raw = os.environ.get("ADA_INGEST_GATE_MAX_OUTPUT_TOKENS", "").strip()
+        ingest_gate_max_output_tokens: int | None = None
+        if gate_tok_raw:
+            try:
+                ingest_gate_max_output_tokens = max(64, int(gate_tok_raw))
+            except ValueError:
+                ingest_gate_max_output_tokens = None
+        triage_model = os.environ.get("ADA_TRIAGE_MODEL", "").strip() or DEFAULT_GEMINI_MODEL
+        triage_batch_size = max(1, int(os.environ.get("ADA_TRIAGE_BATCH_SIZE", "20")))
+        _dd_raw = os.environ.get("ADA_TRIAGE_DEEP_DIVE_MIN_SCORE", "6").strip()
+        try:
+            triage_deep_dive_min_score = max(1, min(10, int(_dd_raw)))
+        except ValueError:
+            triage_deep_dive_min_score = 6
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -309,6 +345,13 @@ class Settings:
             knowledge_embedding_model=know_emb_model or "gemini-embedding-001",
             knowledge_embedding_dim=know_emb_dim,
             knowledge_embedding_min_cosine=know_emb_min,
+            knowledge_default_retention_days=knowledge_default_retention_days,
+            ingest_gatekeeper=ingest_gatekeeper,
+            ingest_gate_model=ingest_gate_model,
+            ingest_gate_max_output_tokens=ingest_gate_max_output_tokens,
+            triage_model=triage_model,
+            triage_batch_size=triage_batch_size,
+            triage_deep_dive_min_score=triage_deep_dive_min_score,
         )
 
     def ensure_data_dir(self) -> None:

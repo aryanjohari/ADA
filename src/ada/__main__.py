@@ -1,4 +1,4 @@
-"""`python -m ada [chat|daemon|goal|dream|ingest-rss]`."""
+"""`python -m ada [chat|daemon|goal|dream|ingest-rss|add-rss-source|triage]`."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ import sys
 from ada.config import Settings, load_dotenv_if_present
 from ada.cli import run_chat, run_dream_cli
 from ada.goal_cli import async_main as goal_async_main
-from ada.ingest.rss import run_ingest_rss_cli
+from ada.ingest.rss import run_ingest_rss_cli, run_register_rss_source_cli
 from ada.main import main_daemon
+from ada.triage.run import run_triage_cli
 
 
 def main() -> None:
@@ -33,6 +34,21 @@ def main() -> None:
     sub.add_parser(
         "ingest-rss",
         help="Fetch RSS/Atom feeds listed in knowledge_sources (kind=rss) into knowledge_items",
+    )
+
+    add_feed_p = sub.add_parser(
+        "add-rss-source",
+        help="Register an RSS feed URL in knowledge_sources (then run ada ingest-rss)",
+    )
+    add_feed_p.add_argument(
+        "url",
+        help="Feed URL (e.g. https://www.rnz.co.nz/rss/business.xml)",
+    )
+    add_feed_p.add_argument(
+        "--label",
+        default=None,
+        metavar="TEXT",
+        help="Optional label stored with the source",
     )
 
     goal_p = sub.add_parser("goal", help="Enqueue and inspect background goal tasks")
@@ -65,6 +81,18 @@ def main() -> None:
         help="Transcript window size (default: ADA_DREAM_MAX_MESSAGES)",
     )
 
+    triage_p = sub.add_parser(
+        "triage",
+        help="Score unscored knowledge_items for NZ economy/markets news value (Gemini JSON; updates impact_score)",
+    )
+    triage_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max items to process (default: ADA_TRIAGE_BATCH_SIZE)",
+    )
+
     args = p.parse_args()
     if args.cmd == "chat":
         settings = Settings.load()
@@ -74,6 +102,17 @@ def main() -> None:
     elif args.cmd == "ingest-rss":
         settings = Settings.load()
         raise SystemExit(asyncio.run(run_ingest_rss_cli(settings)))
+    elif args.cmd == "add-rss-source":
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_register_rss_source_cli(
+                    settings,
+                    url=args.url,
+                    label=args.label,
+                )
+            )
+        )
     elif args.cmd == "goal":
         rest = list(args.goal_argv)
         while rest and rest[0] == "--":
@@ -94,6 +133,22 @@ def main() -> None:
                 max_messages=max_m,
             )
         )
+    elif args.cmd == "triage":
+        settings = Settings.load()
+        limit = (
+            args.limit
+            if args.limit is not None
+            else settings.triage_batch_size
+        )
+        stats, code = asyncio.run(run_triage_cli(settings, limit=limit))
+        print(
+            "triage:"
+            f" processed={stats.processed}"
+            f" scored={stats.scored}"
+            f" skipped={stats.skipped}"
+            f" deep_dives_enqueued={stats.deep_dives_enqueued}"
+        )
+        raise SystemExit(code)
     else:
         p.print_help()
         sys.exit(2)

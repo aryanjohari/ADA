@@ -7,6 +7,7 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import ada
@@ -14,6 +15,7 @@ import feedparser
 import httpx
 
 from ada.config import Settings
+from ada.ingest.gate import score_feed_entry
 from ada.knowledge_embeddings import embed_document_text, float32_list_to_blob
 from ada.query_engine import QueryEngine
 
@@ -132,6 +134,36 @@ async def ingest_rss_feeds(
                 if label:
                     tags = tags + [f"src:{str(label)[:80]}"]
                     tags = tags[:48]
+                relevance = 1.0
+                if (
+                    settings is not None
+                    and settings.ingest_gatekeeper
+                    and settings.gemini_api_key.strip()
+                ):
+                    try:
+                        rs, extra_tags = await score_feed_entry(
+                            settings.gemini_api_key.strip(),
+                            title=title,
+                            summary=summary,
+                            model=settings.ingest_gate_model,
+                            max_output_tokens=settings.ingest_gate_max_output_tokens,
+                        )
+                        relevance = rs
+                        for t in extra_tags:
+                            if t and t not in tags:
+                                tags.append(t)
+                        tags = tags[:48]
+                    except Exception as ex:
+                        log.warning("ingest gate: %s", ex)
+                expires_at: str | None = None
+                if (
+                    settings is not None
+                    and settings.knowledge_default_retention_days is not None
+                ):
+                    expires_at = (
+                        datetime.now(timezone.utc)
+                        + timedelta(days=settings.knowledge_default_retention_days)
+                    ).isoformat()
                 ins = await qe.insert_knowledge_item(
                     sid,
                     chash,
@@ -144,6 +176,8 @@ async def ingest_rss_feeds(
                     },
                     external_id=ext_id,
                     published_at=published_at,
+                    relevance_score=relevance,
+                    expires_at=expires_at,
                 )
                 if ins.inserted:
                     result.items_inserted += 1
@@ -212,6 +246,38 @@ async def run_ingest_rss_cli(settings: Settings) -> int:
             print(err, file=sys.stderr)
         if res.feeds_attempted > 0 and res.feeds_ok == 0:
             return 1
+        return 0
+    finally:
+        await qe.close()
+
+
+async def run_register_rss_source_cli(
+    settings: Settings,
+    *,
+    url: str,
+    label: str | None = None,
+) -> int:
+    """Register one RSS feed URL in knowledge_sources if not already present."""
+    u = url.strip()
+    if not u:
+        print("add-rss-source: empty URL", file=sys.stderr)
+        return 2
+    settings.ensure_data_dir()
+    schema_path = Path(ada.__path__[0]) / "db" / "schema.sql"
+    qe = QueryEngine(
+        settings.state_db_path,
+        schema_path,
+        debounce_ms=settings.persist_debounce_ms,
+    )
+    await qe.connect()
+    try:
+        rows = await qe.list_knowledge_sources(kind="rss")
+        for r in rows:
+            if str(r.get("base_url") or "").strip() == u:
+                print(f"add-rss-source: already registered id={r['id']} url={u!r}")
+                return 0
+        sid = await qe.insert_knowledge_source("rss", label=label, base_url=u)
+        print(f"add-rss-source: registered id={sid} url={u!r}")
         return 0
     finally:
         await qe.close()

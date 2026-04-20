@@ -301,6 +301,14 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
                         "or hybrid (RRF merge; default when embeddings enabled).",
                         "enum": ["lexical", "semantic", "hybrid"],
                     },
+                    "min_relevance_score": {
+                        "type": "number",
+                        "description": "Optional: only items with COALESCE(relevance_score,1.0) >= this (0–1).",
+                    },
+                    "valid_only": {
+                        "type": "boolean",
+                        "description": "If true (default), exclude tombstoned and expired items.",
+                    },
                 },
                 "required": ["query"],
             },

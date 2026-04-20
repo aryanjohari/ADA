@@ -257,6 +257,124 @@ async def test_search_knowledge_semantic_mode(tmp_path, schema_sql_path):
 
 
 @pytest.mark.asyncio
+async def test_search_knowledge_semantic_respects_min_relevance(
+    tmp_path, schema_sql_path
+):
+    db = tmp_path / "k.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        sid = await qe.insert_knowledge_source("rss")
+        ins_low = await qe.insert_knowledge_item(
+            sid, "low", content_excerpt="vec topic", relevance_score=0.1
+        )
+        ins_high = await qe.insert_knowledge_item(
+            sid, "high", content_excerpt="vec topic", relevance_score=0.95
+        )
+        model = "test-model"
+        v = [0.0, 1.0, 0.0]
+        blob = float32_list_to_blob(v)
+        await qe.upsert_knowledge_item_embedding(
+            ins_low.id,
+            model=model,
+            dim=3,
+            embedding=blob,
+            content_hash="low",
+        )
+        await qe.upsert_knowledge_item_embedding(
+            ins_high.id,
+            model=model,
+            dim=3,
+            embedding=blob,
+            content_hash="high",
+        )
+        hits = await qe.search_knowledge_items(
+            "x",
+            limit=10,
+            search_mode="semantic",
+            query_embedding=v,
+            embedding_model=model,
+            embedding_min_cosine=0.01,
+            min_relevance_score=0.5,
+        )
+        ids = {h["id"] for h in hits}
+        assert ins_low.id not in ids
+        assert ins_high.id in ids
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_min_relevance_and_expiry(tmp_path, schema_sql_path):
+    db = tmp_path / "k.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        import aiosqlite
+
+        sid = await qe.insert_knowledge_source("rss")
+        low = (
+            await qe.insert_knowledge_item(
+                sid,
+                "l1",
+                content_excerpt="shared keyword low",
+                relevance_score=0.2,
+            )
+        ).id
+        high = (
+            await qe.insert_knowledge_item(
+                sid,
+                "h1",
+                content_excerpt="shared keyword high",
+                relevance_score=0.9,
+            )
+        ).id
+        legacy = (
+            await qe.insert_knowledge_item(
+                sid,
+                "leg",
+                content_excerpt="shared keyword legacy null score",
+            )
+        ).id
+        hits = await qe.search_knowledge_items(
+            "shared keyword",
+            limit=10,
+            search_mode="lexical",
+            min_relevance_score=0.5,
+        )
+        ids = {h["id"] for h in hits}
+        assert low not in ids
+        assert high in ids
+        assert legacy in ids
+
+        async with aiosqlite.connect(db) as raw:
+            await raw.execute(
+                "UPDATE knowledge_items SET expires_at = ? WHERE id = ?",
+                ("2020-01-01T00:00:00Z", high),
+            )
+            await raw.commit()
+        hits2 = await qe.search_knowledge_items(
+            "shared keyword",
+            limit=10,
+            search_mode="lexical",
+            min_relevance_score=0.5,
+            valid_at_now=True,
+        )
+        assert high not in {h["id"] for h in hits2}
+
+        hits3 = await qe.search_knowledge_items(
+            "shared keyword",
+            limit=10,
+            search_mode="lexical",
+            min_relevance_score=0.5,
+            valid_at_now=False,
+        )
+        assert high in {h["id"] for h in hits3}
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
 async def test_search_knowledge_items_like_fallback(tmp_path, schema_sql_path):
     db = tmp_path / "k.db"
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)

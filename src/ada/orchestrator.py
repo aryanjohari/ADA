@@ -171,6 +171,16 @@ async def orchestrate_turn(
             if mode_s not in ("lexical", "semantic", "hybrid"):
                 mode_s = "hybrid"
 
+            min_rs_raw = call.args.get("min_relevance_score")
+            min_rs: float | None = None
+            if min_rs_raw is not None:
+                try:
+                    min_rs = float(min_rs_raw)
+                except (TypeError, ValueError):
+                    min_rs = None
+            vo = call.args.get("valid_only")
+            valid_at_now = True if vo is None else bool(vo)
+
             qe_vec: list[float] | None = None
             if (
                 knowledge_embeddings_enabled
@@ -200,6 +210,8 @@ async def orchestrate_turn(
                 if knowledge_embeddings_enabled
                 else None,
                 embedding_min_cosine=knowledge_embedding_min_cosine,
+                min_relevance_score=min_rs,
+                valid_at_now=valid_at_now,
             )
             slim: list[dict[str, Any]] = []
             for it in items[:25]:
@@ -218,6 +230,8 @@ async def orchestrate_turn(
                         "tags": it.get("tags"),
                         "ingested_at": it.get("ingested_at"),
                         "published_at": it.get("published_at"),
+                        "relevance_score": it.get("relevance_score"),
+                        "expires_at": it.get("expires_at"),
                     }
                 )
             return {"items": slim, "count": len(items)}
