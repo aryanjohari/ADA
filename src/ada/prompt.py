@@ -80,7 +80,7 @@ def format_session_web_sources_list_note(settings: Settings) -> str | None:
 
 
 def format_knowledge_tools_note(settings: Settings) -> str | None:
-    """Harness note when search_knowledge / record_synthesis / add_knowledge_source are enabled."""
+    """Harness note when knowledge and graph-lite tools are enabled."""
     if not settings.enable_knowledge_tools:
         return None
     allow = ", ".join(sorted(settings.knowledge_feed_host_allowlist)[:12])
@@ -95,14 +95,19 @@ def format_knowledge_tools_note(settings: Settings) -> str | None:
     return (
         "**Knowledge tools (`ADA_ENABLE_KNOWLEDGE_TOOLS=1`):** "
         "`search_knowledge` searches stored `knowledge_items` (RSS ingest, etc.); optional "
-        "`min_relevance_score` and `valid_only` filter by score/TTL. "
+        "`primary_triage_category`, `min_relevance_score`, and `valid_only` filter by triage code/score/TTL. "
         f"Tool responses are capped to {settings.knowledge_tool_max_results} items with excerpts "
         f"trimmed to ~{settings.knowledge_tool_excerpt_chars} chars to control token usage. "
         "`record_synthesis` saves a short conclusion with `ref_item_ids` citing item ids from search results. "
         "`record_market_edge` stores one numeric market metric and links it causally to a knowledge item "
         "(for triage/deep-dive graphing). "
+        "`record_entity` upserts graph-lite entities by normalized name + type. "
+        "`record_edge` writes graph-lite edges with confidence and evidence ids; non-hypothesis edges "
+        "must include evidence. "
+        "`link_evidence` attaches additional knowledge item evidence to an existing graph-lite edge. "
         "`add_knowledge_source` registers a new RSS (or web) feed URL in SQLite; "
         "the operator or cron runs `ada ingest-rss` to fetch into `knowledge_items`. "
+        "Automated extraction pathways must emit JSON only (no markdown prose). "
         f"{allow_line}"
     )
 

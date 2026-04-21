@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from ada.persistent.store import (
+    GRAPH_EDGE_ACTIVE,
+    GRAPH_EDGE_INVALID,
+    GRAPH_EDGE_SUPERSEDED,
     TASK_KIND_CHAT,
     TASK_KIND_GOAL,
     KnowledgeItemInsertResult,
@@ -35,6 +38,9 @@ __all__ = [
     "TASK_KIND_CHAT",
     "TASK_KIND_GOAL",
     "TaskKind",
+    "GRAPH_EDGE_ACTIVE",
+    "GRAPH_EDGE_SUPERSEDED",
+    "GRAPH_EDGE_INVALID",
 ]
 
 
@@ -424,6 +430,7 @@ class QueryEngine:
         embedding_min_cosine: float = 0.25,
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
+        primary_triage_category: str | None = None,
     ) -> list[dict[str, Any]]:
         return await self._store.search_knowledge_items(
             query,
@@ -438,6 +445,7 @@ class QueryEngine:
             embedding_min_cosine=embedding_min_cosine,
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
+            primary_triage_category=primary_triage_category,
         )
 
     async def upsert_knowledge_item_embedding(
@@ -471,6 +479,29 @@ class QueryEngine:
     async def update_impact_score(self, knowledge_id: int, score: int) -> None:
         await self._store.update_impact_score(knowledge_id, score)
 
+    async def update_triage_result(
+        self,
+        knowledge_id: int,
+        *,
+        impact_score: int,
+        primary_category: str,
+        secondary_categories: list[str],
+    ) -> None:
+        await self._store.update_triage_result(
+            knowledge_id,
+            impact_score=impact_score,
+            primary_category=primary_category,
+            secondary_categories=secondary_categories,
+        )
+
+    async def list_backfill_triage_categories(
+        self, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_backfill_triage_categories(limit)
+
+    async def ensure_triage_category_entities(self) -> int:
+        return await self._store.ensure_triage_category_entities()
+
     async def insert_market_metric(
         self,
         metric_name: str,
@@ -495,3 +526,71 @@ class QueryEngine:
         return await self._store.insert_synthesis_edge(
             knowledge_id, metric_id, causality_notes
         )
+
+    @staticmethod
+    def normalize_entity_name(name: str) -> str:
+        return PersistentState.normalize_entity_name(name)
+
+    async def upsert_entity(
+        self,
+        *,
+        type: str,
+        name: str,
+        aliases: list[str] | None = None,
+        external_ids: dict[str, str] | None = None,
+        payload_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return await self._store.upsert_entity(
+            type=type,
+            name=name,
+            aliases=aliases,
+            external_ids=external_ids,
+            payload_json=payload_json,
+        )
+
+    async def insert_graph_edge(
+        self,
+        *,
+        src_entity_id: int,
+        dst_entity_id: int,
+        edge_type: str,
+        confidence: float,
+        status: str = GRAPH_EDGE_ACTIVE,
+        superseded_by: int | None = None,
+    ) -> int:
+        return await self._store.insert_graph_edge(
+            src_entity_id=src_entity_id,
+            dst_entity_id=dst_entity_id,
+            edge_type=edge_type,
+            confidence=confidence,
+            status=status,
+            superseded_by=superseded_by,
+        )
+
+    async def insert_edge_evidence(
+        self,
+        *,
+        edge_id: int,
+        knowledge_id: int,
+        span_json: dict[str, Any] | None = None,
+    ) -> int:
+        return await self._store.insert_edge_evidence(
+            edge_id=edge_id, knowledge_id=knowledge_id, span_json=span_json
+        )
+
+    async def link_edge_evidence_upsert(
+        self,
+        *,
+        edge_id: int,
+        knowledge_id: int,
+        span_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return await self._store.link_edge_evidence_upsert(
+            edge_id=edge_id, knowledge_id=knowledge_id, span_json=span_json
+        )
+
+    async def list_edge_evidence(self, edge_id: int) -> list[dict[str, Any]]:
+        return await self._store.list_edge_evidence(edge_id)
+
+    async def mark_edge_invalid(self, edge_id: int, reason: str) -> None:
+        await self._store.mark_edge_invalid(edge_id, reason)

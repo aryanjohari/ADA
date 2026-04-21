@@ -8,7 +8,9 @@
 - **Web tools** (when **`ADA_ENABLE_WEB_TOOLS=1`**): **`web_search`** (Serper), **`fetch_url_text`** (Jina Reader or httpx per **`ADA_WEB_FETCH_MODE`**), with caps and optional fetch host allowlist.
 - **Phase B persistence**: **`web_sources`** table (bounded excerpts for `search_hit` \| `page_fetch`); optional read-only tool **`list_session_web_sources`** when **`ADA_ENABLE_WEB_SOURCES_TOOL=1`**.
 - **Optional** operator file **`memory/schema_digest.md`** — if present, a short digest can be injected into the system prompt (see `src/ada/prompt.py`).
-- **Knowledge layer:** SQLite **`knowledge_*`** tables + **FTS5** over **`knowledge_items`**. **`ada ingest-rss`** (no API key) reads **`knowledge_sources`** (`kind=rss`) and fills **`knowledge_items`** (deduped). When **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**, chat/daemon expose **`search_knowledge`**, **`record_synthesis`**, and **`add_knowledge_source`** to the model (see §7).
+- **Knowledge layer:** SQLite **`knowledge_*`** tables + **FTS5** over **`knowledge_items`**. **`ada ingest-rss`** (no API key) reads **`knowledge_sources`** (`kind=rss`) and fills **`knowledge_items`** (deduped). When **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**, chat/daemon expose **`search_knowledge`**, **`record_synthesis`**, **`add_knowledge_source`**, and graph-lite tools **`record_entity`**, **`record_edge`**, **`link_evidence`** to the model (see §7).
+- **Triage:** **`ada triage`** scores items and assigns **primary + secondary** triage categories (JSON); optional **`ada triage --backfill-categories`** fills categories for rows that already have **`impact_score`**. See §5 and `.env.example` (`ADA_TRIAGE_*`).
+- **Graph extraction (operator CLI):** **`ada extract-graph-lite`** runs Gemini JSON extraction into **`entities`**, **`graph_edges`**, and **`edge_evidence`** (see `src/ada/extract/graph_lite.py`). Requires **`GEMINI_API_KEY`** when using the built-in LLM path.
 
 ---
 
@@ -37,7 +39,7 @@
 | **Operational “clipboard”** | `tasks` row per chat session (`task_kind=chat`) or queued goal (`task_kind=goal`); `status`, `goal`, `current_output`; **`plan_json`** read/write via **`read_task_plan`** / **`write_task_plan`** (session-bound; toggle **`ADA_ENABLE_PLAN_TOOLS`**); cross-session **goal** recall via **`read_goal_task_view`** (toggle **`ADA_ENABLE_GOAL_RECALL_TOOL`**); **worker-mode** extra harness text for **`ada daemon`** | Auto-injecting full **`plan_json`** into the system prompt on every leg (optional future; model still uses **`read_task_plan`** for explicit reads) |
 | **Usage / cost** | `usage_ledger` per model leg; `state` keys `session.last_leg_input_tokens`, `session.last_leg_output_tokens`, `session.last_usage_extras_json`; per-session cap **`ADA_MAX_SESSION_TOKENS`** (fails task when exceeded); **`ada daemon`** optional **global** UTC day/month caps **`ADA_DAILY_TOKEN_BUDGET`** / **`ADA_MONTHLY_TOKEN_BUDGET`** (skips dequeue, leaves goals `pending`); **`ADA_KILL_SWITCH`** pauses daemon dequeue | Operator-facing “session totals” policy; chat-native answers for “how many tokens?” (needs **tool or allowlisted query**, not automatic) |
 | **Static / dynamic memory files** | `memory/soul.md`, `master.md`, `wakeup.md`, `shell_allowlist.txt`; loaded into system prompt; **append** tools + **timestamped backups** | Automated **cron** dream (only **manual** `ada dream` today); richer merge / “dream” policies |
-| **Tools** | **Allowlisted shell**; **`check_token_usage`** (session totals from **`usage_ledger`**); **append_master_section** / **append_soul_fragment**; **read_task_plan** / **write_task_plan**; optional **workspace file** tools; optional **`web_search`** / **`fetch_url_text`** (see §7); optional **`list_session_web_sources`**; optional **knowledge** tools when **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`** | **Plugin DAGs**; **arbitrary** ad-hoc SQL from the model; unconstrained web beyond configured tools |
+| **Tools** | **Allowlisted shell**; **`check_token_usage`** (session totals from **`usage_ledger`**); **append_master_section** / **append_soul_fragment**; **read_task_plan** / **write_task_plan**; optional **workspace file** tools; optional **`web_search`** / **`fetch_url_text`** (see §7); optional **`list_session_web_sources`**; optional **knowledge** + **graph-lite** tools when **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`** | **Plugin DAGs**; **arbitrary** ad-hoc SQL from the model; unconstrained web beyond configured tools |
 | **Persistence layering** | **`PersistentState`** (`ada/persistent/store.py`) owns SQL; **`QueryEngine`** adds debounced assistant streaming | Optional further split to match every line of a separate `ARCHITECTURE.md` if you maintain one |
 | **Data lakes / RAG** | Bounded **`web_sources`** when web tools persist; **knowledge** store (**`knowledge_items`** + FTS + optional **`knowledge_synthesis`**); **`ada ingest-rss`** for RSS → items; optional Gemini **`search_knowledge`** / **`record_synthesis`** / **`add_knowledge_source`** | **Embeddings** / vector DB over transcript or knowledge; **JSON API ingest** (no dedicated pipeline in-repo); full **datalake** pipelines, skill library as in north-star docs |
 | **Scheduling** | Daemon polls **pending** tasks; operator **cron** / **systemd** for **`ada dream`** and **`ada ingest-rss`** | Built-in periodic jobs in-process (today: external **cron** / **systemd** only) |
@@ -102,7 +104,7 @@ flowchart LR
 - **`QueryEngine`**: same public API for app code; owns **debounced** partial assistant text flushes during streaming; delegates persistence to `PersistentState`.
 - **`orchestrator`**: one **user** row per turn, then a **loop** of model **legs** (stream → optional tool calls → persist tool rows → next leg) up to `ADA_MAX_TOOL_ROUNDS`.
 - **`adapters/gemini_stream`**: normalizes stream chunks (text + function calls), **manual** function calling (`AutomaticFunctionCallingConfig(disable=True)`), optional **chunk idle** and **leg wall-clock** timeouts (`StreamTimeout`).
-- **`tool_executor`**: ordered execution; **shell** via allowlist + `asyncio.create_subprocess_exec`; **memory** appends via `memory_io` (locked + backup); **plan** tools via session-bound hooks into **`QueryEngine`** (no extra DB connections); optional **web** HTTP (Serper / fetch) and **bounded inserts** into **`web_sources`** via `web_persistence` when web tools are enabled; optional **knowledge** tools (`search_knowledge`, `record_synthesis`, `add_knowledge_source`) when **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**.
+- **`tool_executor`**: ordered execution; **shell** via allowlist + `asyncio.create_subprocess_exec`; **memory** appends via `memory_io` (locked + backup); **plan** tools via session-bound hooks into **`QueryEngine`** (no extra DB connections); optional **web** HTTP (Serper / fetch) and **bounded inserts** into **`web_sources`** via `web_persistence` when web tools are enabled; optional **knowledge** tools (`search_knowledge`, `record_synthesis`, `add_knowledge_source`, `record_entity`, `record_edge`, `link_evidence`) when **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**.
 
 Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logic.md).
 
@@ -121,13 +123,13 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 | **`action_log`** | Audit: `kind`, `payload_json`, optional `session_id`, `created_at` (dream start/complete/fail, **`file_access_denied`**, etc.) |
 | **`web_sources`** | Bounded **Phase B** log per session: `url`, `source_kind` (`search_hit` \| `page_fetch`), optional `query_text`, `content_excerpt`, `content_sha256`, `fetched_at` (written when web tools persist; not a vector index) |
 | **`knowledge_sources`** | Registered ingest endpoints: `kind` (`api` \| `rss` \| `web`), optional `label`, `base_url` |
-| **`knowledge_items`** | Ingested facts: FK to `knowledge_sources`, optional `external_id`, `published_at`, `ingested_at`, `tags_json`, `content_excerpt`, optional `payload_json`, `content_hash`, optional **`relevance_score`** (0–1), optional **`expires_at`** (ISO), **`tombstoned`** (0/1); legacy rows may have **`relevance_score` NULL** (treat as unknown; queries often use `COALESCE(relevance_score, 1.0)`). Insert **dedupes** by `(source_id, external_id)` or `(source_id, content_hash)` when `external_id` is null |
+| **`knowledge_items`** | Ingested facts: FK to `knowledge_sources`, optional `external_id`, `published_at`, `ingested_at`, `tags_json`, `content_excerpt`, optional `payload_json`, `content_hash`, optional **`relevance_score`** (0–1), optional **`impact_score`** (1–10, from **`ada triage`**), optional **`triage_primary_category`** and **`triage_secondary_categories_json`** (fixed taxonomy; surfaced in API as **`triage_secondary_categories`**), optional **`expires_at`** (ISO), **`tombstoned`** (0/1); legacy rows may have **`relevance_score` NULL** (treat as unknown; queries often use `COALESCE(relevance_score, 1.0)`). **FTS5** `doc` can include triage text after migration (`schema.knowledge_fts.triage_doc_v1`). Insert **dedupes** by `(source_id, external_id)` or `(source_id, content_hash)` when `external_id` is null |
 | **`knowledge_synthesis`** | Optional “opinion” text with `ref_item_ids_json` and optional `task_id` → `tasks` (soft refs to items) |
 | **`knowledge_items_fts`** | FTS5 virtual table (`doc`); `rowid` = `knowledge_items.id`; maintained by triggers (not used directly by chat) |
 
 Indexes: messages by `(session_id, sequence)` and `(session_id, tombstone)`; usage and action_log by time/session as in `src/ada/db/schema.sql`.
 
-**Ingestion vs chat:** **`ada chat`** / **`ada daemon`** do not fetch RSS automatically. **`web_search` / `fetch_url_text`** write **`web_sources`** (session-scoped), not **`knowledge_items`**. To populate **`knowledge_items`**, register **`knowledge_sources`** rows (`kind=rss`, `base_url` = feed URL) via SQL, the **`add_knowledge_source`** tool (when enabled), or **`QueryEngine.insert_knowledge_source`**, then run **`ada ingest-rss`** (or schedule it with **cron** / a **systemd timer**). With **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**, the model can **`search_knowledge`**, **`record_synthesis`**, and **`add_knowledge_source`** during turns.
+**Ingestion vs chat:** **`ada chat`** / **`ada daemon`** do not fetch RSS automatically. **`web_search` / `fetch_url_text`** write **`web_sources`** (session-scoped), not **`knowledge_items`**. To populate **`knowledge_items`**, register **`knowledge_sources`** rows (`kind=rss`, `base_url` = feed URL) via SQL, the **`add_knowledge_source`** tool (when enabled), or **`QueryEngine.insert_knowledge_source`**, then run **`ada ingest-rss`** (or schedule it with **cron** / a **systemd timer**). With **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**, the model can **`search_knowledge`**, **`record_synthesis`**, **`add_knowledge_source`**, **`record_entity`**, **`record_edge`**, and **`link_evidence`** during turns.
 
 ### 4.2 Files under `memory/`
 
@@ -157,8 +159,10 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**, run **one** `orchestrate_turn` per dequeue, set `completed` / `failed`. Run under **systemd** (or similar), not cron. |
 | **`ada dream`** | **Manual** compression: model summarizes recent transcript + usage → append **master** / optional **soul**; logs **`action_log`**; **`--dry-run`**, **`--session N`**, **`--max-messages`** |
 | **`ada ingest-rss`** | **Offline** fetch: reads **`knowledge_sources`** where **`kind=rss`** and **`base_url`** is set, downloads each feed, parses Atom/RSS, inserts **`knowledge_items`** (deduped). **`GEMINI_API_KEY`** is optional unless **`ADA_INGEST_GATEKEEPER=1`** or **`ADA_KNOWLEDGE_EMBEDDINGS=1`** (gate scores entries; embeddings write vectors). Schedule with **cron** / **systemd** (often **daily**). |
+| **`ada triage`** | Score and classify **`knowledge_items`** (impact 1–10 + primary/secondary triage categories via JSON). Optional **`--limit`**, **`--backfill-categories`** (fill categories for rows that already have **`impact_score`**). Requires **`GEMINI_API_KEY`**. |
+| **`ada extract-graph-lite`** | Batch graph-lite extraction from recent **`knowledge_items`** into **`entities`** / **`graph_edges`** / **`edge_evidence`** (Gemini JSON). Optional **`--limit`**, **`--token-cap`**, **`--source-id`**. Requires **`GEMINI_API_KEY`** for the default LLM extractor. |
 
-**`GEMINI_API_KEY`** is required for **`ada chat`**, **`ada daemon`**, and **`ada dream`**. **`ada goal`** does not call the model. **`ada ingest-rss`** uses HTTP only unless gate or embeddings are enabled (then Gemini).
+**`GEMINI_API_KEY`** is required for **`ada chat`**, **`ada daemon`**, **`ada dream`**, **`ada triage`**, and **`ada extract-graph-lite`** (when using the built-in model). **`ada goal`** does not call the model. **`ada ingest-rss`** uses HTTP only unless gate or embeddings are enabled (then Gemini).
 
 ---
 
@@ -190,14 +194,17 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **`web_search`** | Serper Google organic JSON API; returns titles, URLs, snippets | Requires **`ADA_SERPER_API_KEY`** or **`SERPER_API_KEY`**; capped by **`ADA_WEB_SEARCH_MAX_RESULTS`** / timeout envs |
 | **`fetch_url_text`** | HTTPS page text (Jina Reader prefix or direct **httpx** per **`ADA_WEB_FETCH_MODE`**) | Caps: max URLs, chars, bytes, timeout; optional **`ADA_WEB_FETCH_HOST_ALLOWLIST`** (SSRF-minded); content may be **truncated** |
 | **`list_session_web_sources`** | Read recent **`web_sources`** rows for the **current** `tasks.id` only | **`ADA_ENABLE_WEB_SOURCES_TOOL=1`**; read-only; no HTTP |
-| **`search_knowledge`** | **`QueryEngine.search_knowledge_items`** — lexical (**OR** tokens, **BM25** rank), optional **semantic** / **hybrid** when **`ADA_KNOWLEDGE_EMBEDDINGS=1`**; optional **`min_relevance_score`** / **`valid_only`** | **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**; read-only; returns **title** / **link** / **relevance_score** / **expires_at** when stored |
+| **`search_knowledge`** | **`QueryEngine.search_knowledge_items`** — lexical (**OR** tokens, **BM25** rank), optional **semantic** / **hybrid** when **`ADA_KNOWLEDGE_EMBEDDINGS=1`**; optional **`primary_triage_category`**, **`min_relevance_score`**, **`valid_only`** | **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**; read-only; returns **title** / **link** / **triage_primary_category** / **relevance_score** / **expires_at** when stored |
 | **`record_synthesis`** | **`QueryEngine.insert_knowledge_synthesis`**; optional **`task_id`** defaults to current session | **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`** |
 | **`add_knowledge_source`** | **`QueryEngine.insert_knowledge_source`** (`rss` \| `web`); **http(s)** URLs only | **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**; optional **`ADA_KNOWLEDGE_FEED_HOST_ALLOWLIST`** (comma-separated hosts; empty = any allowed host) |
+| **`record_entity`** | Upsert **`entities`** (graph-lite) | **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`** |
+| **`record_edge`** | Insert **`graph_edges`** with confidence + evidence item ids | **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`** |
+| **`link_evidence`** | Attach **`knowledge_items`** evidence to an edge | **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`** |
 | **Disable memory tools** | `ADA_ENABLE_MEMORY_TOOLS=0` | Shell-only declarations remain if allowlist non-empty |
 | **Disable plan tools** | `ADA_ENABLE_PLAN_TOOLS=0` | Clipboard declarations omitted |
 | **Disable goal recall** | `ADA_ENABLE_GOAL_RECALL_TOOL=0` | **`read_goal_task_view`** declaration omitted |
 | **Disable web tools** | `ADA_ENABLE_WEB_TOOLS=0` (default) | No `web_search` / `fetch_url_text` declarations; no Serper spend |
-| **Disable knowledge tools** | `ADA_ENABLE_KNOWLEDGE_TOOLS=0` (default) | No `search_knowledge` / `record_synthesis` / `add_knowledge_source` declarations |
+| **Disable knowledge tools** | `ADA_ENABLE_KNOWLEDGE_TOOLS=0` (default) | No `search_knowledge` / `record_synthesis` / `add_knowledge_source` / graph-lite tool declarations |
 
 The model **cannot** run arbitrary SQL or read arbitrary files unless you **explicitly** add allowlisted commands or new tools. **Symlink following** for read/write uses `Path.resolve()` like before—treat untrusted trees with care.
 
@@ -260,6 +267,8 @@ ada daemon
 ada dream --dry-run
 ada dream
 ada ingest-rss
+ada triage --limit 5
+ada extract-graph-lite
 pytest -q
 ```
 

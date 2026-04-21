@@ -42,7 +42,10 @@ async def test_triage_updates_score_and_enqueues_goal_when_high_impact(
         await qe.close()
 
     class _FakeResp:
-        text = '{"impact_score": 8}'
+        text = (
+            '{"impact_score": 8, "primary_category": "markets_macro", '
+            '"secondary_categories": []}'
+        )
 
     mock_client = MagicMock()
 
@@ -72,6 +75,8 @@ async def test_triage_updates_score_and_enqueues_goal_when_high_impact(
     try:
         item = await qe2.get_knowledge_item(kid)
         assert item["impact_score"] == 8
+        assert item["triage_primary_category"] == "markets_macro"
+        assert item["triage_secondary_categories"] == []
         goals = await qe2.list_goal_tasks(limit=10)
         goal_rows = [g for g in goals if f"knowledge item ID: {kid}" in g["goal"]]
         assert len(goal_rows) == 1
@@ -79,6 +84,7 @@ async def test_triage_updates_score_and_enqueues_goal_when_high_impact(
         plan = json.loads(goal_rows[0]["plan_json"])
         assert plan["tier"] == "macro"
         assert int(plan["knowledge_id"]) == kid
+        assert plan["primary_category"] == "markets_macro"
     finally:
         await qe2.close()
 
@@ -112,7 +118,10 @@ async def test_triage_tier2_respects_daily_cap(tmp_path, monkeypatch):
         await qe.close()
 
     class _FakeResp:
-        text = '{"impact_score": 6}'
+        text = (
+            '{"impact_score": 6, "primary_category": "sector_business", '
+            '"secondary_categories": []}'
+        )
 
     mock_client = MagicMock()
 
@@ -142,5 +151,68 @@ async def test_triage_tier2_respects_daily_cap(tmp_path, monkeypatch):
         assert len(lead_goals) == 1
         plan = json.loads(lead_goals[0]["plan_json"])
         assert plan["tier"] == "lead"
+        assert plan["primary_category"] == "sector_business"
+    finally:
+        await qe2.close()
+
+
+@pytest.mark.asyncio
+async def test_triage_backfill_preserves_impact_score(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("ADA_DATA_DIR", str(tmp_path))
+
+    settings = Settings.load()
+    settings.ensure_data_dir()
+    schema_path = Path(ada.__path__[0]) / "db" / "schema.sql"
+    qe = QueryEngine(
+        settings.state_db_path,
+        schema_path,
+        debounce_ms=settings.persist_debounce_ms,
+    )
+    await qe.connect()
+    try:
+        sid = await qe.insert_knowledge_source("rss", label="t", base_url="https://ex.test/f")
+        ins = await qe.insert_knowledge_item(
+            sid,
+            "hash-bf",
+            content_excerpt="Stats NZ releases labour data.",
+            payload={"title": "Jobs", "link": "https://ex.test/j"},
+        )
+        kid = ins.id
+        await qe.update_impact_score(kid, 7)
+    finally:
+        await qe.close()
+
+    class _FakeResp:
+        text = (
+            '{"impact_score": 2, "primary_category": "data_surveys_stats", '
+            '"secondary_categories": ["labour_workforce"]}'
+        )
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content = AsyncMock(
+        side_effect=lambda *_a, **_k: _FakeResp()
+    )
+
+    stats, code = await run_triage_cli(
+        settings,
+        limit=20,
+        client_cls=lambda **kwargs: mock_client,
+        backfill_categories=True,
+    )
+    assert code == 0
+    assert stats.scored == 1
+
+    qe2 = QueryEngine(
+        settings.state_db_path,
+        schema_path,
+        debounce_ms=settings.persist_debounce_ms,
+    )
+    await qe2.connect()
+    try:
+        item = await qe2.get_knowledge_item(kid)
+        assert item["impact_score"] == 7
+        assert item["triage_primary_category"] == "data_surveys_stats"
+        assert item["triage_secondary_categories"] == ["labour_workforce"]
     finally:
         await qe2.close()

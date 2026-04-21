@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 src/ada/__init__.py
 src/ada/__main__.py
+src/ada/budget.py
 src/ada/cli.py
 src/ada/config.py
 src/ada/goal_cli.py
@@ -29,8 +30,13 @@ src/ada/adapters/gemini_stream.py
 src/ada/dream/__init__.py
 src/ada/dream/run.py
 src/ada/dream/transcript_compact.py
+src/ada/extract/__init__.py
+src/ada/extract/graph_lite.py
 src/ada/ingest/__init__.py
+src/ada/ingest/common.py
 src/ada/ingest/gate.py
+src/ada/ingest/gets.py
+src/ada/ingest/keywords.py
 src/ada/ingest/rss.py
 src/ada/persistent/__init__.py
 src/ada/persistent/store.py
@@ -39,6 +45,10 @@ src/ada/tools/file_sandbox.py
 src/ada/tools/registry.py
 src/ada/tools/shell_allowlist.py
 src/ada/tools/web_runtime.py
+src/ada/triage/__init__.py
+src/ada/triage/categories.py
+src/ada/triage/enqueue.py
+src/ada/triage/run.py
 tests/test_file_sandbox.py
 tests/test_gemini_stream.py
 tests/test_goal_cli.py
@@ -49,6 +59,11 @@ tests/test_knowledge_search.py
 tests/test_memory_io.py
 tests/test_orchestrator_knowledge_tools_mock.py
 tests/test_orchestrator_mock.py
+tests/test_phase0_budget.py
+tests/test_phase1_ingest.py
+tests/test_phase2_extraction_pipeline.py
+tests/test_phase2_graph_schema.py
+tests/test_phase2_graph_tools.py
 tests/test_prompt.py
 tests/test_query_engine.py
 tests/test_tool_executor_file.py
@@ -56,4 +71,6 @@ tests/test_tool_executor_goal_recall.py
 tests/test_tool_executor_plan.py
 tests/test_tool_executor_web.py
 tests/test_transcript_compact.py
+tests/test_triage_categories.py
+tests/test_triage_cli.py
 tests/test_web_sources.py

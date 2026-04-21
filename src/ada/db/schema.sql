@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
     content_hash TEXT NOT NULL,
     relevance_score REAL,
     impact_score INTEGER CHECK (impact_score IS NULL OR (impact_score >= 1 AND impact_score <= 10)),
+    triage_primary_category TEXT,
+    triage_secondary_categories_json TEXT NOT NULL DEFAULT '[]',
     expires_at TEXT,
     tombstoned INTEGER NOT NULL DEFAULT 0 CHECK (tombstoned IN (0, 1))
 );
@@ -152,6 +154,8 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_items_source_ingested
 CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_items_source_external
     ON knowledge_items(source_id, external_id)
     WHERE external_id IS NOT NULL;
+
+-- idx_knowledge_items_triage_primary_ingested: created in PersistentState._ensure_triage_category_columns
 
 -- Partial indexes on impact_score are created in PersistentState._ensure_impact_score_and_kernel_indexes
 -- so executescript succeeds on DBs that still need ALTER ADD COLUMN impact_score.
@@ -190,6 +194,47 @@ CREATE INDEX IF NOT EXISTS idx_synthesis_edges_knowledge
 
 CREATE INDEX IF NOT EXISTS idx_synthesis_edges_metric
     ON synthesis_edges(metric_id);
+
+-- Phase 2 graph-lite memory: entities, edges, and evidence links.
+CREATE TABLE IF NOT EXISTS entities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (type, normalized_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entities_normalized
+    ON entities(normalized_name);
+
+CREATE TABLE IF NOT EXISTS graph_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    dst_entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    edge_type TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'superseded', 'invalid')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    superseded_by INTEGER REFERENCES graph_edges(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_graph_edges_src
+    ON graph_edges(src_entity_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_dst
+    ON graph_edges(dst_entity_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_type
+    ON graph_edges(edge_type);
+
+CREATE TABLE IF NOT EXISTS edge_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    edge_id INTEGER NOT NULL REFERENCES graph_edges(id) ON DELETE CASCADE,
+    knowledge_id INTEGER NOT NULL REFERENCES knowledge_items(id) ON DELETE CASCADE,
+    span_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (edge_id, knowledge_id)
+);
 
 -- Optional Gemini embeddings for semantic / hybrid search (see ada/knowledge_embeddings.py).
 CREATE TABLE IF NOT EXISTS knowledge_item_embeddings (

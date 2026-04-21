@@ -28,6 +28,7 @@ class KnowledgeItemInsertResult:
 
 from ada.knowledge_embeddings import blob_to_float32_list, cosine_similarity
 from ada.knowledge_search import build_fts_match_query, reciprocal_rank_fusion
+from ada.triage.categories import TRIAGE_CATEGORY_CODES
 from ada.transcript_format import (
     ROLE_ASSISTANT,
     ROLE_SYSTEM,
@@ -38,6 +39,15 @@ from ada.transcript_format import (
     pack_assistant_text,
     pack_user_text,
 )
+
+GRAPH_EDGE_ACTIVE = "active"
+GRAPH_EDGE_SUPERSEDED = "superseded"
+GRAPH_EDGE_INVALID = "invalid"
+GRAPH_EDGE_STATUSES = {
+    GRAPH_EDGE_ACTIVE,
+    GRAPH_EDGE_SUPERSEDED,
+    GRAPH_EDGE_INVALID,
+}
 
 
 def _canonical_story_link(url: str) -> str | None:
@@ -204,6 +214,8 @@ class PersistentState:
                     content_hash TEXT NOT NULL,
                     relevance_score REAL,
                     impact_score INTEGER CHECK (impact_score IS NULL OR (impact_score >= 1 AND impact_score <= 10)),
+                    triage_primary_category TEXT,
+                    triage_secondary_categories_json TEXT NOT NULL DEFAULT '[]',
                     expires_at TEXT,
                     tombstoned INTEGER NOT NULL DEFAULT 0 CHECK (tombstoned IN (0, 1))
                 )
@@ -240,8 +252,11 @@ class PersistentState:
         await self._migrate_knowledge_fts_payload_doc_v1()
         await self._ensure_knowledge_items_score_ttl_columns()
         await self._ensure_impact_score_and_kernel_indexes()
+        await self._ensure_triage_category_columns()
+        await self._migrate_knowledge_fts_triage_doc_v1()
         await self._ensure_market_metrics_and_synthesis_edges()
         await self._ensure_phase1_ingest_audit()
+        await self._ensure_phase2_graph_lite()
 
     async def _ensure_phase1_ingest_audit(self) -> None:
         """ingest_jobs, ingest_raw, source_catalog; knowledge_sources.config_json."""
@@ -321,6 +336,73 @@ class PersistentState:
                 )
         await self._conn.commit()
 
+    async def _ensure_phase2_graph_lite(self) -> None:
+        """Create Phase 2 graph-lite tables for upgraded DBs."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items'"
+        )
+        if await cur.fetchone() is None:
+            return
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS entities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                normalized_name TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE (type, normalized_name)
+            )
+            """
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entities_normalized ON entities(normalized_name)"
+        )
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS graph_edges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                src_entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                dst_entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                edge_type TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
+                status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'superseded', 'invalid')),
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                superseded_by INTEGER REFERENCES graph_edges(id)
+            )
+            """
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_edges_src ON graph_edges(src_entity_id)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_edges_dst ON graph_edges(dst_entity_id)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_edges_type ON graph_edges(edge_type)"
+        )
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS edge_evidence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                edge_id INTEGER NOT NULL REFERENCES graph_edges(id) ON DELETE CASCADE,
+                knowledge_id INTEGER NOT NULL REFERENCES knowledge_items(id) ON DELETE CASCADE,
+                span_json TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE (edge_id, knowledge_id)
+            )
+            """
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_edge_evidence_edge ON edge_evidence(edge_id)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_edge_evidence_knowledge ON edge_evidence(knowledge_id)"
+        )
+        await self._conn.commit()
+
     async def _ensure_impact_score_and_kernel_indexes(self) -> None:
         """Add impact_score + triage indexes for upgraded DBs."""
         assert self._conn is not None
@@ -345,6 +427,117 @@ class PersistentState:
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_knowledge_items_impact_score "
             "ON knowledge_items(impact_score) WHERE impact_score IS NOT NULL"
+        )
+        await self._conn.commit()
+
+    async def _ensure_triage_category_columns(self) -> None:
+        """Add triage_primary_category + triage_secondary_categories_json for upgraded DBs."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(knowledge_items)")
+        cols = {str(row[1]) for row in await cur.fetchall()}
+        if "triage_primary_category" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE knowledge_items ADD COLUMN triage_primary_category TEXT"
+            )
+        if "triage_secondary_categories_json" not in cols:
+            await self._conn.execute(
+                """
+                ALTER TABLE knowledge_items ADD COLUMN triage_secondary_categories_json
+                    TEXT NOT NULL DEFAULT '[]'
+                """
+            )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_items_triage_primary_ingested "
+            "ON knowledge_items(triage_primary_category, ingested_at DESC) "
+            "WHERE triage_primary_category IS NOT NULL AND tombstoned = 0"
+        )
+        await self._conn.commit()
+
+    async def _migrate_knowledge_fts_triage_doc_v1(self) -> None:
+        """Rebuild FTS doc + triggers to include triage category columns."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT value FROM state WHERE key = ?",
+            ("schema.knowledge_fts.triage_doc_v1",),
+        )
+        row = await cur.fetchone()
+        if row and str(row[0]) == "1":
+            return
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_items_fts'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(knowledge_items)")
+        cols = {str(row[1]) for row in await cur.fetchall()}
+        if "triage_primary_category" not in cols or "triage_secondary_categories_json" not in cols:
+            return
+        await self._conn.executescript(
+            """
+            DROP TRIGGER IF EXISTS knowledge_items_ai;
+            DROP TRIGGER IF EXISTS knowledge_items_ad;
+            DROP TRIGGER IF EXISTS knowledge_items_au;
+            """
+        )
+        await self._conn.executescript(
+            """
+            CREATE TRIGGER knowledge_items_ai AFTER INSERT ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(rowid, doc)
+                VALUES (
+                    new.id,
+                    new.content_excerpt || ' ' || new.tags_json || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.link'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.title'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.feed_url'), '') || ' ' ||
+                    COALESCE(new.triage_primary_category, '') || ' ' ||
+                    COALESCE(new.triage_secondary_categories_json, '')
+                );
+            END;
+            CREATE TRIGGER knowledge_items_ad AFTER DELETE ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid)
+                VALUES('delete', old.id);
+            END;
+            CREATE TRIGGER knowledge_items_au AFTER UPDATE ON knowledge_items BEGIN
+                INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid)
+                VALUES('delete', old.id);
+                INSERT INTO knowledge_items_fts(rowid, doc)
+                VALUES (
+                    new.id,
+                    new.content_excerpt || ' ' || new.tags_json || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.link'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.title'), '') || ' ' ||
+                    COALESCE(json_extract(new.payload_json, '$.feed_url'), '') || ' ' ||
+                    COALESCE(new.triage_primary_category, '') || ' ' ||
+                    COALESCE(new.triage_secondary_categories_json, '')
+                );
+            END;
+            """
+        )
+        cur = await self._conn.execute("SELECT id FROM knowledge_items")
+        for row in await cur.fetchall():
+            rid = int(row[0])
+            await self._conn.execute(
+                "INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid) VALUES('delete', ?)",
+                (rid,),
+            )
+        expr = self._knowledge_fts_doc_select_expr(include_triage=True)
+        await self._conn.execute(
+            f"""
+            INSERT INTO knowledge_items_fts(rowid, doc)
+            SELECT id, {expr} FROM knowledge_items
+            """
+        )
+        await self._conn.execute(
+            """
+            INSERT INTO state(key, value) VALUES(?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            ("schema.knowledge_fts.triage_doc_v1", "1"),
         )
         await self._conn.commit()
 
@@ -472,14 +665,22 @@ class PersistentState:
         await self._conn.commit()
 
     @staticmethod
-    def _knowledge_fts_doc_select_expr(alias: str = "") -> str:
-        """SQL expression for indexed doc text (keep in sync with FTS triggers)."""
+    def _knowledge_fts_doc_select_expr(
+        alias: str = "", *, include_triage: bool = False
+    ) -> str:
+        """SQL expression for indexed doc text (keep FTS triggers in sync)."""
         p = f"{alias}." if alias else ""
-        return (
+        base = (
             f"{p}content_excerpt || ' ' || {p}tags_json || ' ' || "
             f"COALESCE(json_extract({p}payload_json, '$.link'), '') || ' ' || "
             f"COALESCE(json_extract({p}payload_json, '$.title'), '') || ' ' || "
             f"COALESCE(json_extract({p}payload_json, '$.feed_url'), '')"
+        )
+        if not include_triage:
+            return base
+        return (
+            f"{base} || ' ' || COALESCE({p}triage_primary_category, '') || ' ' || "
+            f"COALESCE({p}triage_secondary_categories_json, '')"
         )
 
     def _knowledge_fts_ddl(self) -> str:
@@ -531,7 +732,7 @@ class PersistentState:
         if await cur.fetchone() is not None:
             return
         await self._conn.executescript(self._knowledge_fts_ddl())
-        expr = self._knowledge_fts_doc_select_expr()
+        expr = self._knowledge_fts_doc_select_expr(include_triage=False)
         await self._conn.execute(
             f"""
             INSERT INTO knowledge_items_fts(rowid, doc)
@@ -600,7 +801,7 @@ class PersistentState:
                 "INSERT INTO knowledge_items_fts(knowledge_items_fts, rowid) VALUES('delete', ?)",
                 (rid,),
             )
-        expr = self._knowledge_fts_doc_select_expr()
+        expr = self._knowledge_fts_doc_select_expr(include_triage=False)
         await self._conn.execute(
             f"""
             INSERT INTO knowledge_items_fts(rowid, doc)
@@ -1549,6 +1750,8 @@ class PersistentState:
             content_hash,
             relevance_score,
             impact_score,
+            triage_primary_category,
+            triage_secondary_categories_json,
             expires_at,
             tombstoned,
         ) = row
@@ -1567,6 +1770,21 @@ class PersistentState:
             imp = None
         else:
             imp = int(impact_score)
+        triage_pc: str | None
+        if triage_primary_category is None or str(triage_primary_category).strip() == "":
+            triage_pc = None
+        else:
+            triage_pc = str(triage_primary_category).strip()
+        sec_raw = str(triage_secondary_categories_json or "[]")
+        try:
+            parsed_sec = json.loads(sec_raw)
+        except json.JSONDecodeError:
+            parsed_sec = []
+        triage_secs: list[str] = []
+        if isinstance(parsed_sec, list):
+            for x in parsed_sec:
+                if isinstance(x, str) and x.strip():
+                    triage_secs.append(x.strip())
         return {
             "id": int(iid),
             "source_id": int(source_id),
@@ -1579,6 +1797,8 @@ class PersistentState:
             "content_hash": str(content_hash),
             "relevance_score": rs,
             "impact_score": imp,
+            "triage_primary_category": triage_pc,
+            "triage_secondary_categories": triage_secs,
             "expires_at": str(expires_at) if expires_at is not None else None,
             "tombstoned": int(tombstoned),
         }
@@ -1589,7 +1809,9 @@ class PersistentState:
             """
             SELECT id, source_id, external_id, published_at, ingested_at,
                    tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score, expires_at, tombstoned
+                   relevance_score, impact_score,
+                   triage_primary_category, triage_secondary_categories_json,
+                   expires_at, tombstoned
             FROM knowledge_items WHERE id = ?
             """,
             (item_id,),
@@ -1638,7 +1860,9 @@ class PersistentState:
             f"""
             SELECT id, source_id, external_id, published_at, ingested_at,
                    tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score, expires_at, tombstoned
+                   relevance_score, impact_score,
+                   triage_primary_category, triage_secondary_categories_json,
+                   expires_at, tombstoned
             FROM knowledge_items
             {where}
             ORDER BY datetime(ingested_at) DESC
@@ -1665,6 +1889,7 @@ class PersistentState:
         ingested_before: str | None,
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
+        primary_triage_category: str | None = None,
     ) -> tuple[list[str], list[Any]]:
         conds: list[str] = []
         args: list[Any] = []
@@ -1682,6 +1907,9 @@ class PersistentState:
                 f"EXISTS (SELECT 1 FROM json_each({prefix}tags_json) j WHERE j.value = ?)"
             )
             args.append(tag)
+        if primary_triage_category is not None and str(primary_triage_category).strip():
+            conds.append(f"{prefix}triage_primary_category = ?")
+            args.append(str(primary_triage_category).strip())
         if ingested_after is not None:
             conds.append(f"datetime({prefix}ingested_at) >= datetime(?)")
             args.append(ingested_after)
@@ -1699,6 +1927,7 @@ class PersistentState:
         ingested_before: str | None,
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
+        primary_triage_category: str | None = None,
     ) -> tuple[str, list[Any]]:
         conds, args = self._knowledge_filter_parts(
             table_alias=table_alias,
@@ -1707,6 +1936,7 @@ class PersistentState:
             ingested_before=ingested_before,
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
+            primary_triage_category=primary_triage_category,
         )
         if not conds:
             return "", []
@@ -1747,6 +1977,7 @@ class PersistentState:
         prefer_fts: bool,
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
+        primary_triage_category: str | None = None,
     ) -> list[dict[str, Any]]:
         mq = build_fts_match_query(query)
         lim = max(1, min(limit, 500))
@@ -1758,6 +1989,7 @@ class PersistentState:
             ingested_before=ingested_before,
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
+            primary_triage_category=primary_triage_category,
         )
         if not mq:
             return await self._search_knowledge_items_like(
@@ -1768,13 +2000,16 @@ class PersistentState:
                 ingested_before=ingested_before,
                 min_relevance_score=min_relevance_score,
                 valid_at_now=valid_at_now,
+                primary_triage_category=primary_triage_category,
             )
         if prefer_fts and await self._knowledge_fts_table_exists():
             try:
                 sql = f"""
                     SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
                            ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash,
-                           ki.relevance_score, ki.impact_score, ki.expires_at, ki.tombstoned
+                           ki.relevance_score, ki.impact_score,
+                           ki.triage_primary_category, ki.triage_secondary_categories_json,
+                           ki.expires_at, ki.tombstoned
                     FROM knowledge_items ki
                     INNER JOIN knowledge_items_fts ON ki.id = knowledge_items_fts.rowid
                     WHERE knowledge_items_fts MATCH ?{extra_fts}
@@ -1795,6 +2030,7 @@ class PersistentState:
             ingested_before=ingested_before,
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
+            primary_triage_category=primary_triage_category,
         )
 
     async def _search_knowledge_items_semantic(
@@ -1809,6 +2045,7 @@ class PersistentState:
         ingested_before: str | None,
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
+        primary_triage_category: str | None = None,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         extra, args_extra = self._knowledge_filter_sql(
@@ -1818,6 +2055,7 @@ class PersistentState:
             ingested_before=ingested_before,
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
+            primary_triage_category=primary_triage_category,
         )
         sql = f"""
             SELECT e.item_id, e.embedding, e.dim
@@ -1854,7 +2092,9 @@ class PersistentState:
             f"""
             SELECT id, source_id, external_id, published_at, ingested_at,
                    tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score, expires_at, tombstoned
+                   relevance_score, impact_score,
+                   triage_primary_category, triage_secondary_categories_json,
+                   expires_at, tombstoned
             FROM knowledge_items WHERE id IN ({ph})
             """,
             ids,
@@ -1881,6 +2121,7 @@ class PersistentState:
         embedding_min_cosine: float = 0.25,
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
+        primary_triage_category: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Lexical (FTS/LIKE), semantic (cosine on stored embeddings), or hybrid (RRF).
@@ -1907,6 +2148,7 @@ class PersistentState:
                     ingested_before=ingested_before,
                     min_relevance_score=min_relevance_score,
                     valid_at_now=valid_at_now,
+                    primary_triage_category=primary_triage_category,
                 )
             return await self._search_knowledge_items_lexical(
                 query,
@@ -1917,6 +2159,7 @@ class PersistentState:
                 prefer_fts=prefer_fts,
                 min_relevance_score=min_relevance_score,
                 valid_at_now=valid_at_now,
+                primary_triage_category=primary_triage_category,
             )
 
         if sm == "hybrid":
@@ -1934,6 +2177,7 @@ class PersistentState:
                     prefer_fts=prefer_fts,
                     min_relevance_score=min_relevance_score,
                     valid_at_now=valid_at_now,
+                    primary_triage_category=primary_triage_category,
                 )
                 sem = await self._search_knowledge_items_semantic(
                     query_embedding,
@@ -1945,6 +2189,7 @@ class PersistentState:
                     ingested_before=ingested_before,
                     min_relevance_score=min_relevance_score,
                     valid_at_now=valid_at_now,
+                    primary_triage_category=primary_triage_category,
                 )
                 lex_ids = [x["id"] for x in lex]
                 sem_ids = [x["id"] for x in sem]
@@ -1960,6 +2205,7 @@ class PersistentState:
                 prefer_fts=prefer_fts,
                 min_relevance_score=min_relevance_score,
                 valid_at_now=valid_at_now,
+                primary_triage_category=primary_triage_category,
             )
 
         return await self._search_knowledge_items_lexical(
@@ -1971,6 +2217,7 @@ class PersistentState:
             prefer_fts=prefer_fts,
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
+            primary_triage_category=primary_triage_category,
         )
 
     async def _search_knowledge_items_like(
@@ -1983,6 +2230,7 @@ class PersistentState:
         ingested_before: str | None,
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
+        primary_triage_category: str | None = None,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         token = query.strip()
@@ -1997,11 +2245,14 @@ class PersistentState:
             ingested_before=ingested_before,
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
+            primary_triage_category=primary_triage_category,
         )
         sql = f"""
             SELECT id, source_id, external_id, published_at, ingested_at,
                    tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score, expires_at, tombstoned
+                   relevance_score, impact_score,
+                   triage_primary_category, triage_secondary_categories_json,
+                   expires_at, tombstoned
             FROM knowledge_items
             WHERE (content_excerpt LIKE ? ESCAPE '\\' OR tags_json LIKE ? ESCAPE '\\')
             {extra}
@@ -2053,7 +2304,9 @@ class PersistentState:
             """
             SELECT id, source_id, external_id, published_at, ingested_at,
                    tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score, expires_at, tombstoned
+                   relevance_score, impact_score,
+                   triage_primary_category, triage_secondary_categories_json,
+                   expires_at, tombstoned
             FROM knowledge_items
             WHERE impact_score IS NULL
               AND tombstoned = 0
@@ -2077,6 +2330,58 @@ class PersistentState:
         if cur.rowcount == 0:
             raise LookupError(f"no knowledge item with id={knowledge_id}")
         await self._conn.commit()
+
+    async def update_triage_result(
+        self,
+        knowledge_id: int,
+        *,
+        impact_score: int,
+        primary_category: str,
+        secondary_categories: list[str],
+    ) -> None:
+        if not isinstance(impact_score, int) or impact_score < 1 or impact_score > 10:
+            raise ValueError("impact_score must be an integer from 1 to 10")
+        if not isinstance(primary_category, str) or not primary_category.strip():
+            raise ValueError("primary_category required")
+        sec_json = json.dumps(list(secondary_categories), ensure_ascii=False)
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            UPDATE knowledge_items SET
+                impact_score = ?,
+                triage_primary_category = ?,
+                triage_secondary_categories_json = ?
+            WHERE id = ?
+            """,
+            (impact_score, primary_category.strip(), sec_json, knowledge_id),
+        )
+        if cur.rowcount == 0:
+            raise LookupError(f"no knowledge item with id={knowledge_id}")
+        await self._conn.commit()
+
+    async def list_backfill_triage_categories(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Rows scored but missing triage primary category (newest first)."""
+        assert self._conn is not None
+        lim = max(1, min(limit, 500))
+        cur = await self._conn.execute(
+            """
+            SELECT id, source_id, external_id, published_at, ingested_at,
+                   tags_json, content_excerpt, payload_json, content_hash,
+                   relevance_score, impact_score,
+                   triage_primary_category, triage_secondary_categories_json,
+                   expires_at, tombstoned
+            FROM knowledge_items
+            WHERE impact_score IS NOT NULL
+              AND triage_primary_category IS NULL
+              AND tombstoned = 0
+              AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
+            ORDER BY datetime(ingested_at) DESC
+            LIMIT ?
+            """,
+            (lim,),
+        )
+        rows = await cur.fetchall()
+        return [self._row_to_knowledge_item(r) for r in rows]
 
     async def insert_market_metric(
         self,
@@ -2122,6 +2427,236 @@ class PersistentState:
         )
         await self._conn.commit()
         return int(cur.lastrowid)
+
+    @staticmethod
+    def normalize_entity_name(name: str) -> str:
+        return " ".join((name or "").strip().lower().split())
+
+    async def upsert_entity(
+        self,
+        *,
+        type: str,
+        name: str,
+        aliases: list[str] | None = None,
+        external_ids: dict[str, str] | None = None,
+        payload_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        assert self._conn is not None
+        etype = str(type).strip().lower()
+        ename = str(name).strip()
+        if not etype:
+            raise ValueError("entity type required")
+        if not ename:
+            raise ValueError("entity name required")
+        normalized_name = self.normalize_entity_name(ename)
+        if not normalized_name:
+            raise ValueError("entity name required")
+        payload: dict[str, Any] = dict(payload_json or {})
+        if aliases:
+            payload["aliases"] = [str(a).strip() for a in aliases if str(a).strip()]
+        if external_ids:
+            payload["external_ids"] = {
+                str(k): str(v) for k, v in external_ids.items() if str(k).strip()
+            }
+        payload_str = json.dumps(payload, ensure_ascii=False)
+        cur = await self._conn.execute(
+            """
+            SELECT id, name, payload_json FROM entities
+            WHERE type = ? AND normalized_name = ?
+            LIMIT 1
+            """,
+            (etype, normalized_name),
+        )
+        row = await cur.fetchone()
+        if row is not None:
+            eid = int(row[0])
+            existing_name = str(row[1] or "")
+            existing_payload_raw = str(row[2] or "{}")
+            try:
+                existing_payload = json.loads(existing_payload_raw)
+            except json.JSONDecodeError:
+                existing_payload = {}
+            existing_aliases = set(existing_payload.get("aliases", []))
+            merged_aliases = sorted(
+                {a for a in existing_aliases if isinstance(a, str)}
+                | set(payload.get("aliases", []))
+            )
+            merged_external_ids: dict[str, str] = {}
+            ext = existing_payload.get("external_ids", {})
+            if isinstance(ext, dict):
+                merged_external_ids.update(
+                    {str(k): str(v) for k, v in ext.items() if str(k).strip()}
+                )
+            merged_external_ids.update(payload.get("external_ids", {}))
+            merged_payload = existing_payload | payload
+            if merged_aliases:
+                merged_payload["aliases"] = merged_aliases
+            if merged_external_ids:
+                merged_payload["external_ids"] = merged_external_ids
+            await self._conn.execute(
+                "UPDATE entities SET name = ?, payload_json = ? WHERE id = ?",
+                (
+                    existing_name if existing_name else ename,
+                    json.dumps(merged_payload, ensure_ascii=False),
+                    eid,
+                ),
+            )
+            await self._conn.commit()
+            return {"entity_id": eid, "inserted": False, "normalized_name": normalized_name}
+        cur = await self._conn.execute(
+            """
+            INSERT INTO entities (type, name, normalized_name, payload_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (etype, ename, normalized_name, payload_str),
+        )
+        await self._conn.commit()
+        return {
+            "entity_id": int(cur.lastrowid),
+            "inserted": True,
+            "normalized_name": normalized_name,
+        }
+
+    async def ensure_triage_category_entities(self) -> int:
+        """Upsert graph-lite entities for each fixed triage code (type=category)."""
+        n = 0
+        for code in sorted(TRIAGE_CATEGORY_CODES):
+            await self.upsert_entity(
+                type="category",
+                name=code,
+                payload_json={"triage_code": code, "role": "triage_taxonomy_parent"},
+            )
+            n += 1
+        return n
+
+    async def insert_graph_edge(
+        self,
+        *,
+        src_entity_id: int,
+        dst_entity_id: int,
+        edge_type: str,
+        confidence: float,
+        status: str = GRAPH_EDGE_ACTIVE,
+        superseded_by: int | None = None,
+    ) -> int:
+        assert self._conn is not None
+        etype = str(edge_type).strip().lower()
+        if not etype:
+            raise ValueError("edge_type required")
+        conf = float(confidence)
+        if conf < 0 or conf > 1:
+            raise ValueError("confidence must be between 0 and 1")
+        st = str(status).strip().lower()
+        if st not in GRAPH_EDGE_STATUSES:
+            raise ValueError("invalid edge status")
+        cur = await self._conn.execute(
+            """
+            INSERT INTO graph_edges (
+                src_entity_id, dst_entity_id, edge_type, confidence, status, superseded_by
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (src_entity_id, dst_entity_id, etype, conf, st, superseded_by),
+        )
+        await self._conn.commit()
+        return int(cur.lastrowid)
+
+    async def insert_edge_evidence(
+        self,
+        *,
+        edge_id: int,
+        knowledge_id: int,
+        span_json: dict[str, Any] | None = None,
+    ) -> int:
+        assert self._conn is not None
+        span = json.dumps(span_json, ensure_ascii=False) if span_json is not None else None
+        cur = await self._conn.execute(
+            """
+            INSERT INTO edge_evidence (edge_id, knowledge_id, span_json)
+            VALUES (?, ?, ?)
+            """,
+            (edge_id, knowledge_id, span),
+        )
+        await self._conn.commit()
+        return int(cur.lastrowid)
+
+    async def link_edge_evidence_upsert(
+        self,
+        *,
+        edge_id: int,
+        knowledge_id: int,
+        span_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id FROM edge_evidence
+            WHERE edge_id = ? AND knowledge_id = ?
+            LIMIT 1
+            """,
+            (edge_id, knowledge_id),
+        )
+        row = await cur.fetchone()
+        span = json.dumps(span_json, ensure_ascii=False) if span_json is not None else None
+        if row is not None:
+            edge_evidence_id = int(row[0])
+            if span_json is not None:
+                await self._conn.execute(
+                    "UPDATE edge_evidence SET span_json = ? WHERE id = ?",
+                    (span, edge_evidence_id),
+                )
+                await self._conn.commit()
+            return {"edge_evidence_id": edge_evidence_id, "upserted": False}
+        edge_evidence_id = await self.insert_edge_evidence(
+            edge_id=edge_id,
+            knowledge_id=knowledge_id,
+            span_json=span_json,
+        )
+        return {"edge_evidence_id": edge_evidence_id, "upserted": True}
+
+    async def list_edge_evidence(self, edge_id: int) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, edge_id, knowledge_id, span_json, created_at
+            FROM edge_evidence
+            WHERE edge_id = ?
+            ORDER BY id ASC
+            """,
+            (edge_id,),
+        )
+        rows = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            span = None
+            if row[3] is not None:
+                try:
+                    span = json.loads(str(row[3]))
+                except json.JSONDecodeError:
+                    span = None
+            out.append(
+                {
+                    "id": int(row[0]),
+                    "edge_id": int(row[1]),
+                    "knowledge_id": int(row[2]),
+                    "span_json": span,
+                    "created_at": str(row[4]),
+                }
+            )
+        return out
+
+    async def mark_edge_invalid(self, edge_id: int, reason: str) -> None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "UPDATE graph_edges SET status = ? WHERE id = ?",
+            (GRAPH_EDGE_INVALID, edge_id),
+        )
+        if cur.rowcount == 0:
+            raise LookupError(f"no graph edge with id={edge_id}")
+        await self._conn.commit()
+        await self.append_action_log(
+            "graph_edge_invalidated",
+            {"edge_id": edge_id, "reason": str(reason)},
+        )
 
     async def delete_knowledge_source(self, source_id: int) -> None:
         """Delete a registered source and cascade knowledge_items (not synthesis refs)."""

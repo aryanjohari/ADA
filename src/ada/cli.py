@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ada.config import Settings
 from ada.dream.run import run_dream_job
+from ada.extract.graph_lite import build_llm_graph_extractor, run_graph_lite_extraction
 from ada.orchestrator import (
     SessionTokenLimitExceeded,
     file_guard_audit_hook,
@@ -283,5 +284,48 @@ async def run_dream_cli(
             max_messages=max_messages,
         )
         print(out)
+    finally:
+        await qe.close()
+
+
+async def run_extract_graph_lite_cli(
+    settings: Settings,
+    *,
+    limit: int,
+    token_cap: int,
+    source_id: int | None = None,
+) -> int:
+    settings.ensure_data_dir()
+    schema_path = Path(__file__).resolve().parent / "db" / "schema.sql"
+    qe = QueryEngine(
+        settings.state_db_path,
+        schema_path,
+        debounce_ms=settings.persist_debounce_ms,
+    )
+    await qe.connect()
+    try:
+        extractor = None
+        if settings.gemini_api_key.strip():
+            extractor = build_llm_graph_extractor(
+                api_key=settings.gemini_api_key,
+                model=settings.graph_lite_extract_model,
+                token_cap=token_cap,
+            )
+        stats = await run_graph_lite_extraction(
+            qe,
+            limit=limit,
+            token_cap=token_cap,
+            source_id=source_id,
+            extractor=extractor,
+        )
+        print(
+            "extract-graph-lite:"
+            f" processed_docs={stats.processed_docs}"
+            f" entities_upserted={stats.entities_upserted}"
+            f" edges_created={stats.edges_created}"
+            f" evidence_links_created={stats.evidence_links_created}"
+            f" rejected={stats.rejected}"
+        )
+        return 0
     finally:
         await qe.close()

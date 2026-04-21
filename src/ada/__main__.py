@@ -7,7 +7,7 @@ import asyncio
 import sys
 
 from ada.config import Settings, load_dotenv_if_present
-from ada.cli import run_chat, run_dream_cli
+from ada.cli import run_chat, run_dream_cli, run_extract_graph_lite_cli
 from ada.goal_cli import async_main as goal_async_main
 from ada.ingest.gets import run_ingest_gets_cli
 from ada.ingest.keywords import run_ingest_keywords_cli
@@ -46,6 +46,31 @@ def main() -> None:
     sub.add_parser(
         "ingest-gets",
         help="Public GETS tender index (ADA_GETS_POLL_URL) → ingest_raw + knowledge_items",
+    )
+    extract_graph_p = sub.add_parser(
+        "extract-graph-lite",
+        help="Run deterministic graph-lite extraction over recent knowledge_items",
+    )
+    extract_graph_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max knowledge items to scan (default: ADA_GRAPH_LITE_EXTRACT_LIMIT)",
+    )
+    extract_graph_p.add_argument(
+        "--token-cap",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Per job token cap budget (default: ADA_GRAPH_LITE_TOKEN_CAP_PER_JOB)",
+    )
+    extract_graph_p.add_argument(
+        "--source-id",
+        type=int,
+        default=None,
+        metavar="ID",
+        help="Optional knowledge_sources.id filter",
     )
 
     add_feed_p = sub.add_parser(
@@ -95,7 +120,10 @@ def main() -> None:
 
     triage_p = sub.add_parser(
         "triage",
-        help="Score unscored knowledge_items for NZ economy/markets news value (Gemini JSON; updates impact_score)",
+        help=(
+            "Triage knowledge_items: impact score + primary/secondary categories (Gemini JSON); "
+            "default queue is rows with impact_score unset"
+        ),
     )
     triage_p.add_argument(
         "--limit",
@@ -103,6 +131,14 @@ def main() -> None:
         default=None,
         metavar="N",
         help="Max items to process (default: ADA_TRIAGE_BATCH_SIZE)",
+    )
+    triage_p.add_argument(
+        "--backfill-categories",
+        action="store_true",
+        help=(
+            "Process rows that have impact_score but missing triage categories "
+            "(preserves existing impact_score; fills categories from the model)"
+        ),
     )
 
     args = p.parse_args()
@@ -120,6 +156,28 @@ def main() -> None:
     elif args.cmd == "ingest-gets":
         settings = Settings.load()
         raise SystemExit(asyncio.run(run_ingest_gets_cli(settings)))
+    elif args.cmd == "extract-graph-lite":
+        settings = Settings.load()
+        limit = (
+            args.limit
+            if args.limit is not None
+            else settings.graph_lite_extract_limit
+        )
+        token_cap = (
+            args.token_cap
+            if args.token_cap is not None
+            else settings.graph_lite_token_cap_per_job
+        )
+        raise SystemExit(
+            asyncio.run(
+                run_extract_graph_lite_cli(
+                    settings,
+                    limit=limit,
+                    token_cap=token_cap,
+                    source_id=args.source_id,
+                )
+            )
+        )
     elif args.cmd == "add-rss-source":
         settings = Settings.load()
         raise SystemExit(
@@ -158,7 +216,13 @@ def main() -> None:
             if args.limit is not None
             else settings.triage_batch_size
         )
-        stats, code = asyncio.run(run_triage_cli(settings, limit=limit))
+        stats, code = asyncio.run(
+            run_triage_cli(
+                settings,
+                limit=limit,
+                backfill_categories=bool(args.backfill_categories),
+            )
+        )
         print(
             "triage:"
             f" processed={stats.processed}"

@@ -46,7 +46,9 @@ Current task model supports only `chat` and `goal`, so tiers are operationalized
 
 ### Tier definitions
 
-- Tier 1 (`impact_score` 8-10):
+Automatic enqueue uses `impact_score` plus `triage_primary_category` (see `knowledge_items`): Tier 1 skips `sector_business`; `consumer_retail` needs score 9+ for Tier 1; Tier 2 is scores 6–7 only (daily cap).
+
+- Tier 1 (`impact_score` 8-10, category-eligible):
   - Use for macro shifts and hard-signal updates (policy changes, official data, concrete metrics).
   - Deep-dive output may write both `record_market_edge` and `record_synthesis`.
   - Prioritize numeric and date-anchored evidence.

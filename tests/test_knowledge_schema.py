@@ -36,6 +36,8 @@ async def test_fresh_db_has_knowledge_tables(tmp_path, schema_sql_path):
             assert "tags_json" in cols and "content_hash" in cols
             assert "relevance_score" in cols
             assert "impact_score" in cols
+            assert "triage_primary_category" in cols
+            assert "triage_secondary_categories_json" in cols
             assert "expires_at" in cols
             assert "tombstoned" in cols
     finally:
@@ -73,6 +75,8 @@ async def test_knowledge_crud_roundtrip(tmp_path, schema_sql_path):
         assert item["external_id"] == "entry-1"
         assert item["relevance_score"] is None
         assert item["impact_score"] is None
+        assert item["triage_primary_category"] is None
+        assert item["triage_secondary_categories"] == []
         assert item["tombstoned"] == 0
         listed = await qe.list_knowledge_items(source_id=sid, limit=10)
         assert len(listed) == 1 and listed[0]["id"] == iid
@@ -223,6 +227,28 @@ async def test_impact_score_check_constraint(tmp_path, schema_sql_path):
                     (11, iid),
                 )
                 await raw.commit()
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_update_triage_result_roundtrip(tmp_path, schema_sql_path):
+    db = tmp_path / "k.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        sid = await qe.insert_knowledge_source("rss")
+        iid = (await qe.insert_knowledge_item(sid, "ht", content_excerpt="t")).id
+        await qe.update_triage_result(
+            iid,
+            impact_score=6,
+            primary_category="policy_regulation",
+            secondary_categories=["markets_macro"],
+        )
+        item = await qe.get_knowledge_item(iid)
+        assert item["impact_score"] == 6
+        assert item["triage_primary_category"] == "policy_regulation"
+        assert item["triage_secondary_categories"] == ["markets_macro"]
     finally:
         await qe.close()
 

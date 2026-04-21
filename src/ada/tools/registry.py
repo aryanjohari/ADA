@@ -309,6 +309,13 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
                         "type": "boolean",
                         "description": "If true (default), exclude tombstoned and expired items.",
                     },
+                    "primary_triage_category": {
+                        "type": "string",
+                        "description": (
+                            "Optional: filter to items whose triage primary category equals this "
+                            "(e.g. markets_macro). Requires items to have been processed by ada triage."
+                        ),
+                    },
                 },
                 "required": ["query"],
             },
@@ -402,6 +409,85 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
                     },
                 },
                 "required": ["kind", "base_url"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="record_entity",
+            description=(
+                "Upsert a graph-lite entity by normalized name + type. "
+                "Prefer types: organization, government_body, person, sector, instrument, "
+                "policy_instrument, event, location, category (triage taxonomy parents)."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "type": {"type": "string"},
+                    "aliases": {"type": "array", "items": {"type": "string"}},
+                    "external_ids": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "payload": {"type": "object"},
+                },
+                "required": ["name", "type"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="record_edge",
+            description=(
+                "Create a graph-lite edge between two entities with confidence and evidence. "
+                "Use lowercase snake edge_type (e.g. announces, funds, under_category, regulates). "
+                "Non-hypothesis edges require evidence_item_ids."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "src_entity_id": {"type": "integer"},
+                    "dst_entity_id": {"type": "integer"},
+                    "edge_type": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "evidence_item_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "superseded", "invalid"],
+                    },
+                    "is_hypothesis": {"type": "boolean"},
+                    "superseded_by": {"type": "integer"},
+                },
+                "required": [
+                    "src_entity_id",
+                    "dst_entity_id",
+                    "edge_type",
+                    "confidence",
+                    "evidence_item_ids",
+                ],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="link_evidence",
+            description=(
+                "Attach one knowledge item as evidence to an existing graph-lite edge."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "edge_id": {"type": "integer"},
+                    "knowledge_id": {"type": "integer"},
+                    "quote_span": {
+                        "type": "object",
+                        "properties": {
+                            "start": {"type": "integer"},
+                            "end": {"type": "integer"},
+                            "text": {"type": ["string", "null"]},
+                        },
+                        "required": ["start", "end"],
+                    },
+                },
+                "required": ["edge_id", "knowledge_id"],
             },
         ),
     ]

@@ -143,6 +143,9 @@ async def orchestrate_turn(
     knowledge_record_fn = None
     knowledge_record_market_edge_fn = None
     knowledge_add_fn = None
+    knowledge_record_entity_fn = None
+    knowledge_record_edge_fn = None
+    knowledge_link_evidence_fn = None
     if include_knowledge_tools:
         hosts = knowledge_feed_host_allowlist
 
@@ -186,6 +189,12 @@ async def orchestrate_turn(
             vo = call.args.get("valid_only")
             valid_at_now = True if vo is None else bool(vo)
 
+            ptc_raw = call.args.get("primary_triage_category")
+            primary_triage_category: str | None = None
+            if ptc_raw is not None:
+                s = str(ptc_raw).strip()
+                primary_triage_category = s if s else None
+
             qe_vec: list[float] | None = None
             if (
                 knowledge_embeddings_enabled
@@ -217,6 +226,7 @@ async def orchestrate_turn(
                 embedding_min_cosine=knowledge_embedding_min_cosine,
                 min_relevance_score=min_rs,
                 valid_at_now=valid_at_now,
+                primary_triage_category=primary_triage_category,
             )
             slim: list[dict[str, Any]] = []
             for it in items[:response_cap]:
@@ -237,6 +247,10 @@ async def orchestrate_turn(
                         "published_at": it.get("published_at"),
                         "relevance_score": it.get("relevance_score"),
                         "expires_at": it.get("expires_at"),
+                        "triage_primary_category": it.get("triage_primary_category"),
+                        "triage_secondary_categories": it.get(
+                            "triage_secondary_categories"
+                        ),
                     }
                 )
             return {
@@ -343,10 +357,123 @@ async def orchestrate_turn(
                 "edge_id": edge_id,
             }
 
+        async def _knowledge_record_entity_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            name = str(call.args.get("name") or "").strip()
+            etype = str(call.args.get("type") or "").strip().lower()
+            if not name or not etype:
+                return {"error": "name and type are required"}
+            aliases_raw = call.args.get("aliases")
+            aliases: list[str] | None = None
+            if isinstance(aliases_raw, list):
+                aliases = [str(a).strip() for a in aliases_raw if str(a).strip()]
+            external_ids_raw = call.args.get("external_ids")
+            external_ids: dict[str, str] | None = None
+            if isinstance(external_ids_raw, dict):
+                external_ids = {
+                    str(k): str(v)
+                    for k, v in external_ids_raw.items()
+                    if str(k).strip()
+                }
+            payload = call.args.get("payload")
+            payload_json = payload if isinstance(payload, dict) else None
+            out = await qe.upsert_entity(
+                type=etype,
+                name=name,
+                aliases=aliases,
+                external_ids=external_ids,
+                payload_json=payload_json,
+            )
+            return out
+
+        async def _knowledge_record_edge_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            try:
+                src_entity_id = int(call.args.get("src_entity_id"))
+                dst_entity_id = int(call.args.get("dst_entity_id"))
+            except (TypeError, ValueError):
+                return {"error": "src_entity_id and dst_entity_id must be integers"}
+            edge_type = str(call.args.get("edge_type") or "").strip().lower()
+            if not edge_type:
+                return {"error": "edge_type required"}
+            try:
+                confidence = float(call.args.get("confidence"))
+            except (TypeError, ValueError):
+                return {"error": "confidence must be numeric"}
+            if confidence < 0 or confidence > 1:
+                return {"error": "confidence must be between 0 and 1"}
+            evidence_raw = call.args.get("evidence_item_ids")
+            if not isinstance(evidence_raw, list):
+                return {"error": "evidence_item_ids must be a list"}
+            evidence_item_ids: list[int] = []
+            for x in evidence_raw:
+                try:
+                    evidence_item_ids.append(int(x))
+                except (TypeError, ValueError):
+                    return {"error": "evidence_item_ids must contain integers"}
+            is_hypothesis = bool(call.args.get("is_hypothesis", False))
+            if not is_hypothesis and len(evidence_item_ids) == 0:
+                return {"error": "evidence_item_ids required for non-hypothesis edges"}
+            status_raw = call.args.get("status")
+            status = str(status_raw).strip().lower() if status_raw is not None else "active"
+            superseded_by_raw = call.args.get("superseded_by")
+            superseded_by = None
+            if superseded_by_raw is not None:
+                try:
+                    superseded_by = int(superseded_by_raw)
+                except (TypeError, ValueError):
+                    return {"error": "superseded_by must be integer"}
+            if confidence < 0.45:
+                return {"error": "confidence below minimum threshold"}
+            if confidence < 0.60 and len(evidence_item_ids) < 2:
+                return {"error": "confidence < 0.60 requires at least 2 evidence items"}
+            edge_id = await qe.insert_graph_edge(
+                src_entity_id=src_entity_id,
+                dst_entity_id=dst_entity_id,
+                edge_type=edge_type,
+                confidence=confidence,
+                status=status,
+                superseded_by=superseded_by,
+            )
+            linked = 0
+            for kid in evidence_item_ids:
+                rec = await qe.link_edge_evidence_upsert(edge_id=edge_id, knowledge_id=kid)
+                if rec.get("upserted") is True:
+                    linked += 1
+            return {"edge_id": edge_id, "status": status, "evidence_linked": linked}
+
+        async def _knowledge_link_evidence_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            try:
+                edge_id = int(call.args.get("edge_id"))
+                knowledge_id = int(call.args.get("knowledge_id"))
+            except (TypeError, ValueError):
+                return {"error": "edge_id and knowledge_id must be integers"}
+            quote_span = call.args.get("quote_span")
+            if quote_span is not None and not isinstance(quote_span, dict):
+                return {"error": "quote_span must be an object"}
+            rec = await qe.link_edge_evidence_upsert(
+                edge_id=edge_id,
+                knowledge_id=knowledge_id,
+                span_json=quote_span if isinstance(quote_span, dict) else None,
+            )
+            return {
+                "edge_evidence_id": rec["edge_evidence_id"],
+                "edge_id": edge_id,
+                "knowledge_id": knowledge_id,
+                "upserted": rec["upserted"],
+            }
+
         knowledge_search_fn = _knowledge_search_bound
         knowledge_record_fn = _knowledge_record_bound
         knowledge_record_market_edge_fn = _knowledge_record_market_edge_bound
         knowledge_add_fn = _knowledge_add_bound
+        knowledge_record_entity_fn = _knowledge_record_entity_bound
+        knowledge_record_edge_fn = _knowledge_record_edge_bound
+        knowledge_link_evidence_fn = _knowledge_link_evidence_bound
 
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
@@ -376,6 +503,9 @@ async def orchestrate_turn(
             knowledge_record_synthesis=knowledge_record_fn,
             knowledge_record_market_edge=knowledge_record_market_edge_fn,
             knowledge_add_source=knowledge_add_fn,
+            knowledge_record_entity=knowledge_record_entity_fn,
+            knowledge_record_edge=knowledge_record_edge_fn,
+            knowledge_link_evidence=knowledge_link_evidence_fn,
         )
         try:
             return await _agentic_loop(
@@ -612,6 +742,9 @@ async def _agentic_loop(
                 "record_synthesis",
                 "record_market_edge",
                 "add_knowledge_source",
+                "record_entity",
+                "record_edge",
+                "link_evidence",
             )
             for c in leg.function_calls
         )

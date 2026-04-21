@@ -125,6 +125,39 @@ async def test_search_knowledge_items_tag_filter(tmp_path, schema_sql_path):
 
 
 @pytest.mark.asyncio
+async def test_search_knowledge_primary_triage_category_filter(
+    tmp_path, schema_sql_path
+):
+    db = tmp_path / "k.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        sid = await qe.insert_knowledge_source("rss")
+        a = (await qe.insert_knowledge_item(sid, "h-a", content_excerpt="gamma ray burst")).id
+        b = (await qe.insert_knowledge_item(sid, "h-b", content_excerpt="gamma ray burst")).id
+        await qe.update_triage_result(
+            a,
+            impact_score=7,
+            primary_category="markets_macro",
+            secondary_categories=[],
+        )
+        await qe.update_triage_result(
+            b,
+            impact_score=6,
+            primary_category="sector_business",
+            secondary_categories=[],
+        )
+        hits = await qe.search_knowledge_items(
+            "gamma",
+            primary_triage_category="markets_macro",
+            limit=10,
+        )
+        assert len(hits) == 1 and hits[0]["id"] == a
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
 async def test_search_knowledge_items_time_filter(tmp_path, schema_sql_path):
     db = tmp_path / "k.db"
     qe = QueryEngine(db, schema_sql_path, debounce_ms=5)

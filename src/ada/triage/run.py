@@ -1,4 +1,4 @@
-"""`ada triage`: LLM scores unscored knowledge_items for NZ-relevant news value (1–10)."""
+"""`ada triage`: LLM scores unscored knowledge_items for NZ-relevant news value (1–10) + taxonomy."""
 
 from __future__ import annotations
 
@@ -16,35 +16,57 @@ from google.genai import types
 
 from ada.config import Settings
 from ada.query_engine import TASK_KIND_GOAL, QueryEngine
+from ada.triage.categories import parse_triage_response
+from ada.triage.enqueue import tier1_macro_eligible, tier2_lead_eligible
 
 log = logging.getLogger("ada.triage")
 
 _MAX_EXCERPT_CHARS = 12_000
 
-_TRIAGE_SYSTEM = """You score a short news or article snippet for how useful it is for someone
-following New Zealand’s economy, markets, business, and policy.
+_TRIAGE_SYSTEM = """You classify a short news or article snippet for someone following
+New Zealand’s economy, policy, markets, and business — not only sharp price moves.
 
 Use only the title, link line, and excerpt — do not invent facts.
 
-What deserves a HIGHER score (when the excerpt supports it):
-- Official or authoritative material: government, regulators, RBNZ, Stats NZ, ministers, agencies,
-  courts, listed companies’ announcements, verified economic data or surveys.
-- Concrete market or economy signals: prices, rates, indices, forecasts, employment, inflation,
-  housing stats, trade figures, budgets, rule changes, dates of effect, dollar amounts, or clear
-  “what changed” policy/economy news.
-- Credible reporting of those things (not opinion fluff).
+What deserves a HIGHER impact_score (1–10) when the excerpt supports it:
+- Official or authoritative material: government, regulators, RBNZ, Stats NZ, ministers,
+  agencies, courts, listed companies’ announcements, credible economic data or surveys.
+- Policy and rules: laws, consultations, standards, funding programmes, grants, budgets,
+  immigration or workforce settings when policy-linked, climate/energy transition when NZ-relevant.
+- Ordinary business and sector developments: industry trends, trade, infrastructure projects,
+  procurement, company news (listings, M&A, appointments) when substantively about the economy.
+- Concrete signals when present: rates, FX, indices, forecasts, employment, inflation, housing,
+  trade figures, dollar amounts, dates of effect — but also value surveys, stats releases, and
+  project announcements that are not necessarily “market moves.”
 
 What deserves a LOWER score:
-- Gossip, lifestyle filler, vague commentary, or items with no real economy/market/policy hook
+- Lifestyle fluff, gossip, or vague commentary with no real economy/policy/business hook
   in the text you see.
 
-Use the full 1–10 range. Reward real substance; do not inflate scores for thin or off-topic pieces.
+Choose exactly one primary_category from the fixed list below, plus 0–2 secondary_categories
+(distinct from primary, all from the same list):
 
-Return JSON only with exactly one key:
-- impact_score: integer from 1 (little/no value for this lens) to 10 (strong official, data-rich,
-  or clearly material NZ economy/market news).
+policy_regulation — laws, rules, consultations, RMA, standards, regulator guidance
+government_fiscal — budget, tax, grants programmes, agency funding envelopes
+markets_macro — rates, FX, indices, forecasts, RBNZ, hard economic data
+data_surveys_stats — Stats NZ, surveys, statistical releases (not necessarily market moves)
+trade_industry — trade deals, tariffs, industry bodies, sector-level trade
+sector_business — industry/company operational news, sector trends (qualitative)
+infrastructure_projects — major projects, procurement, tenders, capex programmes
+climate_energy — climate policy, energy markets, transition (NZ-relevant)
+labour_workforce — immigration settings, workforce, wages when policy-linked
+company_corporate — listings, M&A, earnings, appointments when excerpt supports
+consumer_retail — B2C-facing changes only when clearly economy-relevant (not lifestyle fluff)
+international_spillover — offshore events with a clear NZ channel in the text
 
-Example: {"impact_score": 6}
+Return JSON only with exactly these keys:
+- impact_score: integer 1–10
+- primary_category: one string from the list above
+- secondary_categories: array of 0–2 strings from the same list (omit duplicates; do not repeat primary)
+
+Example:
+{"impact_score": 6, "primary_category": "data_surveys_stats", "secondary_categories": ["markets_macro"]}
+
 No markdown, no other keys, no explanation."""
 
 _TIER1_MACRO_GOAL = """[tier:macro] Perform deep-dive synthesis on high-impact knowledge item ID: {kid}
@@ -86,27 +108,6 @@ def _build_user_block(item: dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def _parse_impact_score(data: dict[str, Any]) -> int | None:
-    """Return validated 1–10 score or None."""
-    v = data.get("impact_score")
-    if isinstance(v, bool):
-        return None
-    if isinstance(v, int):
-        return v if 1 <= v <= 10 else None
-    if isinstance(v, float):
-        if v.is_integer():
-            iv = int(v)
-            return iv if 1 <= iv <= 10 else None
-        return None
-    if isinstance(v, str):
-        try:
-            iv = int(v.strip())
-            return iv if 1 <= iv <= 10 else None
-        except ValueError:
-            return None
-    return None
-
-
 @dataclass
 class TriageStats:
     processed: int = 0
@@ -124,12 +125,13 @@ async def run_triage_cli(
     *,
     limit: int,
     client_cls: type = genai.Client,
+    backfill_categories: bool = False,
 ) -> tuple[TriageStats, int]:
     """
-    Score up to ``limit`` unscored knowledge rows. Returns (stats, exit_code).
+    Score up to ``limit`` knowledge rows (unscored by default, or backfill categories).
 
-    On JSON parse failure or invalid impact_score from the model: log a warning and **skip**
-    that row (leave impact_score NULL; do not write partial state).
+    On JSON parse failure or invalid fields from the model: log a warning and **skip**
+    that row (leave prior state unchanged; no partial writes).
     """
     if not settings.gemini_api_key.strip():
         print("triage: GEMINI_API_KEY not set", file=sys.stderr)
@@ -146,7 +148,10 @@ async def run_triage_cli(
     await qe.connect()
     stats = TriageStats()
     try:
-        rows = await qe.list_unscored_knowledge(limit=lim)
+        if backfill_categories:
+            rows = await qe.list_backfill_triage_categories(limit=lim)
+        else:
+            rows = await qe.list_unscored_knowledge(limit=lim)
         stats.processed = len(rows)
         if not rows:
             return stats, 0
@@ -185,7 +190,6 @@ async def run_triage_cli(
                 if not isinstance(data, dict):
                     raise ValueError("model JSON is not an object")
             except json.JSONDecodeError as e:
-                # Skip: keep row unscored; do not call update_impact_score.
                 log.warning(
                     "triage skip knowledge_id=%s: invalid JSON from model: %s",
                     kid,
@@ -198,25 +202,42 @@ async def run_triage_cli(
                 stats.skipped += 1
                 continue
 
-            score = _parse_impact_score(data)
-            if score is None:
+            parsed = parse_triage_response(data)
+            if parsed is None:
                 log.warning(
-                    "triage skip knowledge_id=%s: missing or invalid impact_score in %s",
+                    "triage skip knowledge_id=%s: invalid triage fields in %s",
                     kid,
                     data,
                 )
                 stats.skipped += 1
                 continue
 
+            if backfill_categories and item.get("impact_score") is not None:
+                score_for_row = int(item["impact_score"])
+            else:
+                score_for_row = parsed.impact_score
+
             try:
-                await qe.update_impact_score(kid, score)
+                await qe.update_triage_result(
+                    kid,
+                    impact_score=score_for_row,
+                    primary_category=parsed.primary_category,
+                    secondary_categories=list(parsed.secondary_categories),
+                )
             except Exception as e:
                 log.warning("triage skip knowledge_id=%s: DB update failed: %s", kid, e)
                 stats.skipped += 1
                 continue
 
             stats.scored += 1
-            if score >= 8 and score >= trigger_min:
+            score = score_for_row
+            primary = parsed.primary_category
+
+            if tier1_macro_eligible(
+                impact_score=score,
+                primary_category=primary,
+                trigger_min=trigger_min,
+            ):
                 goal = _TIER1_MACRO_GOAL.format(kid=kid)
                 task_id = await qe.insert_task(
                     goal, status="pending", task_kind=TASK_KIND_GOAL
@@ -228,13 +249,18 @@ async def run_triage_cli(
                             "tier": "macro",
                             "knowledge_id": kid,
                             "impact_score": score,
+                            "primary_category": primary,
+                            "secondary_categories": list(parsed.secondary_categories),
                             "contract": "tiered_v1",
                         },
                         ensure_ascii=False,
                     ),
                 )
                 stats.deep_dives_enqueued += 1
-            elif score >= 6 and score >= trigger_min:
+            elif tier2_lead_eligible(
+                impact_score=score,
+                trigger_min=trigger_min,
+            ):
                 if lead_cap == 0 or lead_count_today >= lead_cap:
                     continue
                 goal = _TIER2_LEAD_GOAL.format(kid=kid)
@@ -248,6 +274,8 @@ async def run_triage_cli(
                             "tier": "lead",
                             "knowledge_id": kid,
                             "impact_score": score,
+                            "primary_category": primary,
+                            "secondary_categories": list(parsed.secondary_categories),
                             "contract": "tiered_v1",
                         },
                         ensure_ascii=False,

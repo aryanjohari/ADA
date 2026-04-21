@@ -139,6 +139,10 @@ class Settings:
     gov_api_host_allowlist: frozenset[str]
     ada_gets_poll_url: str
     ingest_rss_max_feeds: int | None
+    enable_graph_lite: bool
+    graph_lite_extract_limit: int
+    graph_lite_token_cap_per_job: int
+    graph_lite_extract_model: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -385,6 +389,20 @@ class Settings:
                 ingest_rss_max_feeds = max(1, int(ingest_rss_max_feeds_raw))
             except ValueError:
                 ingest_rss_max_feeds = None
+        enable_graph_lite = os.environ.get(
+            "ADA_ENABLE_GRAPH_LITE", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        graph_lite_extract_limit = max(
+            1, min(500, int(os.environ.get("ADA_GRAPH_LITE_EXTRACT_LIMIT", "40")))
+        )
+        graph_lite_token_cap_per_job = max(
+            256,
+            int(os.environ.get("ADA_GRAPH_LITE_TOKEN_CAP_PER_JOB", "8000")),
+        )
+        graph_lite_extract_model = (
+            os.environ.get("ADA_GRAPH_LITE_EXTRACT_MODEL", "").strip()
+            or triage_model
+        )
 
         return cls(
             project_root=root,
@@ -468,6 +486,10 @@ class Settings:
             gov_api_host_allowlist=gov_api_host_allowlist,
             ada_gets_poll_url=ada_gets_poll_url,
             ingest_rss_max_feeds=ingest_rss_max_feeds,
+            enable_graph_lite=enable_graph_lite,
+            graph_lite_extract_limit=graph_lite_extract_limit,
+            graph_lite_token_cap_per_job=graph_lite_token_cap_per_job,
+            graph_lite_extract_model=graph_lite_extract_model,
         )
 
     def ensure_data_dir(self) -> None:
