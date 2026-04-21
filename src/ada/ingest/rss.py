@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import sys
 from collections.abc import Awaitable, Callable
@@ -16,6 +17,7 @@ import httpx
 
 from ada.config import Settings
 from ada.ingest.gate import score_feed_entry
+from ada.knowledge_urls import validate_knowledge_feed_url
 from ada.knowledge_embeddings import embed_document_text, float32_list_to_blob
 from ada.query_engine import QueryEngine
 
@@ -62,6 +64,27 @@ def _tags_from_entry(entry: dict) -> list[str]:
     return tags[:48]
 
 
+def _tags_from_source_config(cfg: object) -> list[str]:
+    if not isinstance(cfg, dict):
+        return []
+    out: list[str] = []
+    tt = cfg.get("trust_tier")
+    if tt:
+        out.append(f"trust:{str(tt)[:80]}")
+    reg = cfg.get("region")
+    if reg:
+        out.append(f"region:{str(reg)[:40]}")
+    for t in cfg.get("topics") or []:
+        out.append(f"topic:{str(t)[:120]}")
+    m = cfg.get("maps_to")
+    if m:
+        out.append(f"maps_to:{str(m)[:120]}")
+    sk = cfg.get("source_key")
+    if sk:
+        out.append(f"src_key:{str(sk)[:80]}")
+    return out
+
+
 async def ingest_rss_feeds(
     qe: QueryEngine,
     *,
@@ -69,6 +92,7 @@ async def ingest_rss_feeds(
     max_items_per_feed: int = 50,
     max_response_bytes: int = 2_000_000,
     timeout_sec: float = 45.0,
+    max_feeds: int | None = None,
     fetch_text: Callable[[str], Awaitable[str]] | None = None,
 ) -> IngestRssResult:
     """
@@ -81,13 +105,23 @@ async def ingest_rss_feeds(
     result = IngestRssResult()
     rows = await qe.list_knowledge_sources(kind="rss")
     candidates = [r for r in rows if str(r.get("base_url") or "").strip()]
+    feed_cap = max_feeds
+    if feed_cap is None and settings is not None:
+        feed_cap = getattr(settings, "ingest_rss_max_feeds", None)
+    if feed_cap is not None:
+        candidates = candidates[:feed_cap]
     result.feeds_attempted = len(candidates)
     if not candidates:
         return result
 
     async def _download(url: str) -> str:
         if fetch_text is not None:
-            return await fetch_text(url)
+            body = await fetch_text(url)
+            if len(body.encode("utf-8", errors="replace")) > max_response_bytes:
+                raise ValueError(
+                    f"response exceeds max_response_bytes={max_response_bytes}"
+                )
+            return body
         async with httpx.AsyncClient(
             timeout=timeout_sec,
             follow_redirects=True,
@@ -106,6 +140,13 @@ async def ingest_rss_feeds(
         url = str(src["base_url"]).strip()
         label = src.get("label") or ""
         try:
+            if settings is not None:
+                validate_knowledge_feed_url(
+                    url,
+                    host_allowlist=getattr(
+                        settings, "knowledge_feed_host_allowlist", frozenset()
+                    ),
+                )
             body = await _download(url)
             parsed = feedparser.parse(body)
             if getattr(parsed, "bozo", False) and not getattr(parsed, "entries", None):
@@ -131,9 +172,16 @@ async def ingest_rss_feeds(
                 pub = entry.get("published") or entry.get("updated")
                 published_at = str(pub) if pub else None
                 tags = _tags_from_entry(entry)
+                cfg = src.get("config_json")
+                if isinstance(cfg, str):
+                    try:
+                        cfg = json.loads(cfg)
+                    except json.JSONDecodeError:
+                        cfg = {}
+                tags = tags + _tags_from_source_config(cfg)
                 if label:
                     tags = tags + [f"src:{str(label)[:80]}"]
-                    tags = tags[:48]
+                tags = tags[:48]
                 relevance = 1.0
                 if (
                     settings is not None

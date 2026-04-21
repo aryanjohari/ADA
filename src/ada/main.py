@@ -6,6 +6,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from ada.budget import daemon_should_execute_goal, maybe_log_daemon_block
 from ada.config import Settings, load_dotenv_if_present
 from ada.orchestrator import file_guard_audit_hook, orchestrate_turn
 from ada.prompt import (
@@ -112,6 +113,23 @@ async def run_daemon_loop(settings: Settings) -> None:
                 continue
             task_id, goal = pending
             if not settings.gemini_api_key:
+                await asyncio.sleep(POLL_INTERVAL_SEC)
+                continue
+            totals = await qe.get_global_usage_token_totals_utc()
+            allowed, block_reason = daemon_should_execute_goal(
+                kill_switch=settings.ada_kill_switch,
+                day_total=totals["day_total"],
+                month_total=totals["month_total"],
+                daily_limit=settings.ada_daily_token_budget,
+                monthly_limit=settings.ada_monthly_token_budget,
+            )
+            if not allowed:
+                await maybe_log_daemon_block(
+                    qe,
+                    block_reason=block_reason or "kill_switch",
+                    totals=totals,
+                    settings=settings,
+                )
                 await asyncio.sleep(POLL_INTERVAL_SEC)
                 continue
             await qe.update_task(task_id, status="executing")

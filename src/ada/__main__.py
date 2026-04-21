@@ -1,4 +1,4 @@
-"""`python -m ada [chat|daemon|goal|dream|ingest-rss|add-rss-source|triage]`."""
+"""`python -m ada [chat|daemon|goal|dream|ingest-rss|ingest-keywords|ingest-gets|add-rss-source|triage]`."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import sys
 from ada.config import Settings, load_dotenv_if_present
 from ada.cli import run_chat, run_dream_cli
 from ada.goal_cli import async_main as goal_async_main
+from ada.ingest.gets import run_ingest_gets_cli
+from ada.ingest.keywords import run_ingest_keywords_cli
 from ada.ingest.rss import run_ingest_rss_cli, run_register_rss_source_cli
 from ada.main import main_daemon
 from ada.triage.run import run_triage_cli
@@ -34,6 +36,16 @@ def main() -> None:
     sub.add_parser(
         "ingest-rss",
         help="Fetch RSS/Atom feeds listed in knowledge_sources (kind=rss) into knowledge_items",
+    )
+
+    sub.add_parser(
+        "ingest-keywords",
+        help="Batch keyword volume via DataForSEO → ingest_raw (set ADA_KEYWORD_TERMS, DATAFORSEO_*)",
+    )
+
+    sub.add_parser(
+        "ingest-gets",
+        help="Public GETS tender index (ADA_GETS_POLL_URL) → ingest_raw + knowledge_items",
     )
 
     add_feed_p = sub.add_parser(
@@ -102,6 +114,12 @@ def main() -> None:
     elif args.cmd == "ingest-rss":
         settings = Settings.load()
         raise SystemExit(asyncio.run(run_ingest_rss_cli(settings)))
+    elif args.cmd == "ingest-keywords":
+        settings = Settings.load()
+        raise SystemExit(asyncio.run(run_ingest_keywords_cli(settings)))
+    elif args.cmd == "ingest-gets":
+        settings = Settings.load()
+        raise SystemExit(asyncio.run(run_ingest_gets_cli(settings)))
     elif args.cmd == "add-rss-source":
         settings = Settings.load()
         raise SystemExit(

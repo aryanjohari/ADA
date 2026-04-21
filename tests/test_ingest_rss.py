@@ -126,6 +126,7 @@ async def test_ingest_rss_sets_expires_when_retention_configured(
             enable_knowledge_embeddings=False,
             knowledge_embedding_model="m",
             knowledge_embedding_dim=768,
+            knowledge_feed_host_allowlist=frozenset({"example.com"}),
         )
 
         async def fake_fetch(url: str) -> str:
@@ -164,6 +165,7 @@ async def test_ingest_gate_mocked_scores_items(tmp_path, schema_sql_path, monkey
             enable_knowledge_embeddings=False,
             knowledge_embedding_model="m",
             knowledge_embedding_dim=768,
+            knowledge_feed_host_allowlist=frozenset({"example.com"}),
         )
 
         async def fake_gate(*_a, **_k):

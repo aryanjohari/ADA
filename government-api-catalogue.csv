@@ -1,0 +1,241 @@
+﻿Content_name,"Content_title
+","Content_description
+",Repsonsible_org_for_content,Content_link,Content_type
+ACC Developer Resource Centre,ACC Developer Resource Centre,"Your self-service site for ACC provider consumed services. We provide the underlying technology, products, & service categories for developers to create services that integrate directly with us. Collectively we provide a quicker, more streamlined user experience.",ACC,https://developer.acc.co.nz/,API / API Portal
+API Concepts,API Concepts,"Part A: API Concepts and Management
+
+Part A contains the business context for APIs and their use within Health NZ. It describes the principles and considerations when producing or consuming APIs, some of the benefits and pitfalls of doing so as well as their value when fostering innovation in the health sector.",HISO,https://apistandards.digital.health.nz/api-concepts/,API guidance or standard
+API Design and Development Standards - HISO 10109,API Design and Development Standards - HISO 10109,"Part C: API Development - HISO 10109
+
+Part C contains technical details for API development, including general API implementation standards for API developers and consuming application developers.",HISO,https://apistandards.digital.health.nz/api-development/,API guidance or standard
+API Guidelines,API Guidelines,"The API guidelines 2022 provide government agencies context for API standards, focused design and implementation guidance, and API best practices. This is intended to help agencies achieve a consistent and common approach to developing and delivering APIs.
+
+The API guidelines 2022
+The guidelines are split into the following 3 parts:
+
+- Part A: API concepts and management 2022. Part A contains the business context for APIs within government. It describes the principles and considerations that creating APIs could impact an agency, across government and public services, and commercial innovation. This replaces the version published in 2016 called API standard and guidelines — Part A: Business.
+
+- Part B: API security 2022. Part B contains the API security reference architecture and technical details for implementing API security. This replaces the 2016 version called API standard and guidelines — Part B: Technical, which has been split into 2 parts for the 2022 version — Part B: API security and Part C: API development.
+
+- Part C: API development 2022. Part C contains the technical details for API development, including general API implementation standards for API developers and consuming application developers.",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://www.digital.govt.nz/standards-and-guidance/technology-and-architecture/application-programming-interfaces-apis/api-guidelines,API guidance or standard
+API Guidelines Part A - API Concepts and Management 2022,API Concepts and Management 2022,"There is a wide range in the level of knowledge and skill regarding API design and delivery across government agencies. Hence this document tries to offer a balance of guidance for those new to APIs along with quick lookup standards, which should assist agencies in achieving consistency and commonality in their API deliverables.
+
+Part A (this document) looks at the business context for APIs within government and articulates the principles and considerations that could impact an agency when creating APIs. It looks at APIs in the context of their impact on the organisation as well as across government and public services through to commercial innovation. Version 1.0 published in 2016 was called API Standards and Guidelines - Part A – Business.",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://www.digital.govt.nz/dmsdocument/230~api-guidelines-part-a-api-concepts-and-management-2022/html ,API guidance or standard
+API Guidelines Part B - API Security 2022,API Security 2022,"There is a wide range in the level of knowledge and skill regarding API design and delivery across government agencies. Hence this document tries to offer a balance of guidance for those new to APIs along with quick lookup standards, which should assist agencies in achieving consistency and commonality in their API deliverables.
+
+Part B contains the API Security reference architecture and technical details for implementing API Security. Version 1.0 published in 2016 was called API Standards and Guidelines - Part A – Technical but has been split into a Part B - Security and Part C – Development for this version 2.0.",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://www.digital.govt.nz/dmsdocument/231~api-guidelines-part-b-api-security-2022/html,API guidance or standard
+API Guidelines Part C - API Development 2022,API Development 2022,"There is a wide range in the level of knowledge and skill regarding API design and delivery across government agencies. Hence this document tries to offer a balance of guidance for those new to APIs along with quick lookup standards, which should assist agencies in achieving consistency and commonality in their API deliverables.
+
+Part C – API Development 2022
+
+Part C contains the technical details for API Development, including general API implementation standards for API developers & consuming application developers. Version 1.0 published in 2016 was called API Standards and Guidelines - Part A – Technical but has been split into a Part B - Security and Part C – Development for this version 2.0.",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://www.digital.govt.nz/dmsdocument/232~api-guidelines-part-c-api-development-2022/html,API guidance or standard
+API Guidelines Part D - FHIR API Design and Development, FHIR API Design and Development,"Health New Zealand | Te Whatu Ora has developed API Standards based on the API Guidelines Part A, B and C. They have also developed a Part D and E. 
+
+- Part D: HL7 FHIR API Design and Development Standards - HISO 10110. FHIR (Fast Health Care Resources) are APIs from HL7.  
+- Part E: API Publishing Standards - HISO 10108
+
+Adopting the Part D: HL7 FHIR API Design and Development Standards - HISO 10110 as an extension to the API Guidelines is unbder Future Consideration. ",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://apistandards.digital.health.nz/fhir-api-standard/,API guidance or standard
+API Guidelines Part E - API Publishing,API Publishing,"Health New Zealand | Te Whatu Ora has developed API Standards based on the API Guidelines Part A, B and C. They have also developed a Part D and E. 
+
+- Part D: HL7 FHIR API Design and Development Standards - HISO 10110. FHIR (Fast Health Care Resources) are APIs from HL7.  
+- Part E: API Publishing Standards - HISO 10108
+
+Adopting the Part D: HL7 FHIR API Design and Development Standards - HISO 10110 as an extension to the API Guidelines is unbder Future Consideration. ",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://apistandards.digital.health.nz/api-publishing/Introduction,API guidance or standard
+API New Zealand Schools,API New Zealand Schools,,MINEDU (Te Tāhuhu o te Mātauranga | the Ministry of Education),https://www.educationcounts.govt.nz/data-services/directories/api-new-zealand-schools,API / API Portal
+API Publishing Standards - HISO 10108,API Publishing Standards - HISO 10108,"Part E: API Publishing Standards - HISO 10108
+
+Part E contains standards information and guidance for publishing APIs",HISO,https://apistandards.digital.health.nz/api-publishing/Introduction,API guidance or standard
+API search on catalogue.data.govt.nz,API search on catalogue.data.govt.nz,A search on catalogue.data.govt.nz that returns over 2000 results for API. ,,https://catalogue.data.govt.nz/dataset/?q=API,API / API Portal
+API Security- HISO 10107,API Security- HISO 10107,"Part B: API Security - HISO 10107
+
+Part B contains the API security reference architecture and technical details for implementing API security. This section of the standard lays out the minimum security requirements for both API Providers and consumers and gives guidance to organisations on security best practice in relation to APIs",HISO,https://apistandards.digital.health.nz/api-security/,API guidance or standard
+api.business.govt.nz Companies,Companies API,"The Companies API allows users to reserve company names, incorporate new companies, and maintain companies on the New Zealand Companies Register that they have authority over.
+
+To search and get details of New Zealand companies and other business types subscribe to the NZBN API instead.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=companies-register&operation=get-company-name-company-name,API / API Portal
+api.business.govt.nz Companies Disqualified Director Search,Companies Disqualified Director Search API,"The Companies Disqualified Director Search API provides the facility for searching for disqualified company directors or prohibited company managers by name. See the Companies Register website for more information about how and why directors may be prohibited. See here for additional information on how to use the API. A separate API is available for searching for directors and shareholders.
+","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=companies-disqualified-director-search&operation=get-search-page-page-page-size-page-size-name-name,API / API Portal
+api.business.govt.nz Companies Entity Role Search,Companies Entity Role Search API,The Companies Entity Role Search API provides the facility for searching the New Zealand Companies Register for persons or entities that have a director or shareholder role in one or more companies. See here for additional information on how to use the API. A separate API is available for searching for disqualified directors.,"MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=companies-entity-role-search-v3&operation=get-search-name-name,API / API Portal
+api.business.govt.nz Disclose Compliance,Disclose Compliance API,"The Disclose Register is a register for offers of financial products and managed investment schemes under the Financial Markets Conduct Act 2013. The DiscloseCompliance API allows fund managers to create new funds against existing offers and has operations to identify compliance activities, submit compliance data, and verify that compliance activities have been completed.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=disclose-compliance&operation=DiscloseCompliance,API / API Portal
+api.business.govt.nz Disclose Public,Disclose Public API,"The Disclose Register is a register for offers of financial products and managed investment schemes under the Financial Markets Conduct Act 2013. New Zealand investment information from the Disclose Register can also be searched and compared on Sorted’s Smart Investor online tool. The DisclosePublic API provides a method for systems to search the register and retrieve full public details of schemes, offers, funds, and documents in a structured data format.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=disclose-public&operation=DisclosePublic,API / API Portal
+api.business.govt.nz explore APIs,api.business.govt.nz explore APIs,MBIE's business API categories.  ,"MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/explore-apis,API / API Portal
+"api.business.govt.nz Geodata Catalogue Search
+",Geodata Catalogue Search API,The Geodata Catalogue Search API allows users to search for New Zealand geoscience datasets and their associated resources. ,"MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/apis#tags=NZPAM,API / API Portal
+api.business.govt.nz getting started,api.business.govt.nz getting started,Getting started with MBIE's business APIs,"MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/getting-started,API / API Portal
+api.business.govt.nz home,api.business.govt.nz home,"Welcome to the Ministry of Business, Innovation, and Employment (MBIE) API home page. 
+
+Here you’ll find a diverse range of APIs for connecting directly to various government services and information sources. ","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/,API / API Portal
+api.business.govt.nz Insolvency Register,Insolvency Register API,The Insolvency Register API allows authorised users to retrieve information from public insolvency and debt repayment order registers.,"MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/apis#tags=Insolvency,API / API Portal
+api.business.govt.nz IPONZ ,IPONZ API,"The IPONZ API provides a facility for interacting with the Patent, Trade Mark, and Design registers. It has functions for retrieving information from the registers, submitting applications, renewing IP registrations, and managing examination correspondence.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/apis#tags=IPONZ,API / API Portal
+api.business.govt.nz Licensed Building Practitioners,Licensed Building Practitioners API,"The Licensed Building Practitioners API provides the ability to search and retrieve details from New Zealand Licensed Building Practitioner (LBP) register. LBPs are designers, carpenters, brick and blocklayers, roofers, external plasterers, site and foundations specialists who have been assessed to be competent to carry out work essential to a residential building's structure or weathertightness.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=licensed-building-practitioners&operation=search-licenced-building-practitioner,API / API Portal
+"api.business.govt.nz Market Rent
+",Market Rent API,"This API provides the facility for public users to query market rent data collected via the Tenancy Bond service. A user can specify the time period, area definition and can provide user defined area mappings if desired.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=market-rent&operation=get-area-definitions-by-area-definition,API / API Portal
+api.business.govt.nz MBIE Echo,MBIE Echo API,"This API demonstrates the process for subscribing to and calling an API on MBIE's cloud API platform. It can be used during development to test the use of API subscriber keys, and optionally OAuth2 tokens.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=mbie-echo&operation=create-resource,API / API Portal
+api.business.govt.nz Motor Vehicle Traders Register,Motor Vehicle Traders Register API,The MVTR API provides a facility for searching the Motor Vehicle Traders Register and retrieving public details of a trader. The API can only be used for the purposes of searching the register as defined in the Motor Vehicle Sales Act 2003.,"MBIE (Ministry of Business, Innovation & Employment)",,API / API Portal
+api.business.govt.nz NZBN,NZBN API,"The New Zealand Business Number (NZBN) API provides a range of operations for getting information about a New Zealand business, updating details, managing watchlists, and managing business authorities. There is no fee for using this API.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=nzbn&operation=EntitiesGet,API / API Portal
+api.business.govt.nz Phishing Disruption Service,Phishing Disruption Service,"The Phishing Disruption Service API (formerly the Threat Intelligence Feed API) is a TAXII 2.0 API provided by CERT NZ to deliver timely and actionable threat intelligence to New Zealand organisations. See here for additional information on how to use the API.
+
+You must subscribe to a product to access an API. At the end of that process you will be able to use test (sandbox) environment subscription keys to begin development. When you have completed testing, simply use the production keys to access the live services. ","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=phishing-disruption&operation=get-apiroot-information,API / API Portal
+api.business.govt.nz PPSR,PPSR API,"The Personal Property Securities Register (PPSR) is a centralised, electronic register where details of security interests in personal property can be registered and searched. The PPSR API provides a real-time, secure, direct link between your business systems and the PPSR. You can conduct most PPSR transactions, including searches, registrations, renewals, amendments and discharges, directly from your own software, instead of using the PPSR website.","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=ppsr&operation=PPSR_01,API / API Portal
+"api.business.govt.nz Radio Spectrum Management
+",Radio Spectrum Management API,The Radio Spectrum Management API allows the searching and update of information within the Register of Radio Frequencies.,"MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=radiospectrummanagement&operation=AtonsGet,API / API Portal
+"api.business.govt.nz Tenancy Bond API
+",Tenancy Bond API,"The Tenancy Bond API allows users to register as a landlord, lodge bonds, check the status of a lodgement, and get details of bonds. ","MBIE (Ministry of Business, Innovation & Employment)",https://portal.api.business.govt.nz/api-details#api=tenancy-bond&operation=post-tenancy-bond-user-registration,API / API Portal
+ArcGIS REST APIs,ArcGIS REST APIs,"APIs for scripting, automating and building applications with ArcGIS services.",not allocated,https://developers.arcgis.com/rest/,API / API Portal
+AsyncAPI Specification,AsyncAPI Specification,"The AsyncAPI Specification is a project used to describe and document message-driven APIs in a machine-readable format. It’s protocol-agnostic, so you can use it for APIs that work over any protocol (e.g., AMQP, MQTT, WebSockets, Kafka, STOMP, HTTP, Mercure, etc).
+
+The AsyncAPI Specification defines a set of files required to describe such an API. These files can then be used to create utilities, such as documentation, integration and/or testing tools.",AsyncAPI Initiative,https://www.asyncapi.com/docs/specifications/v2.1.0,API guidance or standard
+Auckland Museum API,Auckland Museum API,"The Auckland Museum has around 392,000 specimen-level terrestrial, freshwater and marine plant and animal records recording locality, date and ecological information for its natural history collections. A limited subset of these records are available at the museum's web site.",not allocated,https://catalogue.data.govt.nz/dataset/auckland-museum-api,API / API Portal
+Auckland Transport API,Auckland Transport API,"Auckland Transport data and API for public transport and traffic-related information.
+Current data available includes:
+Realtime GTFS Static GTFS Display Data",not allocated,https://catalogue.data.govt.nz/dataset/auckland-transport-api,API / API Portal
+Available APIs: info for developers,Available APIs: info for developers,"We have created a number of APIs, outlined below, enabling third-party vendors and developers to receive information about COVID-19 exposure",Te Whatu Ora Health NZ,Available APIs: info for developers – Health New Zealand | Te Whatu Ora,API guidance or standard
+Charities Register Open Data,Charities Register Open Data,The open data service is intended to be used by software developers who wish to write applications making use of the data from the Charities Register. The service should not be used by users simply looking to access information about charities.,DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://www.charities.govt.nz/charities-in-new-zealand/the-charities-register/open-data/,API / API Portal
+Charities Register Open Data API,Charities Register Open Data API,The Charities Register available as dynamic open data.,DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://catalogue.data.govt.nz/dataset/charities-register-open-data,API / API Portal
+Christchurch City Council Spatial Open Data Portal ,Christchurch City Council Spatial Open Data Portal ,"The Spatial Open Data Portal is the place to find publicly accessible, authoritative, spatial datasets which are maintained by the Christchurch City Council.
+
+Datasets include council assets, infrastructure, planning rules, natural and cultural heritage and more.",Christchurch City Council,https://opendata-christchurchcity.hub.arcgis.com/,API / API Portal
+CIMI 2.0 (Cloud Infrastructure Management Interface 2.0),Cloud Infrastructure Management Interface 2.0,"Cloud Infrastructure Management Interface (CIMI) is an open standard API specification for managing cloud infrastructure.
+CIMI's goal is to enable users to manage cloud infrastructure in a simple way by standardizing interactions between cloud environments to achieve interoperable cloud infrastructure management between service providers and their consumers and developers.
+The Cloud Infrastructure Management Interface (CIMI) Model and RESTful HTTP-based Protocol specification (DSP0263) was prepared by the DMTF Cloud Management Working Group. It defines a logical model for the management of resources within the Infrastructure as a Service domain.",DMTF (Distributed Management Task Force),https://www.dmtf.org/sites/default/files/standards/documents/DSP0263_2.0.0.pdf ,API guidance or standard
+CKAN,CKAN,"CKAN is a tool for making open data websites. (Think of a content management system like WordPress - but for data, instead of pages and blog posts.) It helps you manage and publish collections of data. It is used by national and local governments, research institutions, and other organizations who collect a lot of data.
+
+Once your data is published, users can use its faceted search features to browse and find the data they need, and preview it using maps, graphs and tables - whether they are developers, journalists, researchers, NGOs, citizens, or even your own staff.",,https://docs.ckan.org/en/latest/user-guide.html#what-is-ckan,API guidance or standard
+CKAN API ,CKAN API,"CKAN’s Action API is a powerful, RPC-style API that exposes all of CKAN’s core features to API clients. All of a CKAN website’s core functionality (everything you can do with the web interface and more) can be used by external code that calls the CKAN API. For example, using the CKAN API your app can:
+
+Get JSON-formatted lists of a site’s datasets, groups or other CKAN objects:
+http://demo.ckan.org/api/3/action/package_list
+http://demo.ckan.org/api/3/action/group_list
+http://demo.ckan.org/api/3/action/tag_list
+
+Get a full JSON representation of a dataset, resource or other object:
+http://demo.ckan.org/api/3/action/package_show?id=adur_district_spending
+http://demo.ckan.org/api/3/action/tag_show?id=gold
+http://demo.ckan.org/api/3/action/group_show?id=data-explorer
+
+Search for packages or resources matching a query:
+http://demo.ckan.org/api/3/action/package_search?q=spending
+http://demo.ckan.org/api/3/action/resource_search?query=name:District%20Names
+
+Create, update and delete datasets, resources and other objects
+Get an activity stream of recently changed datasets on a site:",Stats NZ (Tatauranga Aotearoa | Statisitcs New Zealand),https://docs.ckan.org/en/latest/api/index.html,API / API Portal
+Cloud Application Management for Platforms Version 1.2,Cloud Application Management for Platforms Version 1.2,"Description: For cloud application developers, Cloud Application Management for Platforms Version 1.2 defines the artefacts and APIs that need to be offered by a Platform as a Service (PaaS) cloud to manage building, running, administering, and monitoring applications in a cloud. 
+
+Its key purpose is to enable interoperability among self-service interfaces to PaaS clouds by defining artefacts and formats that can be used with any conforming cloud. This enables independent vendors to create tools and services that interact with any conforming cloud using the defined interfaces. 
+
+Cloud vendors can use these interfaces to develop new PaaS offerings that will interoperate with other, independently-developed tools and components.",OASIS,http://docs.oasis-open.org/camp/camp-spec/v1.2/camp-spec-v1.2.html,API guidance or standard
+Coastal Plan: Area Significant Cultural Value (ASCV) API,Coastal Plan: Area Significant Cultural Value (ASCV) API,"Areas of Significant Cultural Value (ASCV) taken from the Regional Coastal Environment Plan. Refer to schedule 6 for further description of the values.
+
+https://atlas.boprc.govt.nz/api/v1/edms/document/A3421371/content",BOPRC,https://catalogue.data.govt.nz/dataset/layer-areas-of-significant-conservation-and-cultural-value-operative,API / API Portal
+Customer Data Platform Version 1.0 ,Customer Data Platform Version 1.0 ,"This specification aims to standardize exchange of customer data across systems and silos by defining a web-based API using GraphQL.
+
+The CXS TC was chartered to create specifications for a Customer Data Platform (CDP) as a core technology for enabling the delivery of personalized user experiences. The goal is to assist organizations that currently struggle to create and deliver consistent personalized experiences across channels, markets, and systems. The CDP will simplify management, integration, and interoperability between solutions providing services like Web Content Management, CRM, BigData, Machine Learning, Digital Marketing, and Data Management Platforms. It can support standardized ways of complying with requirements for customer privacy and consent management.",OASIS,https://docs.oasis-open.org/cxs/cdp/v1.0/cs01/cdp-v1.0-cs01.html,API guidance or standard
+data.govt.nz developers,data.govt.nz developers,"Developer documentation and code examples for use with data.govt.nz
+
+Here are some resources that you can use to develop applications with the data on data.govt.nz. If you are using the APIs listed here, please review the data.govt.nz",Stats NZ (Statisitcs New Zealand | Tatauranga Aotearoa),https://github.com/data-govt-nz/developers,API / API Portal
+data.govt.nz Using data.govt.nz APIs,Using data.govt.nz APIs,The metadata and many datasets on data.govt.nz are available for use via an Application Programming Interface (API). When using our API you need to know what you can and cannot do with the data and where to find technical documentation.,Stats NZ (Tatauranga Aotearoa | Statisitcs New Zealand),https://data.govt.nz/catalogue-guide/using-data-govt-nz-apis,API / API Portal
+DigitalNZ API,DigitalNZ API,"DigitalNZ's API provides access to millions of New Zealand-related digital items from a wide range of institutions from Aotearoa and overseas, including cultural, governmental, educational, scientific, and community groups.
+
+The API is free and open for anyone to use to search across the metadata of these aggregated collections, such as titles, descriptions, dates, and creators.
+
+The aggregation service collects only the metadata that describes the digital content, but the API also returns pointers to the items and thumbnail images put online by our fantastic content partners. The Developer API Terms of Use explain how this all works. 
+
+We hope you'll use this metadata to do good and wonderful things, create new experiences, and demonstrate the value of sharing this data. 
+
+Email us at develop@digitalnz.org if we can help.",DigitalNZ (Ā-Tihi O Aotearoa),https://digitalnz.org/developers,API / API Portal
+DOC Developer Portal,DOC Developer Portal,"EXPLORE AND BUILD
+Read the Getting Started guide to learn how to hit the ground running to get an application up and running in no time.
+
+See what APIs we have to offer, including our documentation.
+
+Sign in to manage your subscriptions, see your current usage, get your API Key, and test against our live API.",DOC (Department of Conservation),https://api.doc.govt.nz/,API / API Portal
+Driver licence holders dataset & API,Driver licence holders dataset & API,The data in this spreadsheet should be considered in conjunction with the caveats provided below: The information was extracted from the Driver Licence Register (DLR).,NZTA (New Zealand Transport Agency Waka Kotahi),https://catalogue.data.govt.nz/dataset/driver-licence-holders-dataset-api,API / API Portal
+EV Roam charging stations API,EV Roam charging stations API,"The data is supplied by EV charge station owners and operators via inbound API. It is then served out via API, and forms the basis of various journey maps.
+
+A number of organisations use the API, but they need to sign up to access it.
+
+This data enables people to access the data immediately, without needing to sign up or access an API.
+
+Data reuse caveats: Data is sourced from external stakeholders not from Waka Kotahi. Waka Kotahi validates data before entering into open data portal.
+
+Data quality statement: High confidence in quality of data.
+
+Data quality caveats: for API explorer users, there is a known issue with number-based attribute filters where the “AND” operator is used instead of the “BETWEEN” operator. Substituting “BETWEEN” for “AND” manually in the query URL will resolve this.Update (13 June 2022): we’ve updated how the list of connectors at a charging station are stored in the field “connectorsList”. We've grouped them, and provided a count for unique types.For example, {AC, 44 kW, Type 2 Socketed, Status: Operative, Count:4}.",NZTA (New Zealand Transport Agency Waka Kotahi),https://catalogue.data.govt.nz/dataset/ev-roam-charging-stations3,API / API Portal
+FHIR (Fast Healthcare Interoperability Resources),Fast Healthcare Interoperability Resources,"Fast Healthcare Interoperability Resources (FHIR, pronounced ""fire"") is a standard describing data formats and elements (known as ""resources"") and an application programming interface (API) for exchanging electronic health records (EHR). The standard was created by the Health Level Seven International (HL7) health-care standards organization. ",HL7,https://fhir.org/,API guidance or standard
+GeoNet Aotearoa New Zealand Felt Rapid Dataset,GeoNet Aotearoa New Zealand Felt Rapid Dataset,"GeoNet collects information about the intensity of shaking that people experienced during an earthquake. There have been a few different varieties of reports in the history of collecting this data. Today, GeoNet collects Felt Rapid reports based on a cartoon representation of shaking. After very large earthquakes we provide an additional long form survey, Felt Detailed, for those who would like to provide more information.
+
+The Felt Rapid API can be found here: https://api.geonet.org.nz/intensity?type=reported and more information on the Felt Reports can be found here on the GeoNet website: https://www.geonet.org.nz/data/types/felt.
+
+DOI: https://doi.org/10.21420/RS7F-VE53
+
+Cite as: GNS Science. (2015). GeoNet Aotearoa New Zealand Felt Rapid Dataset [Data set]. GNS Science. https://doi.org/10.21420/RS7F-VE53",not allocated,https://catalogue.data.govt.nz/dataset/geonet-aotearoa-new-zealand-felt-rapid-dataset,API / API Portal
+Government consultation listing API,Government consultation listing API,"The Government consultation listing provides details for consultations from both central and local government sorted by topic, agency and status.
+
+Entries are added on a regular basis and information is available for reuse by API to anyone who wants to reuse the content.",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://catalogue.data.govt.nz/dataset/government-consultation-listing,API / API Portal
+Health New Zealand | Te Whatu Ora API Standards,Health New Zealand | Te Whatu Ora API Standards,"Learn about how Health NZ are implementing application programming interfaces (APIs) to their systems and what the benefits are of doing this.
+
+These standards provide both API Providers and API consumers with context for focused design and implementation as well as API best practices. This is intended to help both producers and consumers achieve a consistent and common approach to developing and delivering APIs. 
+The standards and guidelines are split into the following 5 parts:
+- Part A: API Concepts and Management
+- Part B: API Security - HISO 10107
+- Part C: API Development - HISO 10109
+- Part D: HL7 FHIR API Standards - HISO 10110
+- Part E: API Publishing Standards - HISO 10108",Health New Zealand / Te Whatu Ora,https://apistandards.digital.health.nz/,API guidance or standard
+HL7 FHIR API Design and Development Standards - HISO 10110,HL7 FHIR API Design and Development Standards - HISO 10110,"Part D: HL7 FHIR API Standards - HISO 10110
+
+Part D contains standards information and guidance for HL7 FHIR APIs.
+
+Note: The decision has been taken to split FHIR API standards into a standalone section - note that there may be some repetition between sections. A FHIR implementer or consumer only needs to comply with the FHIR standards",HISO,https://apistandards.digital.health.nz/fhir-api-standard/,API guidance or standard
+IRD Guides and Docs for Developers,IRD Guides and Docs for Developers,Find out how to get started with gateway services and how to integrate with us.,Inland Revenue - Te Tare Taake,https://www.ird.govt.nz/digital-service-providers/guides-and-docs,API / API Portal
+LINZ Data Service,LINZ Data Service,"We provide open online access to New Zealand’s most up-to-date land and seabed data.
+
+You can search, browse for and download data online on the LINZ Data Service (LDS). You can also integrate our APIs into your own applications.
+
+Data available on the LINZ Data Service (LDS) includes:
+-Aerial imagery
+-Elevation
+-Topographic 
+-Hydrographic
+-Property, boundaries and ownership
+-Place names, street address and roads 
+-Crown land ",LINZ (Land Information New Zealand | Toitū Te Whenua),https://data.linz.govt.nz/,API / API Portal
+MBIE's API cloud platform,MBIE's API cloud platform,"Welcome to the support site for the Ministry of Business, Innovation, and Employment (MBIE) API platform and developer portal.","MBIE (Ministry of Business, Innovation & Employment)",https://support.api.business.govt.nz/s/,API / API Portal
+Minstry of Social Development API Developer Portal,Minstry of Social Development API Developer Portal,"Nau mai, haere mai ki te manatū whakahiato ora. Welcome to the API Portal for the Ministry of Social Development (MSD).
+
+Here you will find APIs that allow you to incorporate MSD services and information into your applications or websites.",MSD (Ministry of Social Development),https://api.msd.govt.nz/,API / API Portal
+Motor Vehicle Register API,Motor Vehicle Register API,"A point-in-time ‘snapshot’ of all vehicles currently registered in New Zealand. The data relates to currently-registered vehicles as recorded on the Motor Vehicle Register (MVR). 
+Note - there are multiple Motor Vehicle Register API  datasets on Data.govt.nz. sop the link here is a search on data.govt.nz that will return all the datasets. ",NZTA (New Zealand Transport Agency Waka Kotahi),https://catalogue.data.govt.nz/dataset/?q=Motor%20Vehicle%20Register%20API,API / API Portal
+New Zealand Gazette API | API for NZ Gazette notices,New Zealand Gazette API | API for NZ Gazette notices,"The New Zealand Gazette (https://gazette.govt.nz) is the official newspaper of the Government and is an authoritative journal of constitutional record containing notices that are required by legislation to be published. Notices are published online continuously from 9am-5pm on working days by the New Zealand Gazette Office at the Department of Internal Affairs. The New Zealand Gazette includes commercial and government notices, covering bankruptcies, business proceedings, land notices, and notifications from government departments and agencies. The metadata from the online New Zealand Gazette is available through the DigitalNZ API.",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://catalogue.data.govt.nz/dataset/new-zealand-gazette,API / API Portal
+New Zealand Government Open Data API,New Zealand Government Open Data API,"The New Zealand Government Open Data API provides a wealth of data that promotes transparency and innovation across various sectors. By leveraging this API, developers can access a broad spectrum of datasets, including environmental data, public health statistics, and economic indicators. This open data initiative not only enables users to enhance their applications with real-time data but also encourages collaboration among government agencies, businesses, and citizens. By integrating this API, developers contribute to a more informed society, fostering accountability and driving data-driven decision-making.",Stats NZ (Tatauranga Aotearoa | Statisitcs New Zealand),https://publicapis.io/open-government-new-zealand-api,API / API Portal
+NZTA highway information near-real time dashboard API,NZTA highway information near-real time dashboard API,"The Traffic Road Event Information System (TREIS) API lets you access real time data on events/incidents that affect traffic conditions across the network of national highways in New Zealand. An example of an event/incident could include road works, an accident, or weather related problems such as ice or snow.
+
+Note that this information is ONLY for notable events/incidents that may cause delays to road users or require caution, and only where the details have been verified by the Transport Agency or another official source.The TREIS API makes available three sets of data:Events / incidentsThis is a detailed list of confirmed events/incidents on the state highway with a specified location. For example, caution advised due to a land slip blocking one lane of traffic.General warnings – North IslandThese are the general warning messages that apply to a wider geographic area within the North Island. For example, widespread flooding and slips in the Hawke’s Bay area.General warnings – South IslandThe same as 2, but only for the South Island. For example, 'Otago And Southland winter conditions exist And motorists are advised to watch for ice and grit in shaded areas and on bridge decks and to carry chains especially when travelling the Alpine passes'.Additional detailsMore detail is available in 'NZ TREIS web services'  which covers:specification of the TREIS web services API; andInformation on how to connect to the TREIS web services API.NZ TREIS web services [PDF 117 KB]This document is intended for data architects and developers that must integrate their applications with the TREIS web services API.",NZTA (New Zealand Transport Agency Waka Kotahi),https://catalogue.data.govt.nz/dataset/nzta-highway-information-near-real-time-dashboard2,API / API Portal
+NZTA Traffic and Travel API,NZTA Traffic and Travel API,"Welcome to the NZ Transport Agency Waka Kotahi (NZTA) Traffic and Travel API home page. From here you can find a range of APIs and transport data from both within NZTA and its key partners.
+
+The Traffic and Travel APIs are an open data source and do not require an account, but you must adhere to the terms and conditions of use.",NZTA (New Zealand Transport Agency Waka Kotahi),https://www.nzta.govt.nz/traffic-and-travel-information/use-our-data/,API / API Portal
+OCCI (Open Cloud Computing Interface),Open Cloud Computing Interface,"The Open Cloud Computing Interface (OCCI) is a RESTful Protocol and API for all kinds of Management tasks. OCCI was originally initiated to create a remote management API for IaaS model based Services, allowing for the development of interoperable tools for common tasks including deployment, autonomic scaling and monitoring. It has since evolved into an flexible API with a strong focus on interoperability while still offering a high degree of extensibility. The current release of the Open Cloud Computing Interface is suitable to serve many other models in addition to IaaS, including e.g. PaaS and SaaS.",OGF (Open Grid Forum),http://occi-wg.org/about/specification/,API guidance or standard
+OpenAPI Specification,OpenAPI Specification,"The OpenAPI Specification (OAS) defines a standard, programming language-agnostic interface description for HTTP APIs, which allows both humans and computers to discover and understand the capabilities of a service without requiring access to source code, additional documentation, or inspection of network traffic. When properly defined via OpenAPI, a consumer can understand and interact with the remote service with a minimal amount of implementation logic. Similar to what interface descriptions have done for lower-level programming, the OpenAPI Specification removes guesswork in calling a service.",OAI,https://spec.openapis.org/oas/latest.html,API guidance or standard
+RealMe Developer,RealMe Developer,"RealMe® is about providing New Zealanders with easy access to online services. RealMe services are a government common capability offering core functionality to central and local government agencies, and to private sector organisations.
+
+It's important to understand the difference between the RealMe login service and the RealMe assertion service when determining the possible fit for your organisation. ",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://developers.realme.govt.nz/how-realme-works,API / API Portal
+REST (Representational state transfer),Representational state transfer,"Representational State Transfer (REST) is a style of architecture based on a set of principles that describe how networked resources are defined and addressed. It is important to note that REST is a style of software architecture as opposed to a set of standards. As a result, such applications or architectures are sometimes referred to as RESTful or REST-style applications or architectures. REST has proved to be a popular choice for implementing Web Services.[From https://www.service-architecture.com/articles/web-services/representational_state_transfer_rest.html]
+From an implementation standpoint, a common problem with REST is the fact that developers disagree with exactly what it means to be REST-based. Some software developers incorrectly consider anything that isn't SOAP-based to be RESTful. Driving this common misconception about REST is the fact that it is an architectural style, so there is no reference implementation or definitive standard that will confirm whether a given design is RESTful. As a result, there is discourse as to whether a given API conforms to REST-based principles. [From https://searchapparchitecture.techtarget.com/definition/REST-REpresentational-State-Transfer]
+Source: 
+GEA-NZ Standards Reference Appendix - 1. Internet and On-line Presence - 3. International Technical Foundation Standards. 
+GEA-NZ Standards Reference Appendix - 2. Data Integration - 3. International Technical Foundation Standards.",not allocated,https://www.codecademy.com/articles/what-is-rest,API guidance or standard
+Te Papa Collections API,Te Papa Collections API,"Te Papa's Collections Online has information on more than 800,000 artworks, objects, and specimens from Te Papa’s collections. These items are complemented by over 200,000 images, with over 60,000 available for high-resolution download.",not allocated,https://catalogue.data.govt.nz/dataset/te-papa-collections-api,API / API Portal
+Te Watu Ora API Standards Github,Te Watu Ora API Standards Github,Health New Zealand | Te Whatu Ora API Development and Security Standards community on Github. ,Health New Zealand / Te Whatu Ora,https://github.com/tewhatuora/api-standards,API guidance or standard
+Tertiary Education Commission's Developer Portal,Tertiary Education Commission's Developer Portal,"Getting Started
+Thanks for visiting the Tertiary Education Commission's Developer Portal.
+
+This is a step-by-step guide designed to help you get started and hopefully get you up and running with TEC's APIs as quickly as possible.
+
+Regards,
+TEC API Team",Tertiary Education Commission,https://ff-developer.tec.govt.nz/getting-started,API / API Portal
+The Government A-Z directory API,The Government A-Z directory API,"The Government A-Z directory is a list of New Zealand Government organisations, their postal addresses, email addresses, phone numbers, and head office roles.
+
+Entries are reviewed for changes on a regular basis and information is available for reuse by API to anyone who wants to reuse the content.",DIA (Department of Internal Affairs | Te Tari Taiwhenua),https://catalogue.data.govt.nz/dataset/the-government-a-z-directory,API / API Portal
+TMS daily traffic counts API,TMS daily traffic counts API,.,NZTA (New Zealand Transport Agency Waka Kotahi),https://catalogue.data.govt.nz/dataset/tms-daily-traffic-counts-api4,API / API Portal
+"Web Authentication: An API for accessing Public Key Credentials
+Level 1","Web Authentication: An API for accessing Public Key Credentials
+Level 1","This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users. Conceptually, one or more public key credentials, each scoped to a given WebAuthn Relying Party, are created by and bound to authenticators as requested by the web application. The user agent mediates access to authenticators and their public key credentials in order to preserve user privacy. Authenticators are responsible for ensuring that no operation is performed without user consent. Authenticators provide cryptographic proof of their properties to Relying Parties via attestation. This specification also describes the functional model for WebAuthn conformant authenticators, including their signature and attestation functionality.",W3C (World Wide Web Consortium),https://www.w3.org/TR/webauthn/,API guidance or standard
+Wellington City Council Open data portal,Wellington City Council Open data portal,"Some of our spatial data, such as the data we use for our public web mapping, is available for use in your own GIS projects.",Wellington City Council,https://wellington.govt.nz/wellington-city/maps/open-data-portal-terms-and-conditions/gis-data,API / API Portal

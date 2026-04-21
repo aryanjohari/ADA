@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import sqlite3
 from collections.abc import Sequence
 from urllib.parse import urlparse, urlunparse
 from dataclasses import dataclass, field
@@ -239,6 +241,85 @@ class PersistentState:
         await self._ensure_knowledge_items_score_ttl_columns()
         await self._ensure_impact_score_and_kernel_indexes()
         await self._ensure_market_metrics_and_synthesis_edges()
+        await self._ensure_phase1_ingest_audit()
+
+    async def _ensure_phase1_ingest_audit(self) -> None:
+        """ingest_jobs, ingest_raw, source_catalog; knowledge_sources.config_json."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ingest_jobs'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE ingest_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind TEXT NOT NULL,
+                    params_json TEXT NOT NULL DEFAULT '{}',
+                    idempotency_key TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    error TEXT NOT NULL DEFAULT '',
+                    started_at TEXT,
+                    completed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE (kind, idempotency_key)
+                )
+                """
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ingest_jobs_status_created "
+                "ON ingest_jobs(status, created_at)"
+            )
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ingest_raw'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE ingest_raw (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ingest_job_id INTEGER REFERENCES ingest_jobs(id) ON DELETE SET NULL,
+                    source TEXT NOT NULL,
+                    uri TEXT NOT NULL DEFAULT '',
+                    content_sha256 TEXT NOT NULL,
+                    body TEXT NOT NULL DEFAULT '',
+                    meta_json TEXT NOT NULL DEFAULT '{}',
+                    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ingest_raw_sha ON ingest_raw(content_sha256)"
+            )
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='source_catalog'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE source_catalog (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT NOT NULL UNIQUE,
+                    kind TEXT NOT NULL,
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    host_allowlist_json TEXT NOT NULL DEFAULT '[]',
+                    maps_to_kind TEXT NOT NULL DEFAULT '',
+                    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_sources'"
+        )
+        if await cur.fetchone() is not None:
+            cur = await self._conn.execute("PRAGMA table_info(knowledge_sources)")
+            ks_cols = {str(row[1]) for row in await cur.fetchall()}
+            if "config_json" not in ks_cols:
+                await self._conn.execute(
+                    "ALTER TABLE knowledge_sources ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'"
+                )
+        await self._conn.commit()
 
     async def _ensure_impact_score_and_kernel_indexes(self) -> None:
         """Add impact_score + triage indexes for upgraded DBs."""
@@ -766,6 +847,40 @@ class PersistentState:
         inp, out = int(row[0]), int(row[1])
         return {"input_tokens": inp, "output_tokens": out, "total": inp + out}
 
+    async def get_global_usage_token_totals_utc(self) -> dict[str, int]:
+        """
+        Global sums from usage_ledger for the current UTC calendar day and month.
+        Uses date(recorded_at) and strftime('%Y-%m', recorded_at) in UTC-aligned stored timestamps.
+        Same caveat as per-session sums: ledger rows are per model leg; totals are an operational bound.
+        """
+        assert self._conn is not None
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        day = now.strftime("%Y-%m-%d")
+        ym = now.strftime("%Y-%m")
+        cur = await self._conn.execute(
+            """
+            SELECT COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0)
+            FROM usage_ledger
+            WHERE date(recorded_at) = date(?)
+            """,
+            (day,),
+        )
+        row = await cur.fetchone()
+        day_total = int(row[0]) if row else 0
+        cur = await self._conn.execute(
+            """
+            SELECT COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0)
+            FROM usage_ledger
+            WHERE strftime('%Y-%m', recorded_at) = ?
+            """,
+            (ym,),
+        )
+        row = await cur.fetchone()
+        month_total = int(row[0]) if row else 0
+        return {"day_total": day_total, "month_total": month_total}
+
     async def rewire_parents_after_tombstone(
         self, session_id: int, tombstoned_uuids: Sequence[str]
     ) -> None:
@@ -1142,16 +1257,23 @@ class PersistentState:
         *,
         label: str | None = None,
         base_url: str = "",
+        config_json: str | dict[str, Any] | None = None,
     ) -> int:
         if kind not in ("api", "rss", "web"):
             raise ValueError(f"invalid knowledge source kind: {kind!r}")
         assert self._conn is not None
+        if isinstance(config_json, dict):
+            cfg = json.dumps(config_json, ensure_ascii=False)
+        elif config_json is None:
+            cfg = "{}"
+        else:
+            cfg = str(config_json)
         cur = await self._conn.execute(
             """
-            INSERT INTO knowledge_sources (kind, label, base_url)
-            VALUES (?, ?, ?)
+            INSERT INTO knowledge_sources (kind, label, base_url, config_json)
+            VALUES (?, ?, ?, ?)
             """,
-            (kind, label, base_url),
+            (kind, label, base_url, cfg),
         )
         await self._conn.commit()
         return int(cur.lastrowid)
@@ -1163,7 +1285,7 @@ class PersistentState:
         if kind is not None:
             cur = await self._conn.execute(
                 """
-                SELECT id, kind, label, base_url, created_at
+                SELECT id, kind, label, base_url, config_json, created_at
                 FROM knowledge_sources
                 WHERE kind = ?
                 ORDER BY id ASC
@@ -1173,7 +1295,7 @@ class PersistentState:
         else:
             cur = await self._conn.execute(
                 """
-                SELECT id, kind, label, base_url, created_at
+                SELECT id, kind, label, base_url, config_json, created_at
                 FROM knowledge_sources
                 ORDER BY id ASC
                 """
@@ -1181,16 +1303,128 @@ class PersistentState:
         rows = await cur.fetchall()
         out: list[dict[str, Any]] = []
         for row in rows:
+            cfg_raw = row[4]
+            try:
+                cfg_parsed: Any = json.loads(str(cfg_raw)) if cfg_raw else {}
+            except json.JSONDecodeError:
+                cfg_parsed = {}
             out.append(
                 {
                     "id": int(row[0]),
                     "kind": str(row[1]),
                     "label": row[2],
                     "base_url": str(row[3]),
-                    "created_at": str(row[4]),
+                    "config_json": cfg_parsed,
+                    "created_at": str(row[5]),
                 }
             )
         return out
+
+    async def ensure_knowledge_source(
+        self,
+        kind: KnowledgeKind,
+        *,
+        label: str,
+        base_url: str = "",
+        config_json: dict[str, Any] | None = None,
+    ) -> int:
+        """Return existing knowledge_sources.id matching kind+label, else insert."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id FROM knowledge_sources
+            WHERE kind = ? AND COALESCE(label, '') = ?
+            LIMIT 1
+            """,
+            (kind, label),
+        )
+        row = await cur.fetchone()
+        if row is not None:
+            return int(row[0])
+        return await self.insert_knowledge_source(
+            kind,
+            label=label,
+            base_url=base_url,
+            config_json=config_json or {},
+        )
+
+    async def create_ingest_job(
+        self,
+        kind: str,
+        params_json: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> int:
+        assert self._conn is not None
+        payload = json.dumps(params_json, ensure_ascii=False)
+        try:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO ingest_jobs (kind, params_json, idempotency_key, status)
+                VALUES (?, ?, ?, 'pending')
+                """,
+                (kind, payload, idempotency_key),
+            )
+            await self._conn.commit()
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            cur = await self._conn.execute(
+                """
+                SELECT id FROM ingest_jobs
+                WHERE kind = ? AND idempotency_key IS NOT DISTINCT FROM ?
+                LIMIT 1
+                """,
+                (kind, idempotency_key),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise
+            return int(row[0])
+
+    async def update_ingest_job(
+        self,
+        job_id: int,
+        *,
+        status: str,
+        error: str = "",
+        set_started: bool = False,
+        set_completed: bool = False,
+    ) -> None:
+        assert self._conn is not None
+        parts: list[str] = ["status = ?", "error = ?"]
+        args: list[Any] = [status, error]
+        if set_started:
+            parts.append("started_at = datetime('now')")
+        if set_completed:
+            parts.append("completed_at = datetime('now')")
+        sql = f"UPDATE ingest_jobs SET {', '.join(parts)} WHERE id = ?"
+        args.append(job_id)
+        await self._conn.execute(sql, tuple(args))
+        await self._conn.commit()
+
+    async def insert_ingest_raw(
+        self,
+        *,
+        ingest_job_id: int | None,
+        source: str,
+        uri: str,
+        body: str,
+        meta_json: dict[str, Any] | None = None,
+    ) -> int:
+        assert self._conn is not None
+        h = hashlib.sha256(body.encode("utf-8", errors="replace")).hexdigest()
+        meta = json.dumps(meta_json or {}, ensure_ascii=False)
+        cur = await self._conn.execute(
+            """
+            INSERT INTO ingest_raw (
+                ingest_job_id, source, uri, content_sha256, body, meta_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (ingest_job_id, source, uri, f"sha256:{h}", body, meta),
+        )
+        await self._conn.commit()
+        return int(cur.lastrowid)
 
     async def insert_knowledge_item(
         self,

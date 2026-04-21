@@ -85,6 +85,48 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
     kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web')),
     label TEXT,
     base_url TEXT NOT NULL DEFAULT '',
+    config_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Phase 1 ingest audit (roadmap §12.1)
+CREATE TABLE IF NOT EXISTS ingest_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    params_json TEXT NOT NULL DEFAULT '{}',
+    idempotency_key TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT NOT NULL DEFAULT '',
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (kind, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_jobs_status_created
+    ON ingest_jobs(status, created_at);
+
+CREATE TABLE IF NOT EXISTS ingest_raw (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ingest_job_id INTEGER REFERENCES ingest_jobs(id) ON DELETE SET NULL,
+    source TEXT NOT NULL,
+    uri TEXT NOT NULL DEFAULT '',
+    content_sha256 TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    meta_json TEXT NOT NULL DEFAULT '{}',
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_raw_sha ON ingest_raw(content_sha256);
+
+CREATE TABLE IF NOT EXISTS source_catalog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    host_allowlist_json TEXT NOT NULL DEFAULT '[]',
+    maps_to_kind TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

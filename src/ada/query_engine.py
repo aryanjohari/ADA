@@ -173,6 +173,9 @@ class QueryEngine:
     async def get_session_token_usage(self, session_id: int) -> dict[str, Any]:
         return await self._store.get_session_token_usage(session_id)
 
+    async def get_global_usage_token_totals_utc(self) -> dict[str, int]:
+        return await self._store.get_global_usage_token_totals_utc()
+
     async def tombstone(
         self,
         uuids: Sequence[str],
@@ -278,9 +281,67 @@ class QueryEngine:
         *,
         label: str | None = None,
         base_url: str = "",
+        config_json: str | dict[str, Any] | None = None,
     ) -> int:
         return await self._store.insert_knowledge_source(
-            kind, label=label, base_url=base_url
+            kind, label=label, base_url=base_url, config_json=config_json
+        )
+
+    async def ensure_knowledge_source(
+        self,
+        kind: KnowledgeKind,
+        *,
+        label: str,
+        base_url: str = "",
+        config_json: dict[str, Any] | None = None,
+    ) -> int:
+        return await self._store.ensure_knowledge_source(
+            kind, label=label, base_url=base_url, config_json=config_json
+        )
+
+    async def create_ingest_job(
+        self,
+        kind: str,
+        params_json: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> int:
+        return await self._store.create_ingest_job(
+            kind, params_json, idempotency_key=idempotency_key
+        )
+
+    async def update_ingest_job(
+        self,
+        job_id: int,
+        *,
+        status: str,
+        error: str = "",
+        set_started: bool = False,
+        set_completed: bool = False,
+    ) -> None:
+        await self._store.update_ingest_job(
+            job_id,
+            status=status,
+            error=error,
+            set_started=set_started,
+            set_completed=set_completed,
+        )
+
+    async def insert_ingest_raw(
+        self,
+        *,
+        ingest_job_id: int | None,
+        source: str,
+        uri: str,
+        body: str,
+        meta_json: dict[str, Any] | None = None,
+    ) -> int:
+        return await self._store.insert_ingest_raw(
+            ingest_job_id=ingest_job_id,
+            source=source,
+            uri=uri,
+            body=body,
+            meta_json=meta_json,
         )
 
     async def list_knowledge_sources(

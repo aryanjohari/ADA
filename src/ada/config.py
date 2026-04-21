@@ -124,13 +124,32 @@ class Settings:
     triage_lead_daily_cap: int
     knowledge_tool_max_results: int
     knowledge_tool_excerpt_chars: int
+    ada_kill_switch: bool
+    ada_daily_token_budget: int | None
+    ada_monthly_token_budget: int | None
+    ada_max_task_steps: int | None
+    # Phase 1 deterministic ingest
+    dataforseo_login: str
+    dataforseo_password: str
+    ada_keyword_max_terms_per_run: int
+    ada_keyword_location_code: int
+    ada_keyword_language_code: str
+    ada_keyword_terms: str
+    ada_dataforseo_use_live: bool
+    gov_api_host_allowlist: frozenset[str]
+    ada_gets_poll_url: str
+    ingest_rss_max_feeds: int | None
 
     @classmethod
     def load(cls) -> "Settings":
         root = _find_project_root()
-        data_dir = Path(
-            os.environ.get("ADA_DATA_DIR", str(root / "data"))
-        ).expanduser()
+        commercial_raw = os.environ.get("ADA_COMMERCIAL_DATA_DIR", "").strip()
+        if commercial_raw:
+            data_dir = Path(commercial_raw).expanduser()
+        else:
+            data_dir = Path(
+                os.environ.get("ADA_DATA_DIR", str(root / "data"))
+            ).expanduser()
         memory_dir = root / "memory"
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
@@ -303,6 +322,70 @@ class Settings:
                 int(os.environ.get("ADA_KNOWLEDGE_TOOL_EXCERPT_CHARS", "1200")),
             ),
         )
+
+        ada_kill_switch = os.environ.get("ADA_KILL_SWITCH", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+        def _optional_positive_int(name: str) -> int | None:
+            raw = os.environ.get(name, "").strip()
+            if not raw:
+                return None
+            try:
+                v = int(raw)
+                return v if v > 0 else None
+            except ValueError:
+                return None
+
+        ada_daily_token_budget = _optional_positive_int("ADA_DAILY_TOKEN_BUDGET")
+        ada_monthly_token_budget = _optional_positive_int("ADA_MONTHLY_TOKEN_BUDGET")
+        _steps_raw = os.environ.get("ADA_MAX_TASK_STEPS", "").strip()
+        ada_max_task_steps: int | None = None
+        if _steps_raw:
+            try:
+                ada_max_task_steps = max(1, int(_steps_raw))
+            except ValueError:
+                ada_max_task_steps = None
+
+        dataforseo_login = os.environ.get("DATAFORSEO_LOGIN", "").strip()
+        dataforseo_password = os.environ.get("DATAFORSEO_PASSWORD", "").strip()
+        ada_keyword_max_terms_per_run = max(
+            1, int(os.environ.get("ADA_KEYWORD_MAX_TERMS_PER_RUN", "100"))
+        )
+        try:
+            ada_keyword_location_code = int(
+                os.environ.get("ADA_KEYWORD_LOCATION_CODE", "2004")
+            )
+        except ValueError:
+            ada_keyword_location_code = 2004
+        ada_keyword_language_code = os.environ.get(
+            "ADA_KEYWORD_LANGUAGE_CODE", "en"
+        ).strip() or "en"
+        ada_keyword_terms = os.environ.get("ADA_KEYWORD_TERMS", "").strip()
+        ada_dataforseo_use_live = os.environ.get(
+            "ADA_DATAFORSEO_USE_LIVE", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        gov_api_raw = os.environ.get("ADA_GOV_API_HOST_ALLOWLIST", "").strip()
+        gov_api_host_allowlist = frozenset(
+            h.strip().lower() for h in gov_api_raw.split(",") if h.strip()
+        )
+        ada_gets_poll_url = os.environ.get(
+            "ADA_GETS_POLL_URL",
+            "https://www.gets.govt.nz/ExternalIndex.htm",
+        ).strip() or "https://www.gets.govt.nz/ExternalIndex.htm"
+        ingest_rss_max_feeds_raw = os.environ.get(
+            "ADA_INGEST_RSS_MAX_FEEDS", ""
+        ).strip()
+        ingest_rss_max_feeds: int | None = None
+        if ingest_rss_max_feeds_raw:
+            try:
+                ingest_rss_max_feeds = max(1, int(ingest_rss_max_feeds_raw))
+            except ValueError:
+                ingest_rss_max_feeds = None
+
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -371,6 +454,20 @@ class Settings:
             triage_lead_daily_cap=triage_lead_daily_cap,
             knowledge_tool_max_results=knowledge_tool_max_results,
             knowledge_tool_excerpt_chars=knowledge_tool_excerpt_chars,
+            ada_kill_switch=ada_kill_switch,
+            ada_daily_token_budget=ada_daily_token_budget,
+            ada_monthly_token_budget=ada_monthly_token_budget,
+            ada_max_task_steps=ada_max_task_steps,
+            dataforseo_login=dataforseo_login,
+            dataforseo_password=dataforseo_password,
+            ada_keyword_max_terms_per_run=ada_keyword_max_terms_per_run,
+            ada_keyword_location_code=ada_keyword_location_code,
+            ada_keyword_language_code=ada_keyword_language_code,
+            ada_keyword_terms=ada_keyword_terms,
+            ada_dataforseo_use_live=ada_dataforseo_use_live,
+            gov_api_host_allowlist=gov_api_host_allowlist,
+            ada_gets_poll_url=ada_gets_poll_url,
+            ingest_rss_max_feeds=ingest_rss_max_feeds,
         )
 
     def ensure_data_dir(self) -> None:
