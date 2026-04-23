@@ -61,6 +61,10 @@ KnowledgeToolHandler = Callable[
     [CompletedFunctionCall], Awaitable[dict[str, Any]]
 ]
 
+WorkflowToolHandler = Callable[
+    [CompletedFunctionCall], Awaitable[dict[str, Any]]
+]
+
 
 @dataclass(frozen=True)
 class WebToolConfig:
@@ -130,6 +134,9 @@ class StreamingToolExecutor:
         knowledge_record_entity: KnowledgeToolHandler | None = None,
         knowledge_record_edge: KnowledgeToolHandler | None = None,
         knowledge_link_evidence: KnowledgeToolHandler | None = None,
+        dispatch_allowlist: frozenset[str] | None = None,
+        workflow_enqueue: WorkflowToolHandler | None = None,
+        workflow_get_status: WorkflowToolHandler | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
@@ -149,6 +156,9 @@ class StreamingToolExecutor:
         self._knowledge_record_entity = knowledge_record_entity
         self._knowledge_record_edge = knowledge_record_edge
         self._knowledge_link_evidence = knowledge_link_evidence
+        self._dispatch_allowlist = dispatch_allowlist
+        self._workflow_enqueue = workflow_enqueue
+        self._workflow_get_status = workflow_get_status
         self.discarded = False
 
     def discard(self) -> None:
@@ -173,6 +183,15 @@ class StreamingToolExecutor:
         return out
 
     async def _dispatch(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._dispatch_allowlist is not None and call.name not in self._dispatch_allowlist:
+            return {
+                "error": "tool_not_allowed_in_workflow_step",
+                "tool": call.name,
+            }
+        if call.name == "enqueue_workflow":
+            return await self._enqueue_workflow(call)
+        if call.name == "get_workflow_status":
+            return await self._get_workflow_status(call)
         if call.name == "run_allowlisted_shell":
             return await self._shell(call)
         if call.name == "append_master_section":
@@ -214,6 +233,24 @@ class StreamingToolExecutor:
         if call.name == "link_evidence":
             return await self._link_evidence(call)
         return {"error": f"unknown tool: {call.name}"}
+
+    async def _enqueue_workflow(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._workflow_enqueue is None:
+            return {"error": "enqueue_workflow not configured"}
+        try:
+            return await self._workflow_enqueue(call)
+        except Exception as e:
+            log.warning("enqueue_workflow failed: %s", e)
+            return {"error": str(e)}
+
+    async def _get_workflow_status(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._workflow_get_status is None:
+            return {"error": "get_workflow_status not configured"}
+        try:
+            return await self._workflow_get_status(call)
+        except Exception as e:
+            log.warning("get_workflow_status failed: %s", e)
+            return {"error": str(e)}
 
     async def _list_session_web_sources(
         self, call: CompletedFunctionCall

@@ -21,7 +21,14 @@ from ada.tool_executor import (
     WebToolConfig,
 )
 from ada.knowledge_embeddings import embed_query_text
-from ada.tools.registry import build_agent_tools
+from ada.tools.registry import (
+    build_agent_tools,
+    frozen_tool_declaration_names,
+)
+from ada.workflow.enqueue import (
+    enqueue_workflow_via_tool,
+    get_workflow_status_via_tool,
+)
 
 log = logging.getLogger("ada.orchestrator")
 
@@ -90,6 +97,10 @@ async def orchestrate_turn(
     knowledge_embedding_min_cosine: float = 0.25,
     knowledge_tool_max_results: int = 8,
     knowledge_tool_excerpt_chars: int = 1200,
+    knowledge_tool_subset: frozenset[str] | None = None,
+    workflow_strict: bool = False,
+    include_workflow_tools: bool = False,
+    workflow_max_steps: int | None = None,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -99,16 +110,29 @@ async def orchestrate_turn(
     dbg = is_stream_debug_on(debug_stream)
     user_uuid = await qe.persist_user(session_id, user_text)
     allow = shell_allowlist or frozenset()
+    wf_strict = bool(workflow_strict)
+    eff_memory = enable_memory_tools and not wf_strict
+    eff_plan = include_plan_tools and not wf_strict
+    eff_goal_recall = include_goal_recall_tool and not wf_strict
+    eff_file_cfg = None if wf_strict else file_config
+    eff_web_cfg = None if wf_strict else web_config
+    eff_ws_list = enable_list_session_web_sources and not wf_strict
+    eff_shell = frozenset() if wf_strict else allow
     gemini_tool = build_agent_tools(
-        allowed_exact_commands=allow,
-        include_memory_tools=enable_memory_tools,
-        include_plan_tools=include_plan_tools,
-        include_goal_recall_tool=include_goal_recall_tool,
-        include_file_tools=file_config is not None,
-        include_web_search=web_config is not None and bool(web_config.serper_api_key),
-        include_web_fetch=web_config is not None,
-        include_list_session_web_sources=enable_list_session_web_sources,
-        include_knowledge_tools=include_knowledge_tools,
+        allowed_exact_commands=eff_shell,
+        include_memory_tools=eff_memory,
+        include_plan_tools=eff_plan,
+        include_goal_recall_tool=eff_goal_recall,
+        include_file_tools=eff_file_cfg is not None,
+        include_web_search=eff_web_cfg is not None and bool(eff_web_cfg.serper_api_key),
+        include_web_fetch=eff_web_cfg is not None,
+        include_list_session_web_sources=eff_ws_list,
+        include_knowledge_tools=include_knowledge_tools and knowledge_tool_subset is None,
+        knowledge_tool_subset=knowledge_tool_subset,
+        include_workflow_tools=include_workflow_tools,
+    )
+    dispatch_allowlist = (
+        frozen_tool_declaration_names(gemini_tool) if wf_strict else None
     )
     log_stream(
         dbg,
@@ -120,7 +144,7 @@ async def orchestrate_turn(
         f"web_tools_enabled={web_config is not None}",
     )
     legs_cap = max(1, max_tool_rounds)
-    memory = memory_config if enable_memory_tools else None
+    memory = memory_config if eff_memory else None
 
     async def _read_plan_bound() -> str:
         return await qe.get_task_plan_json(session_id)
@@ -130,14 +154,14 @@ async def orchestrate_turn(
 
     plan_hooks: PlanToolHooks | None = (
         PlanToolHooks(read_plan=_read_plan_bound, write_plan=_write_plan_bound)
-        if include_plan_tools
+        if eff_plan
         else None
     )
 
     async def _goal_recall_bound(task_id: int) -> dict[str, Any]:
         return await qe.get_goal_task_view_for_tool(task_id)
 
-    goal_recall_reader = _goal_recall_bound if include_goal_recall_tool else None
+    goal_recall_reader = _goal_recall_bound if eff_goal_recall else None
 
     knowledge_search_fn = None
     knowledge_record_fn = None
@@ -146,7 +170,8 @@ async def orchestrate_turn(
     knowledge_record_entity_fn = None
     knowledge_record_edge_fn = None
     knowledge_link_evidence_fn = None
-    if include_knowledge_tools:
+    need_knowledge = include_knowledge_tools or knowledge_tool_subset is not None
+    if need_knowledge:
         hosts = knowledge_feed_host_allowlist
 
         async def _knowledge_search_bound(
@@ -475,6 +500,63 @@ async def orchestrate_turn(
         knowledge_record_edge_fn = _knowledge_record_edge_bound
         knowledge_link_evidence_fn = _knowledge_link_evidence_bound
 
+        if knowledge_tool_subset is not None:
+            if "search_knowledge" not in knowledge_tool_subset:
+                knowledge_search_fn = None
+            if "record_synthesis" not in knowledge_tool_subset:
+                knowledge_record_fn = None
+            if "record_market_edge" not in knowledge_tool_subset:
+                knowledge_record_market_edge_fn = None
+            if "add_knowledge_source" not in knowledge_tool_subset:
+                knowledge_add_fn = None
+            if "record_entity" not in knowledge_tool_subset:
+                knowledge_record_entity_fn = None
+            if "record_edge" not in knowledge_tool_subset:
+                knowledge_record_edge_fn = None
+            if "link_evidence" not in knowledge_tool_subset:
+                knowledge_link_evidence_fn = None
+
+    async def _enqueue_workflow_bound(
+        call: CompletedFunctionCall,
+    ) -> dict[str, Any]:
+        raw_params = call.args.get("params_json")
+        params_str: str | None
+        if raw_params is None:
+            params_str = None
+        elif isinstance(raw_params, str):
+            params_str = raw_params
+        elif isinstance(raw_params, dict):
+            params_str = json.dumps(raw_params, ensure_ascii=False)
+        else:
+            return {"error": "params_json must be a string or object"}
+        raw_key = call.args.get("idempotency_key")
+        idem: str | None
+        if raw_key is None:
+            idem = None
+        else:
+            idem = str(raw_key).strip() or None
+        return await enqueue_workflow_via_tool(
+            qe,
+            kind=str(call.args.get("kind") or ""),
+            goal_text=str(call.args.get("goal_text") or ""),
+            params_json=params_str,
+            idempotency_key=idem,
+            max_steps=workflow_max_steps,
+        )
+
+    async def _workflow_status_bound(
+        call: CompletedFunctionCall,
+    ) -> dict[str, Any]:
+        raw = call.args.get("workflow_id")
+        try:
+            wf_id = int(raw)
+        except (TypeError, ValueError):
+            return {"error": "workflow_id must be integer"}
+        return await get_workflow_status_via_tool(qe, workflow_id=wf_id)
+
+    wf_enqueue_h = _enqueue_workflow_bound if include_workflow_tools else None
+    wf_status_h = _workflow_status_bound if include_workflow_tools else None
+
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
         tools_were_persisted = [False]
@@ -486,19 +568,17 @@ async def orchestrate_turn(
             return await qe.list_web_sources(session_id, limit=lim)
 
         executor = StreamingToolExecutor(
-            allowlist_exact=allow,
+            allowlist_exact=eff_shell,
             max_output_bytes=shell_max_output_bytes,
             timeout_sec=shell_timeout_sec,
             memory=memory,
             plan_hooks=plan_hooks,
             token_usage=_token_usage_bound,
-            file_config=file_config,
-            web=web_config,
-            web_sources_reader=_web_sources_list_bound
-            if enable_list_session_web_sources
-            else None,
+            file_config=eff_file_cfg,
+            web=eff_web_cfg,
+            web_sources_reader=_web_sources_list_bound if eff_ws_list else None,
             goal_recall_reader=goal_recall_reader,
-            on_file_guard_violation=on_file_guard_violation,
+            on_file_guard_violation=None if wf_strict else on_file_guard_violation,
             knowledge_search=knowledge_search_fn,
             knowledge_record_synthesis=knowledge_record_fn,
             knowledge_record_market_edge=knowledge_record_market_edge_fn,
@@ -506,6 +586,9 @@ async def orchestrate_turn(
             knowledge_record_entity=knowledge_record_entity_fn,
             knowledge_record_edge=knowledge_record_edge_fn,
             knowledge_link_evidence=knowledge_link_evidence_fn,
+            dispatch_allowlist=dispatch_allowlist,
+            workflow_enqueue=wf_enqueue_h,
+            workflow_get_status=wf_status_h,
         )
         try:
             return await _agentic_loop(
@@ -518,20 +601,21 @@ async def orchestrate_turn(
                 gemini_tool=gemini_tool,
                 on_delta=on_delta,
                 legs_cap=legs_cap,
-                shell_allowlist=allow,
+                shell_allowlist=eff_shell,
                 executor=executor,
                 tools_were_persisted=tools_were_persisted,
                 stream_chunk_idle_timeout_sec=stream_chunk_idle_timeout_sec,
                 stream_leg_max_wall_sec=stream_leg_max_wall_sec,
                 rewire_after_tombstone=rewire_after_tombstone,
                 plan_tools_configured=plan_hooks is not None,
-                file_tools_configured=file_config is not None,
-                web_search_configured=web_config is not None
-                and bool(web_config.serper_api_key),
-                web_fetch_configured=web_config is not None,
-                web_sources_list_configured=enable_list_session_web_sources,
+                file_tools_configured=eff_file_cfg is not None,
+                web_search_configured=eff_web_cfg is not None
+                and bool(eff_web_cfg.serper_api_key),
+                web_fetch_configured=eff_web_cfg is not None,
+                web_sources_list_configured=eff_ws_list,
                 goal_recall_configured=goal_recall_reader is not None,
-                knowledge_tools_configured=include_knowledge_tools,
+                knowledge_tools_configured=need_knowledge,
+                workflow_tools_configured=include_workflow_tools,
                 max_session_tokens=max_session_tokens,
                 debug_stream=dbg,
             )
@@ -575,6 +659,7 @@ async def _agentic_loop(
     web_sources_list_configured: bool,
     goal_recall_configured: bool,
     knowledge_tools_configured: bool,
+    workflow_tools_configured: bool,
     max_session_tokens: int,
     debug_stream: bool,
 ) -> str:
@@ -733,6 +818,15 @@ async def _agentic_loop(
         if needs_goal_recall and not goal_recall_configured:
             raise StreamFailed(
                 "model requested read_goal_task_view but it is not configured"
+            )
+
+        needs_workflow_tool = any(
+            c.name in ("enqueue_workflow", "get_workflow_status")
+            for c in leg.function_calls
+        )
+        if needs_workflow_tool and not workflow_tools_configured:
+            raise StreamFailed(
+                "model requested workflow tools but they are not configured"
             )
 
         needs_knowledge = any(

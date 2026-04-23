@@ -1,4 +1,4 @@
-"""`python -m ada [chat|daemon|goal|dream|ingest-rss|ingest-keywords|ingest-gets|add-rss-source|triage]`."""
+"""`python -m ada [chat|daemon|goal|workflow|dream|ingest-rss|...]`."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from ada.ingest.keywords import run_ingest_keywords_cli
 from ada.ingest.rss import run_ingest_rss_cli, run_register_rss_source_cli
 from ada.main import main_daemon
 from ada.triage.run import run_triage_cli
+from ada.workflow_cli import run_workflow_enqueue_cli, run_workflow_status_cli
 
 
 def main() -> None:
@@ -141,6 +142,42 @@ def main() -> None:
         ),
     )
 
+    wf_p = sub.add_parser("workflow", help="Phase 3 workflows (enqueue template, status)")
+    wf_sub = wf_p.add_subparsers(dest="wf_cmd", required=True)
+    wf_e = wf_sub.add_parser(
+        "enqueue",
+        help="Create a pending goal task plus workflow steps from a template kind",
+    )
+    wf_e.add_argument(
+        "--kind",
+        required=True,
+        metavar="KIND",
+        help="Template kind (e.g. rss_fetch_then_graph_then_synth)",
+    )
+    wf_e.add_argument(
+        "--goal",
+        required=True,
+        metavar="TEXT",
+        help="Goal text stored on the new tasks row",
+    )
+    wf_e.add_argument(
+        "--params-json",
+        default=None,
+        metavar="JSON",
+        help='Optional JSON object string, e.g. \'{"topic":"Macro summary"}\'',
+    )
+    wf_e.add_argument(
+        "--idempotency-key",
+        default=None,
+        metavar="KEY",
+        help="Optional; duplicate (kind, key) returns existing workflow without new task",
+    )
+    wf_s = wf_sub.add_parser(
+        "status",
+        help="Print workflow row and steps as JSON",
+    )
+    wf_s.add_argument("workflow_id", type=int, metavar="ID")
+
     args = p.parse_args()
     if args.cmd == "chat":
         settings = Settings.load()
@@ -231,6 +268,30 @@ def main() -> None:
             f" deep_dives_enqueued={stats.deep_dives_enqueued}"
         )
         raise SystemExit(code)
+    elif args.cmd == "workflow":
+        settings = Settings.load()
+        if args.wf_cmd == "enqueue":
+            raise SystemExit(
+                asyncio.run(
+                    run_workflow_enqueue_cli(
+                        settings,
+                        kind=args.kind,
+                        goal=args.goal,
+                        params_json=args.params_json,
+                        idempotency_key=args.idempotency_key,
+                    )
+                )
+            )
+        if args.wf_cmd == "status":
+            raise SystemExit(
+                asyncio.run(
+                    run_workflow_status_cli(
+                        settings,
+                        workflow_id=args.workflow_id,
+                    )
+                )
+            )
+        raise SystemExit(2)
     else:
         p.print_help()
         sys.exit(2)

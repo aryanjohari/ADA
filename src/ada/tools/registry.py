@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from google.genai import types
+
+# Subsets for Phase 3 workflow steps (capability matrix; ROADMAP §8.2).
+KNOWLEDGE_TOOLS_EXTRACT = frozenset({"record_entity", "record_edge", "link_evidence"})
+KNOWLEDGE_TOOLS_SYNTHESIZE = frozenset({"search_knowledge", "record_synthesis"})
 
 
 def _check_token_usage_declaration() -> types.FunctionDeclaration:
@@ -493,6 +499,69 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
     ]
 
 
+def knowledge_function_declarations_subset(
+    names: frozenset[str],
+) -> list[types.FunctionDeclaration]:
+    """Return knowledge tool declarations whose names are in ``names`` (sorted for stability)."""
+    by_name = {d.name: d for d in _knowledge_function_declarations()}
+    out: list[types.FunctionDeclaration] = []
+    for n in sorted(names):
+        d = by_name.get(n)
+        if d is not None:
+            out.append(d)
+    return out
+
+
+def frozen_tool_declaration_names(tool: types.Tool) -> frozenset[str]:
+    decls: Sequence[types.FunctionDeclaration] = tool.function_declarations or []
+    return frozenset(d.name for d in decls if getattr(d, "name", None))
+
+
+def _workflow_function_declarations() -> list[types.FunctionDeclaration]:
+    return [
+        types.FunctionDeclaration(
+            name="enqueue_workflow",
+            description=(
+                "Create a pending goal task and attach a Phase 3 workflow (FETCH/EXTRACT/SYNTHESIZE). "
+                "Requires a registered workflow kind; see operator docs. Idempotent when idempotency_key is set."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "description": "Template kind, e.g. rss_fetch_then_graph_then_synth.",
+                    },
+                    "goal_text": {
+                        "type": "string",
+                        "description": "Human-readable goal stored on the new tasks row.",
+                    },
+                    "params_json": {
+                        "type": "string",
+                        "description": "JSON object string merged into template params (e.g. topic).",
+                    },
+                    "idempotency_key": {
+                        "type": "string",
+                        "description": "Optional; duplicate (kind, key) returns existing workflow_id without new rows.",
+                    },
+                },
+                "required": ["kind", "goal_text"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="get_workflow_status",
+            description="Read-only: return workflow row and all workflow_steps for a workflow id.",
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {"type": "integer", "description": "workflows.id"},
+                },
+                "required": ["workflow_id"],
+            },
+        ),
+    ]
+
+
 def _list_session_web_sources_declaration() -> types.FunctionDeclaration:
     return types.FunctionDeclaration(
         name="list_session_web_sources",
@@ -554,6 +623,8 @@ def build_agent_tools(
     include_web_fetch: bool = False,
     include_list_session_web_sources: bool = False,
     include_knowledge_tools: bool = False,
+    knowledge_tool_subset: frozenset[str] | None = None,
+    include_workflow_tools: bool = False,
 ) -> types.Tool:
     decls: list[types.FunctionDeclaration] = [_check_token_usage_declaration()]
     decls.extend(build_shell_declarations(allowed_exact_commands=allowed_exact_commands))
@@ -573,8 +644,12 @@ def build_agent_tools(
     )
     if include_list_session_web_sources:
         decls.append(_list_session_web_sources_declaration())
-    if include_knowledge_tools:
+    if knowledge_tool_subset is not None:
+        decls.extend(knowledge_function_declarations_subset(knowledge_tool_subset))
+    elif include_knowledge_tools:
         decls.extend(_knowledge_function_declarations())
+    if include_workflow_tools:
+        decls.extend(_workflow_function_declarations())
     return types.Tool(function_declarations=decls)
 
 

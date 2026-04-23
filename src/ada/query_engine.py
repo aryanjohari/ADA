@@ -594,3 +594,64 @@ class QueryEngine:
 
     async def mark_edge_invalid(self, edge_id: int, reason: str) -> None:
         await self._store.mark_edge_invalid(edge_id, reason)
+
+    async def find_workflow_by_idempotency(
+        self, kind: str, idempotency_key: str
+    ) -> dict[str, Any] | None:
+        return await self._store.find_workflow_by_idempotency(kind, idempotency_key)
+
+    async def get_workflow_by_parent_task_id(self, parent_task_id: int) -> dict[str, Any] | None:
+        return await self._store.get_workflow_by_parent_task_id(parent_task_id)
+
+    async def get_workflow_by_id(self, workflow_id: int) -> dict[str, Any] | None:
+        return await self._store.get_workflow_by_id(workflow_id)
+
+    async def list_workflow_steps(self, workflow_id: int) -> list[dict[str, Any]]:
+        return await self._store.list_workflow_steps(workflow_id)
+
+    async def enqueue_workflow(
+        self,
+        *,
+        kind: str,
+        goal_text: str,
+        params_json: dict[str, Any],
+        parent_task_id: int,
+        idempotency_key: str | None,
+        steps: list[dict[str, Any]],
+    ) -> tuple[int, bool]:
+        return await self._store.enqueue_workflow(
+            kind=kind,
+            goal_text=goal_text,
+            params_json=params_json,
+            parent_task_id=parent_task_id,
+            idempotency_key=idempotency_key,
+            steps=steps,
+        )
+
+    async def update_workflow_row(
+        self,
+        workflow_id: int,
+        *,
+        status: str | None = None,
+    ) -> None:
+        await self._store.update_workflow_row(workflow_id, status=status)
+
+    async def update_workflow_step_row(
+        self,
+        step_row_id: int,
+        *,
+        status: str | None = None,
+        output_json: dict[str, Any] | None = None,
+        error: str | None = None,
+        increment_attempt: bool = False,
+    ) -> None:
+        await self._store.update_workflow_step_row(
+            step_row_id,
+            status=status,
+            output_json=output_json,
+            error=error,
+            increment_attempt=increment_attempt,
+        )
+
+    async def list_recent_knowledge_item_ids(self, *, limit: int) -> list[int]:
+        return await self._store.list_recent_knowledge_item_ids(limit=limit)

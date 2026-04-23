@@ -174,6 +174,8 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     knowledge_tool_max_results=settings.knowledge_tool_max_results,
                     knowledge_tool_excerpt_chars=settings.knowledge_tool_excerpt_chars,
                     debug_stream=settings.debug_stream,
+                    include_workflow_tools=settings.enable_workflow_tools,
+                    workflow_max_steps=settings.ada_max_task_steps,
                 )
                 print(flush=True)
                 await qe.state_set(_boot_state_key(task_id), "1")
@@ -234,6 +236,8 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     knowledge_tool_max_results=settings.knowledge_tool_max_results,
                     knowledge_tool_excerpt_chars=settings.knowledge_tool_excerpt_chars,
                     debug_stream=settings.debug_stream,
+                    include_workflow_tools=settings.enable_workflow_tools,
+                    workflow_max_steps=settings.ada_max_task_steps,
                 )
                 await qe.update_task(
                     task_id,

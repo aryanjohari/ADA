@@ -128,6 +128,7 @@ class Settings:
     ada_daily_token_budget: int | None
     ada_monthly_token_budget: int | None
     ada_max_task_steps: int | None
+    enable_workflow_tools: bool
     # Phase 1 deterministic ingest
     dataforseo_login: str
     dataforseo_password: str
@@ -354,6 +355,10 @@ class Settings:
             except ValueError:
                 ada_max_task_steps = None
 
+        enable_workflow_tools = os.environ.get(
+            "ADA_ENABLE_WORKFLOW_TOOLS", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+
         dataforseo_login = os.environ.get("DATAFORSEO_LOGIN", "").strip()
         dataforseo_password = os.environ.get("DATAFORSEO_PASSWORD", "").strip()
         ada_keyword_max_terms_per_run = max(
@@ -476,6 +481,7 @@ class Settings:
             ada_daily_token_budget=ada_daily_token_budget,
             ada_monthly_token_budget=ada_monthly_token_budget,
             ada_max_task_steps=ada_max_task_steps,
+            enable_workflow_tools=enable_workflow_tools,
             dataforseo_login=dataforseo_login,
             dataforseo_password=dataforseo_password,
             ada_keyword_max_terms_per_run=ada_keyword_max_terms_per_run,

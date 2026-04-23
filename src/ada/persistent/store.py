@@ -257,6 +257,73 @@ class PersistentState:
         await self._ensure_market_metrics_and_synthesis_edges()
         await self._ensure_phase1_ingest_audit()
         await self._ensure_phase2_graph_lite()
+        await self._ensure_phase3_workflows()
+
+    async def _ensure_phase3_workflows(self) -> None:
+        """workflows + workflow_steps (Phase 3 workflow engine)."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE workflows (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind TEXT NOT NULL,
+                    goal_text TEXT NOT NULL,
+                    params_json TEXT NOT NULL DEFAULT '{}',
+                    idempotency_key TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+                    parent_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE (kind, idempotency_key)
+                )
+                """
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflows_parent ON workflows(parent_task_id)"
+            )
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='workflow_steps'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE workflow_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+                    step_index INTEGER NOT NULL,
+                    step_type TEXT NOT NULL CHECK (step_type IN ('FETCH', 'EXTRACT', 'SYNTHESIZE')),
+                    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+                        'pending', 'running', 'completed', 'failed', 'skipped')),
+                    input_json TEXT NOT NULL DEFAULT '{}',
+                    output_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT NOT NULL DEFAULT '',
+                    idempotency_key TEXT,
+                    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE (workflow_id, step_index),
+                    UNIQUE (workflow_id, idempotency_key)
+                )
+                """
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_steps_workflow "
+                "ON workflow_steps(workflow_id, step_index)"
+            )
+        else:
+            cur = await self._conn.execute("PRAGMA table_info(workflow_steps)")
+            wcols = {str(row[1]) for row in await cur.fetchall()}
+            if "attempt_count" not in wcols:
+                await self._conn.execute(
+                    "ALTER TABLE workflow_steps ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"
+                )
+        await self._conn.commit()
 
     async def _ensure_phase1_ingest_audit(self) -> None:
         """ingest_jobs, ingest_raw, source_catalog; knowledge_sources.config_json."""
@@ -2666,3 +2733,250 @@ class PersistentState:
             (source_id,),
         )
         await self._conn.commit()
+
+    async def find_workflow_by_idempotency(
+        self, kind: str, idempotency_key: str
+    ) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, kind, goal_text, params_json, idempotency_key, status, parent_task_id,
+                   created_at, updated_at
+            FROM workflows WHERE kind = ? AND idempotency_key = ?
+            LIMIT 1
+            """,
+            (str(kind).strip(), str(idempotency_key).strip()),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return self._workflow_row_to_dict(row)
+
+    async def get_workflow_by_parent_task_id(self, parent_task_id: int) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, kind, goal_text, params_json, idempotency_key, status, parent_task_id,
+                   created_at, updated_at
+            FROM workflows WHERE parent_task_id = ? ORDER BY id DESC LIMIT 1
+            """,
+            (parent_task_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return self._workflow_row_to_dict(row)
+
+    async def get_workflow_by_id(self, workflow_id: int) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, kind, goal_text, params_json, idempotency_key, status, parent_task_id,
+                   created_at, updated_at
+            FROM workflows WHERE id = ?
+            """,
+            (workflow_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return self._workflow_row_to_dict(row)
+
+    def _workflow_row_to_dict(self, row: tuple[Any, ...]) -> dict[str, Any]:
+        params_raw = str(row[3] or "{}")
+        try:
+            params_obj = json.loads(params_raw)
+        except json.JSONDecodeError:
+            params_obj = {}
+        return {
+            "id": int(row[0]),
+            "kind": str(row[1]),
+            "goal_text": str(row[2]),
+            "params_json": params_obj,
+            "idempotency_key": row[4],
+            "status": str(row[5]),
+            "parent_task_id": int(row[6]) if row[6] is not None else None,
+            "created_at": str(row[7]),
+            "updated_at": str(row[8]),
+        }
+
+    async def list_workflow_steps(self, workflow_id: int) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, workflow_id, step_index, step_type, status, input_json, output_json,
+                   error, idempotency_key, task_id, attempt_count, created_at, updated_at
+            FROM workflow_steps WHERE workflow_id = ?
+            ORDER BY step_index ASC
+            """,
+            (workflow_id,),
+        )
+        rows = await cur.fetchall()
+        return [self._workflow_step_row_to_dict(row) for row in rows]
+
+    def _workflow_step_row_to_dict(self, row: tuple[Any, ...]) -> dict[str, Any]:
+        def _parse(j: str) -> dict[str, Any]:
+            try:
+                o = json.loads(str(j or "{}"))
+                return o if isinstance(o, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+
+        return {
+            "id": int(row[0]),
+            "workflow_id": int(row[1]),
+            "step_index": int(row[2]),
+            "step_type": str(row[3]),
+            "status": str(row[4]),
+            "input_json": _parse(str(row[5] or "{}")),
+            "output_json": _parse(str(row[6] or "{}")),
+            "error": str(row[7] or ""),
+            "idempotency_key": row[8],
+            "task_id": int(row[9]) if row[9] is not None else None,
+            "attempt_count": int(row[10] or 0),
+            "created_at": str(row[11]),
+            "updated_at": str(row[12]),
+        }
+
+    async def enqueue_workflow(
+        self,
+        *,
+        kind: str,
+        goal_text: str,
+        params_json: dict[str, Any],
+        parent_task_id: int,
+        idempotency_key: str | None,
+        steps: list[dict[str, Any]],
+    ) -> tuple[int, bool]:
+        """
+        Insert workflow + steps. Idempotent when idempotency_key is set (non-empty).
+        Returns (workflow_id, created_new).
+        """
+        assert self._conn is not None
+        kind_s = str(kind).strip()
+        if not kind_s:
+            raise ValueError("workflow kind required")
+        key_s = idempotency_key.strip() if idempotency_key else None
+        if key_s:
+            cur = await self._conn.execute(
+                "SELECT id FROM workflows WHERE kind = ? AND idempotency_key = ?",
+                (kind_s, key_s),
+            )
+            row = await cur.fetchone()
+            if row:
+                return int(row[0]), False
+
+        params_s = json.dumps(params_json, ensure_ascii=False)
+        try:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO workflows (
+                    kind, goal_text, params_json, idempotency_key, status, parent_task_id
+                ) VALUES (?, ?, ?, ?, 'pending', ?)
+                """,
+                (kind_s, str(goal_text).strip(), params_s, key_s, parent_task_id),
+            )
+            wf_id = int(cur.lastrowid)
+        except aiosqlite.IntegrityError:
+            await self._conn.rollback()
+            cur = await self._conn.execute(
+                "SELECT id FROM workflows WHERE kind = ? AND idempotency_key = ?",
+                (kind_s, key_s),
+            )
+            row = await cur.fetchone()
+            if not row:
+                raise
+            return int(row[0]), False
+
+        for st in steps:
+            idx = int(st["step_index"])
+            stype = str(st["step_type"]).strip().upper()
+            if stype not in ("FETCH", "EXTRACT", "SYNTHESIZE"):
+                await self._conn.execute("DELETE FROM workflows WHERE id = ?", (wf_id,))
+                await self._conn.commit()
+                raise ValueError(f"invalid step_type: {stype!r}")
+            inp = st.get("input_json") if isinstance(st.get("input_json"), dict) else {}
+            sid_key = st.get("idempotency_key")
+            sid_key_s = str(sid_key).strip() if sid_key else None
+            await self._conn.execute(
+                """
+                INSERT INTO workflow_steps (
+                    workflow_id, step_index, step_type, status, input_json, idempotency_key
+                ) VALUES (?, ?, ?, 'pending', ?, ?)
+                """,
+                (wf_id, idx, stype, json.dumps(inp, ensure_ascii=False), sid_key_s),
+            )
+        await self._conn.commit()
+        return wf_id, True
+
+    async def update_workflow_row(
+        self,
+        workflow_id: int,
+        *,
+        status: str | None = None,
+    ) -> None:
+        assert self._conn is not None
+        if status is None:
+            return
+        st = str(status).strip().lower()
+        if st not in ("pending", "running", "completed", "failed"):
+            raise ValueError(f"invalid workflow status: {status!r}")
+        await self._conn.execute(
+            """
+            UPDATE workflows SET status = ?, updated_at = datetime('now') WHERE id = ?
+            """,
+            (st, workflow_id),
+        )
+        await self._conn.commit()
+
+    async def update_workflow_step_row(
+        self,
+        step_row_id: int,
+        *,
+        status: str | None = None,
+        output_json: dict[str, Any] | None = None,
+        error: str | None = None,
+        increment_attempt: bool = False,
+    ) -> None:
+        assert self._conn is not None
+        sets: list[str] = []
+        args: list[Any] = []
+        if status is not None:
+            st = str(status).strip().lower()
+            if st not in ("pending", "running", "completed", "failed", "skipped"):
+                raise ValueError(f"invalid step status: {status!r}")
+            sets.append("status = ?")
+            args.append(st)
+        if output_json is not None:
+            sets.append("output_json = ?")
+            args.append(json.dumps(output_json, ensure_ascii=False))
+        if error is not None:
+            sets.append("error = ?")
+            args.append(str(error))
+        if increment_attempt:
+            sets.append("attempt_count = attempt_count + 1")
+        if not sets:
+            return
+        sets.append("updated_at = datetime('now')")
+        args.append(step_row_id)
+        await self._conn.execute(
+            f"UPDATE workflow_steps SET {', '.join(sets)} WHERE id = ?",
+            args,
+        )
+        await self._conn.commit()
+
+    async def list_recent_knowledge_item_ids(self, *, limit: int) -> list[int]:
+        """Most recently ingested knowledge_items ids (non-tombstoned)."""
+        assert self._conn is not None
+        lim = max(1, min(int(limit), 500))
+        cur = await self._conn.execute(
+            """
+            SELECT id FROM knowledge_items
+            WHERE tombstoned = 0
+            ORDER BY ingested_at DESC, id DESC
+            LIMIT ?
+            """,
+            (lim,),
+        )
+        rows = await cur.fetchall()
+        return [int(r[0]) for r in rows]

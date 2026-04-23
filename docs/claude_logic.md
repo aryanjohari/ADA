@@ -168,6 +168,10 @@ When the model emits tool calls and **stop_reason** indicates tool use:
 
 **Max depth:** configurable `max_tool_rounds` (e.g. 50) to prevent loops.
 
+### 6.4 Phase 3 workflow LLM steps (subset tools)
+
+When the daemon runs an **`EXTRACT`** or **`SYNTHESIZE`** **workflow step**, the harness still performs a normal **turn** (§6): one **`persist_user`** with step-scoped instructions, then the same multi-leg streaming loop. **Function declarations** are restricted to the roadmap **capability matrix** for that step (graph-lite tools only, or **`search_knowledge`** + **`record_synthesis`** only). **`workflow_strict`** mode omits shell (unless allowlist is non-empty), memory, plan, file, web, and goal-recall tools; only names present in the merged `Tool` declaration may execute—others return a structured tool error. Transcript **`content_json`** rules in §3 are unchanged.
+
 ---
 
 ## 7. StreamingToolExecutor (full contract)

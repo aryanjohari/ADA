@@ -285,3 +285,39 @@ CREATE TRIGGER IF NOT EXISTS knowledge_items_au AFTER UPDATE ON knowledge_items 
         COALESCE(json_extract(new.payload_json, '$.feed_url'), '')
     );
 END;
+
+-- Phase 3: workflows (parent goal + ordered child steps; see docs/ROADMAP_APEX_OS.md §12.4)
+CREATE TABLE IF NOT EXISTS workflows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    goal_text TEXT NOT NULL,
+    params_json TEXT NOT NULL DEFAULT '{}',
+    idempotency_key TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+    parent_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (kind, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflows_parent ON workflows(parent_task_id);
+
+CREATE TABLE IF NOT EXISTS workflow_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    step_index INTEGER NOT NULL,
+    step_type TEXT NOT NULL CHECK (step_type IN ('FETCH', 'EXTRACT', 'SYNTHESIZE')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+    input_json TEXT NOT NULL DEFAULT '{}',
+    output_json TEXT NOT NULL DEFAULT '{}',
+    error TEXT NOT NULL DEFAULT '',
+    idempotency_key TEXT,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (workflow_id, step_index),
+    UNIQUE (workflow_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_steps_workflow ON workflow_steps(workflow_id, step_index);
