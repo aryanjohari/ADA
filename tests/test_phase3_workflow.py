@@ -14,6 +14,7 @@ from ada.tools.registry import (
     frozen_tool_declaration_names,
     knowledge_function_declarations_subset,
 )
+from ada.workflow.steps import ENRICH_STRICT_TOOL_NAMES, KNOWLEDGE_TOOLS_ENRICH
 from ada.workflow.templates import (
     WORKFLOW_KINDS,
     expand_workflow_template,
@@ -51,6 +52,21 @@ def test_build_agent_tools_workflow_strict_subset():
     assert "search_knowledge" in names
     assert "record_entity" not in names
     assert "check_token_usage" in names
+
+
+def test_enrich_live_strict_tool_names_match_build():
+    t = build_agent_tools(
+        allowed_exact_commands=frozenset(),
+        include_memory_tools=False,
+        include_plan_tools=False,
+        include_file_tools=False,
+        include_web_search=True,
+        include_web_fetch=True,
+        include_knowledge_tools=False,
+        knowledge_tool_subset=KNOWLEDGE_TOOLS_ENRICH,
+        include_workflow_tools=False,
+    )
+    assert frozen_tool_declaration_names(t) == ENRICH_STRICT_TOOL_NAMES
 
 
 @pytest.mark.asyncio
@@ -101,6 +117,25 @@ async def test_expand_respects_max_task_steps():
         )
 
 
+def test_expand_publish_entity_v1_merges_params():
+    st = expand_workflow_template(
+        "publish_entity_v1",
+        {
+            "entity_id": 42,
+            "project_id": "proj",
+            "campaign_id": "camp",
+            "niche": "widgets",
+        },
+        max_steps=10,
+    )
+    assert [x["step_type"] for x in st] == ["ENRICH", "GATE", "DRAFT", "DEPLOY"]
+    for step in st:
+        inp = step.get("input_json") or {}
+        assert inp.get("entity_id") == 42
+        assert inp.get("project_id") == "proj"
+        assert inp.get("niche") == "widgets"
+
+
 def test_validate_dependency_rejects_forward_ref():
     steps = [
         {
@@ -141,3 +176,4 @@ async def test_executor_dispatch_allowlist_blocks_unknown():
 
 def test_workflow_kinds_contains_builtin():
     assert "rss_fetch_then_graph_then_synth" in WORKFLOW_KINDS
+    assert "publish_entity_v1" in WORKFLOW_KINDS

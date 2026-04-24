@@ -327,6 +327,24 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
             },
         ),
         types.FunctionDeclaration(
+            name="get_entity_graph_context",
+            description=(
+                "Read-only: return a bounded JSON pack of the subject entity, its active outgoing "
+                "graph_edges (newest first), destination entity summaries, and linked knowledge excerpts "
+                "from edge_evidence (same shape as workflow EXISTING_SUBGRAPH grounding)."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "type": "integer",
+                        "description": "Subject entities.id (must match ENRICH subject when that harness is active).",
+                    },
+                },
+                "required": ["entity_id"],
+            },
+        ),
+        types.FunctionDeclaration(
             name="record_synthesis",
             description=(
                 "Store a short synthesis or conclusion tied to knowledge item ids (citations). "
@@ -444,7 +462,10 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
             description=(
                 "Create a graph-lite edge between two entities with confidence and evidence. "
                 "Use lowercase snake edge_type (e.g. announces, funds, under_category, regulates). "
-                "Non-hypothesis edges require evidence_item_ids."
+                "Non-hypothesis edges require evidence_item_ids and source_url: a canonical https URL "
+                "for the page the fact came from (typically a fetched page or search result). "
+                "Publishing GATE counts distinct source_url on active outgoing edges—use real, "
+                "distinct URLs. Omit or set is_hypothesis true only for speculative edges (no source_url)."
             ),
             parameters_json_schema={
                 "type": "object",
@@ -456,6 +477,13 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
                     "evidence_item_ids": {
                         "type": "array",
                         "items": {"type": "integer"},
+                    },
+                    "source_url": {
+                        "type": "string",
+                        "description": (
+                            "Required for fact edges (is_hypothesis false or omitted): https URL "
+                            "of the supporting web page."
+                        ),
                     },
                     "status": {
                         "type": "string",

@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS entities (
     name TEXT NOT NULL,
     normalized_name TEXT NOT NULL,
     payload_json TEXT NOT NULL DEFAULT '{}',
+    last_enriched_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (type, normalized_name)
 );
@@ -216,6 +217,7 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     edge_type TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'superseded', 'invalid')),
+    source_url TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     superseded_by INTEGER REFERENCES graph_edges(id)
 );
@@ -306,7 +308,9 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     step_index INTEGER NOT NULL,
-    step_type TEXT NOT NULL CHECK (step_type IN ('FETCH', 'EXTRACT', 'SYNTHESIZE')),
+    step_type TEXT NOT NULL CHECK (step_type IN (
+        'FETCH', 'EXTRACT', 'SYNTHESIZE', 'ENRICH', 'GATE', 'DRAFT', 'DEPLOY'
+    )),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
     input_json TEXT NOT NULL DEFAULT '{}',
     output_json TEXT NOT NULL DEFAULT '{}',

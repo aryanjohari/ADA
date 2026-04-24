@@ -14,6 +14,7 @@ from ada.ingest.keywords import run_ingest_keywords_cli
 from ada.ingest.rss import run_ingest_rss_cli, run_register_rss_source_cli
 from ada.main import main_daemon
 from ada.triage.run import run_triage_cli
+from ada.matrix_cli import run_matrix_scan_cli
 from ada.workflow_cli import run_workflow_enqueue_cli, run_workflow_status_cli
 
 
@@ -178,6 +179,16 @@ def main() -> None:
     )
     wf_s.add_argument("workflow_id", type=int, metavar="ID")
 
+    mx_p = sub.add_parser(
+        "matrix-scan",
+        help="Scan publishable entities + category edges, enqueue publish_entity_v1 (see ADA_MATRIX_*)",
+    )
+    mx_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List candidates and intended enqueues without writing (may run without ADA_MATRIX_ENABLE)",
+    )
+
     args = p.parse_args()
     if args.cmd == "chat":
         settings = Settings.load()
@@ -292,6 +303,16 @@ def main() -> None:
                 )
             )
         raise SystemExit(2)
+    elif args.cmd == "matrix-scan":
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_matrix_scan_cli(
+                    settings,
+                    dry_run=bool(getattr(args, "dry_run", False)),
+                )
+            )
+        )
     else:
         p.print_help()
         sys.exit(2)

@@ -29,6 +29,7 @@ class KnowledgeItemInsertResult:
 from ada.knowledge_embeddings import blob_to_float32_list, cosine_similarity
 from ada.knowledge_search import build_fts_match_query, reciprocal_rank_fusion
 from ada.triage.categories import TRIAGE_CATEGORY_CODES
+from ada.workflow.steps import WORKFLOW_VALID_STEP_TYPES
 from ada.transcript_format import (
     ROLE_ASSISTANT,
     ROLE_SYSTEM,
@@ -257,7 +258,9 @@ class PersistentState:
         await self._ensure_market_metrics_and_synthesis_edges()
         await self._ensure_phase1_ingest_audit()
         await self._ensure_phase2_graph_lite()
+        await self._ensure_publisher_graph_columns()
         await self._ensure_phase3_workflows()
+        await self._ensure_publisher_workflow_step_types()
 
     async def _ensure_phase3_workflows(self) -> None:
         """workflows + workflow_steps (Phase 3 workflow engine)."""
@@ -296,7 +299,9 @@ class PersistentState:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
                     step_index INTEGER NOT NULL,
-                    step_type TEXT NOT NULL CHECK (step_type IN ('FETCH', 'EXTRACT', 'SYNTHESIZE')),
+                    step_type TEXT NOT NULL CHECK (step_type IN (
+                        'FETCH', 'EXTRACT', 'SYNTHESIZE', 'ENRICH', 'GATE', 'DRAFT', 'DEPLOY'
+                    )),
                     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
                         'pending', 'running', 'completed', 'failed', 'skipped')),
                     input_json TEXT NOT NULL DEFAULT '{}',
@@ -324,6 +329,91 @@ class PersistentState:
                     "ALTER TABLE workflow_steps ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"
                 )
         await self._conn.commit()
+
+    async def _ensure_publisher_graph_columns(self) -> None:
+        """B2B publisher: entities.last_enriched_at, graph_edges.source_url."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='entities'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(entities)")
+        ecols = {str(row[1]) for row in await cur.fetchall()}
+        if "last_enriched_at" not in ecols:
+            await self._conn.execute(
+                "ALTER TABLE entities ADD COLUMN last_enriched_at TEXT"
+            )
+        cur = await self._conn.execute("PRAGMA table_info(graph_edges)")
+        gcols = {str(row[1]) for row in await cur.fetchall()}
+        if gcols and "source_url" not in gcols:
+            await self._conn.execute(
+                "ALTER TABLE graph_edges ADD COLUMN source_url TEXT"
+            )
+        await self._conn.commit()
+
+    async def _ensure_publisher_workflow_step_types(self) -> None:
+        """Recreate workflow_steps if CHECK still limits step_type to pre-publisher set."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='workflow_steps'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='workflow_steps'"
+        )
+        row = await cur.fetchone()
+        create_sql = str(row[0] or "")
+        if "ENRICH" in create_sql and "DEPLOY" in create_sql:
+            return
+        try:
+            await self._conn.execute("DROP TABLE IF EXISTS workflow_steps__pub")
+            await self._conn.execute(
+                """
+                CREATE TABLE workflow_steps__pub (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+                    step_index INTEGER NOT NULL,
+                    step_type TEXT NOT NULL CHECK (step_type IN (
+                        'FETCH', 'EXTRACT', 'SYNTHESIZE', 'ENRICH', 'GATE', 'DRAFT', 'DEPLOY'
+                    )),
+                    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+                        'pending', 'running', 'completed', 'failed', 'skipped'
+                    )),
+                    input_json TEXT NOT NULL DEFAULT '{}',
+                    output_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT NOT NULL DEFAULT '',
+                    idempotency_key TEXT,
+                    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE (workflow_id, step_index),
+                    UNIQUE (workflow_id, idempotency_key)
+                )
+                """
+            )
+            await self._conn.execute(
+                """
+                INSERT INTO workflow_steps__pub
+                SELECT id, workflow_id, step_index, step_type, status, input_json, output_json,
+                       error, idempotency_key, task_id, attempt_count, created_at, updated_at
+                FROM workflow_steps
+                """
+            )
+            await self._conn.execute("DROP TABLE workflow_steps")
+            await self._conn.execute(
+                "ALTER TABLE workflow_steps__pub RENAME TO workflow_steps"
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_steps_workflow "
+                "ON workflow_steps(workflow_id, step_index)"
+            )
+            await self._conn.commit()
+        except Exception:
+            await self._conn.rollback()
+            raise
 
     async def _ensure_phase1_ingest_audit(self) -> None:
         """ingest_jobs, ingest_raw, source_catalog; knowledge_sources.config_json."""
@@ -1213,7 +1303,7 @@ class PersistentState:
         assert self._conn is not None
         cur = await self._conn.execute(
             """
-            SELECT role, content_json FROM messages
+            SELECT role, content_json, sequence FROM messages
             WHERE session_id = ? AND tombstone = 0 AND role != ?
             ORDER BY sequence ASC
             """,
@@ -1221,9 +1311,9 @@ class PersistentState:
         )
         rows = await cur.fetchall()
         out: list[dict[str, Any]] = []
-        for role, content_json in rows:
+        for role, content_json, sequence in rows:
             payload = json.loads(content_json)
-            out.append({"role": role, **payload})
+            out.append({"role": role, "sequence": int(sequence), **payload})
         return out
 
     async def state_set(self, key: str, value: str) -> None:
@@ -2507,6 +2597,7 @@ class PersistentState:
         aliases: list[str] | None = None,
         external_ids: dict[str, str] | None = None,
         payload_json: dict[str, Any] | None = None,
+        last_enriched_at: str | None = None,
     ) -> dict[str, Any]:
         assert self._conn is not None
         etype = str(type).strip().lower()
@@ -2560,22 +2651,35 @@ class PersistentState:
                 merged_payload["aliases"] = merged_aliases
             if merged_external_ids:
                 merged_payload["external_ids"] = merged_external_ids
-            await self._conn.execute(
-                "UPDATE entities SET name = ?, payload_json = ? WHERE id = ?",
-                (
-                    existing_name if existing_name else ename,
-                    json.dumps(merged_payload, ensure_ascii=False),
-                    eid,
-                ),
-            )
+            if last_enriched_at is not None:
+                await self._conn.execute(
+                    "UPDATE entities SET name = ?, payload_json = ?, last_enriched_at = ? "
+                    "WHERE id = ?",
+                    (
+                        existing_name if existing_name else ename,
+                        json.dumps(merged_payload, ensure_ascii=False),
+                        str(last_enriched_at).strip(),
+                        eid,
+                    ),
+                )
+            else:
+                await self._conn.execute(
+                    "UPDATE entities SET name = ?, payload_json = ? WHERE id = ?",
+                    (
+                        existing_name if existing_name else ename,
+                        json.dumps(merged_payload, ensure_ascii=False),
+                        eid,
+                    ),
+                )
             await self._conn.commit()
             return {"entity_id": eid, "inserted": False, "normalized_name": normalized_name}
+        le = str(last_enriched_at).strip() if last_enriched_at is not None else None
         cur = await self._conn.execute(
             """
-            INSERT INTO entities (type, name, normalized_name, payload_json)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO entities (type, name, normalized_name, payload_json, last_enriched_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (etype, ename, normalized_name, payload_str),
+            (etype, ename, normalized_name, payload_str, le),
         )
         await self._conn.commit()
         return {
@@ -2605,6 +2709,7 @@ class PersistentState:
         confidence: float,
         status: str = GRAPH_EDGE_ACTIVE,
         superseded_by: int | None = None,
+        source_url: str | None = None,
     ) -> int:
         assert self._conn is not None
         etype = str(edge_type).strip().lower()
@@ -2616,16 +2721,393 @@ class PersistentState:
         st = str(status).strip().lower()
         if st not in GRAPH_EDGE_STATUSES:
             raise ValueError("invalid edge status")
+        su: str | None
+        if source_url is not None and str(source_url).strip():
+            su = str(source_url).strip()
+        else:
+            su = None
         cur = await self._conn.execute(
             """
             INSERT INTO graph_edges (
-                src_entity_id, dst_entity_id, edge_type, confidence, status, superseded_by
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                src_entity_id, dst_entity_id, edge_type, confidence, status,
+                superseded_by, source_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (src_entity_id, dst_entity_id, etype, conf, st, superseded_by),
+            (src_entity_id, dst_entity_id, etype, conf, st, superseded_by, su),
         )
         await self._conn.commit()
         return int(cur.lastrowid)
+
+    async def get_entity_by_id(self, entity_id: int) -> dict[str, Any] | None:
+        assert self._conn is not None
+        eid = int(entity_id)
+        cur = await self._conn.execute(
+            """
+            SELECT id, type, name, normalized_name, payload_json, last_enriched_at, created_at
+            FROM entities WHERE id = ?
+            """,
+            (eid,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        raw_payload = str(row[4] or "{}")
+        try:
+            payload: dict[str, Any] = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            payload = {}
+        le = row[5]
+        return {
+            "id": int(row[0]),
+            "type": str(row[1]),
+            "name": str(row[2]),
+            "normalized_name": str(row[3]),
+            "payload_json": payload,
+            "last_enriched_at": le if le is not None else None,
+            "created_at": str(row[6]),
+        }
+
+    async def count_unique_local_facts(self, entity_id: int) -> int:
+        """
+        Gatekeeper: count distinct non-empty source_url on active outgoing graph_edges.
+        (Normative for ADA_PUBLISH_MIN_UNIQUE_FACTS; must match test matrix.)
+        """
+        assert self._conn is not None
+        eid = int(entity_id)
+        cur = await self._conn.execute(
+            """
+            SELECT COUNT(DISTINCT source_url) FROM graph_edges
+            WHERE src_entity_id = ?
+              AND status = ?
+              AND source_url IS NOT NULL
+              AND length(trim(source_url)) > 0
+            """,
+            (eid, GRAPH_EDGE_ACTIVE),
+        )
+        row = await cur.fetchone()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+
+    async def count_outgoing_active_edges(self, entity_id: int) -> int:
+        """Count active outgoing graph_edges (row count) for src_entity_id."""
+        assert self._conn is not None
+        eid = int(entity_id)
+        cur = await self._conn.execute(
+            """
+            SELECT COUNT(*) FROM graph_edges
+            WHERE src_entity_id = ? AND status = ?
+            """,
+            (eid, GRAPH_EDGE_ACTIVE),
+        )
+        row = await cur.fetchone()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+
+    async def max_graph_edge_id_for_src_entity(self, entity_id: int) -> int:
+        assert self._conn is not None
+        eid = int(entity_id)
+        cur = await self._conn.execute(
+            """
+            SELECT COALESCE(MAX(id), 0) FROM graph_edges WHERE src_entity_id = ?
+            """,
+            (eid,),
+        )
+        row = await cur.fetchone()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+
+    async def max_message_sequence(self, session_id: int) -> int:
+        assert self._conn is not None
+        sid = int(session_id)
+        cur = await self._conn.execute(
+            """
+            SELECT COALESCE(MAX(sequence), 0) FROM messages WHERE session_id = ?
+            """,
+            (sid,),
+        )
+        row = await cur.fetchone()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+
+    def _trim_subgraph_pack_to_budget(
+        self,
+        pack: dict[str, Any],
+        *,
+        excerpt_floor_chars: int,
+        max_total_json_chars: int,
+    ) -> None:
+        """Shrink outgoing_edges / linked_knowledge_excerpts until JSON fits ``max_total_json_chars``."""
+        truncated_subject = False
+        while True:
+            blob = json.dumps(pack, ensure_ascii=False)
+            if len(blob) <= max_total_json_chars:
+                return
+            ex_list = pack.get("linked_knowledge_excerpts")
+            edges = pack.get("outgoing_edges")
+            if not isinstance(ex_list, list):
+                ex_list = []
+                pack["linked_knowledge_excerpts"] = ex_list
+            if not isinstance(edges, list):
+                edges = []
+                pack["outgoing_edges"] = edges
+            if ex_list:
+                ex_list.pop()
+                continue
+            if edges:
+                dropped = edges.pop()
+                eid_drop = int(dropped["id"]) if isinstance(dropped.get("id"), int) else None
+                if eid_drop is not None:
+                    pack["linked_knowledge_excerpts"] = [
+                        x
+                        for x in ex_list
+                        if not (
+                            isinstance(x, dict)
+                            and int(x.get("edge_id") or 0) == eid_drop
+                        )
+                    ]
+                continue
+            shortened = False
+            for it in ex_list:
+                if isinstance(it, dict) and "content_excerpt" in it:
+                    raw = str(it.get("content_excerpt") or "")
+                    if len(raw) > excerpt_floor_chars:
+                        it["content_excerpt"] = raw[:excerpt_floor_chars] + "…"
+                        shortened = True
+                        break
+            if shortened:
+                continue
+            sub = pack.get("subject")
+            if (
+                not truncated_subject
+                and isinstance(sub, dict)
+                and isinstance(sub.get("payload_json"), dict)
+                and sub["payload_json"]
+            ):
+                sub["payload_json"] = {"_truncated": True}
+                truncated_subject = True
+                continue
+            return
+
+    async def load_subject_subgraph_context_pack(
+        self,
+        entity_id: int,
+        *,
+        max_edges: int = 30,
+        max_excerpt_items: int = 15,
+        excerpt_max_chars: int = 800,
+        max_total_json_chars: int = 60_000,
+    ) -> dict[str, Any]:
+        """
+        Bounded JSON pack: subject entity, active outgoing edges + dst summaries,
+        and knowledge excerpts (via edge_evidence) deduped by knowledge_id.
+        """
+        assert self._conn is not None
+        eid = int(entity_id)
+        me = max(1, min(200, int(max_edges)))
+        mex = max(1, min(100, int(max_excerpt_items)))
+        cap = max(120, min(4000, int(excerpt_max_chars)))
+        budget = max(4096, int(max_total_json_chars))
+
+        subj = await self.get_entity_by_id(eid)
+        if subj is None:
+            return {
+                "subject": None,
+                "outgoing_edges": [],
+                "linked_knowledge_excerpts": [],
+            }
+
+        cur = await self._conn.execute(
+            f"""
+            SELECT ge.id, ge.edge_type, ge.confidence, ge.source_url, ge.dst_entity_id,
+                   e.id, e.type, e.name, e.normalized_name, e.payload_json, e.last_enriched_at
+            FROM graph_edges ge
+            INNER JOIN entities e ON e.id = ge.dst_entity_id
+            WHERE ge.src_entity_id = ? AND ge.status = ?
+            ORDER BY ge.id DESC
+            LIMIT ?
+            """,
+            (eid, GRAPH_EDGE_ACTIVE, me),
+        )
+        edge_rows = await cur.fetchall()
+        edges_out: list[dict[str, Any]] = []
+        edge_ids: list[int] = []
+        for row in edge_rows:
+            geid = int(row[0])
+            edge_ids.append(geid)
+            raw_dst_payload = str(row[9] or "{}")
+            try:
+                dst_payload: dict[str, Any] = json.loads(raw_dst_payload)
+            except json.JSONDecodeError:
+                dst_payload = {}
+            le = row[10]
+            edges_out.append(
+                {
+                    "id": geid,
+                    "edge_type": str(row[1]),
+                    "confidence": float(row[2]),
+                    "source_url": str(row[3]).strip() if row[3] is not None else "",
+                    "dst_entity_id": int(row[4]),
+                    "dst": {
+                        "id": int(row[5]),
+                        "type": str(row[6]),
+                        "name": str(row[7]),
+                        "normalized_name": str(row[8]),
+                        "payload_json": dst_payload,
+                        "last_enriched_at": le if le is not None else None,
+                    },
+                }
+            )
+
+        excerpts: list[dict[str, Any]] = []
+        if edge_ids:
+            placeholders = ",".join("?" * len(edge_ids))
+            cur2 = await self._conn.execute(
+                f"""
+                SELECT ee.edge_id, ki.id, ki.content_excerpt
+                FROM edge_evidence ee
+                INNER JOIN knowledge_items ki ON ki.id = ee.knowledge_id
+                WHERE ee.edge_id IN ({placeholders})
+                ORDER BY ee.edge_id DESC, ee.id DESC
+                """,
+                tuple(edge_ids),
+            )
+            seen_k: set[int] = set()
+            for erow in await cur2.fetchall():
+                kid = int(erow[1])
+                if kid in seen_k:
+                    continue
+                seen_k.add(kid)
+                raw_ex = str(erow[2] or "")
+                ex = raw_ex if len(raw_ex) <= cap else raw_ex[:cap] + "…"
+                excerpts.append(
+                    {
+                        "knowledge_id": kid,
+                        "edge_id": int(erow[0]),
+                        "content_excerpt": ex,
+                    }
+                )
+                if len(excerpts) >= mex:
+                    break
+
+        pack: dict[str, Any] = {
+            "subject": {
+                "id": subj["id"],
+                "type": subj["type"],
+                "name": subj["name"],
+                "normalized_name": subj["normalized_name"],
+                "payload_json": subj["payload_json"],
+                "last_enriched_at": subj["last_enriched_at"],
+            },
+            "outgoing_edges": edges_out,
+            "linked_knowledge_excerpts": excerpts,
+        }
+        self._trim_subgraph_pack_to_budget(
+            pack, excerpt_floor_chars=200, max_total_json_chars=budget
+        )
+        return pack
+
+    async def list_enrichment_excerpts_for_entity(
+        self,
+        entity_id: int,
+        *,
+        limit: int = 12,
+        excerpt_max_chars: int = 800,
+    ) -> list[dict[str, Any]]:
+        """
+        Knowledge excerpts linked as evidence on active outgoing edges from entity_id
+        (newest edges first), for DRAFT grounding.
+        """
+        assert self._conn is not None
+        eid = int(entity_id)
+        lim = max(1, min(50, int(limit)))
+        cap = max(120, min(4000, int(excerpt_max_chars)))
+        cur = await self._conn.execute(
+            """
+            SELECT ki.id, ki.content_excerpt, ge.source_url
+            FROM graph_edges ge
+            INNER JOIN edge_evidence ee ON ee.edge_id = ge.id
+            INNER JOIN knowledge_items ki ON ki.id = ee.knowledge_id
+            WHERE ge.src_entity_id = ? AND ge.status = ?
+            ORDER BY ge.id DESC, ee.id DESC
+            """,
+            (eid, GRAPH_EDGE_ACTIVE),
+        )
+        rows = await cur.fetchall()
+        seen: set[int] = set()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            kid = int(row[0])
+            if kid in seen:
+                continue
+            seen.add(kid)
+            raw_ex = str(row[1] or "")
+            ex = raw_ex if len(raw_ex) <= cap else raw_ex[:cap] + "…"
+            su = row[2]
+            out.append(
+                {
+                    "knowledge_id": kid,
+                    "content_excerpt": ex,
+                    "source_url": str(su).strip() if su is not None else "",
+                }
+            )
+            if len(out) >= lim:
+                break
+        return out
+
+    async def list_subjects_with_classified_category(
+        self,
+        *,
+        entity_types: frozenset[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Matrix router: subject entities (types) with a classified_as edge to a category node."""
+        assert self._conn is not None
+        if not entity_types:
+            return []
+        lim = max(1, min(int(limit), 10_000))
+        placeholders = ",".join("?" * len(entity_types))
+        types_lower = [str(t).strip().lower() for t in entity_types]
+        cur = await self._conn.execute(
+            f"""
+            SELECT DISTINCT e.id, e.type, e.name, e.normalized_name, e.payload_json,
+                   e.last_enriched_at, c.name AS category_name
+            FROM entities e
+            JOIN graph_edges ge
+              ON ge.src_entity_id = e.id
+             AND lower(ge.edge_type) = 'classified_as'
+             AND ge.status = ?
+            JOIN entities c ON c.id = ge.dst_entity_id AND lower(c.type) = 'category'
+            WHERE lower(e.type) IN ({placeholders})
+            ORDER BY e.id ASC, category_name ASC
+            LIMIT ?
+            """,
+            (GRAPH_EDGE_ACTIVE, *types_lower, lim),
+        )
+        rows = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            raw = str(row[4] or "{}")
+            try:
+                payload: dict[str, Any] = json.loads(raw)
+            except json.JSONDecodeError:
+                payload = {}
+            le = row[5]
+            out.append(
+                {
+                    "id": int(row[0]),
+                    "type": str(row[1]),
+                    "name": str(row[2]),
+                    "normalized_name": str(row[3]),
+                    "payload_json": payload,
+                    "last_enriched_at": le if le is not None else None,
+                    "category_code": str(row[6] or "").strip().lower(),
+                }
+            )
+        return out
 
     async def insert_edge_evidence(
         self,
@@ -2891,7 +3373,7 @@ class PersistentState:
         for st in steps:
             idx = int(st["step_index"])
             stype = str(st["step_type"]).strip().upper()
-            if stype not in ("FETCH", "EXTRACT", "SYNTHESIZE"):
+            if stype not in WORKFLOW_VALID_STEP_TYPES:
                 await self._conn.execute("DELETE FROM workflows WHERE id = ?", (wf_id,))
                 await self._conn.commit()
                 raise ValueError(f"invalid step_type: {stype!r}")

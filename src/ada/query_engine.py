@@ -539,6 +539,7 @@ class QueryEngine:
         aliases: list[str] | None = None,
         external_ids: dict[str, str] | None = None,
         payload_json: dict[str, Any] | None = None,
+        last_enriched_at: str | None = None,
     ) -> dict[str, Any]:
         return await self._store.upsert_entity(
             type=type,
@@ -546,6 +547,59 @@ class QueryEngine:
             aliases=aliases,
             external_ids=external_ids,
             payload_json=payload_json,
+            last_enriched_at=last_enriched_at,
+        )
+
+    async def get_entity_by_id(self, entity_id: int) -> dict[str, Any] | None:
+        return await self._store.get_entity_by_id(entity_id)
+
+    async def count_unique_local_facts(self, entity_id: int) -> int:
+        return await self._store.count_unique_local_facts(entity_id)
+
+    async def count_outgoing_active_edges(self, entity_id: int) -> int:
+        return await self._store.count_outgoing_active_edges(entity_id)
+
+    async def max_graph_edge_id_for_src_entity(self, entity_id: int) -> int:
+        return await self._store.max_graph_edge_id_for_src_entity(entity_id)
+
+    async def max_message_sequence(self, session_id: int) -> int:
+        return await self._store.max_message_sequence(session_id)
+
+    async def load_subject_subgraph_context_pack(
+        self,
+        entity_id: int,
+        *,
+        max_edges: int = 30,
+        max_excerpt_items: int = 15,
+        excerpt_max_chars: int = 800,
+        max_total_json_chars: int = 60_000,
+    ) -> dict[str, Any]:
+        return await self._store.load_subject_subgraph_context_pack(
+            entity_id,
+            max_edges=max_edges,
+            max_excerpt_items=max_excerpt_items,
+            excerpt_max_chars=excerpt_max_chars,
+            max_total_json_chars=max_total_json_chars,
+        )
+
+    async def list_enrichment_excerpts_for_entity(
+        self,
+        entity_id: int,
+        *,
+        limit: int = 12,
+        excerpt_max_chars: int = 800,
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_enrichment_excerpts_for_entity(
+            entity_id,
+            limit=limit,
+            excerpt_max_chars=excerpt_max_chars,
+        )
+
+    async def list_subjects_with_classified_category(
+        self, *, entity_types: frozenset[str], limit: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_subjects_with_classified_category(
+            entity_types=entity_types, limit=limit
         )
 
     async def insert_graph_edge(
@@ -557,6 +611,7 @@ class QueryEngine:
         confidence: float,
         status: str = GRAPH_EDGE_ACTIVE,
         superseded_by: int | None = None,
+        source_url: str | None = None,
     ) -> int:
         return await self._store.insert_graph_edge(
             src_entity_id=src_entity_id,
@@ -565,6 +620,7 @@ class QueryEngine:
             confidence=confidence,
             status=status,
             superseded_by=superseded_by,
+            source_url=source_url,
         )
 
     async def insert_edge_evidence(

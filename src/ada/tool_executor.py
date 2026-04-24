@@ -134,6 +134,7 @@ class StreamingToolExecutor:
         knowledge_record_entity: KnowledgeToolHandler | None = None,
         knowledge_record_edge: KnowledgeToolHandler | None = None,
         knowledge_link_evidence: KnowledgeToolHandler | None = None,
+        knowledge_graph_context: KnowledgeToolHandler | None = None,
         dispatch_allowlist: frozenset[str] | None = None,
         workflow_enqueue: WorkflowToolHandler | None = None,
         workflow_get_status: WorkflowToolHandler | None = None,
@@ -156,6 +157,7 @@ class StreamingToolExecutor:
         self._knowledge_record_entity = knowledge_record_entity
         self._knowledge_record_edge = knowledge_record_edge
         self._knowledge_link_evidence = knowledge_link_evidence
+        self._knowledge_graph_context = knowledge_graph_context
         self._dispatch_allowlist = dispatch_allowlist
         self._workflow_enqueue = workflow_enqueue
         self._workflow_get_status = workflow_get_status
@@ -232,6 +234,8 @@ class StreamingToolExecutor:
             return await self._record_edge(call)
         if call.name == "link_evidence":
             return await self._link_evidence(call)
+        if call.name == "get_entity_graph_context":
+            return await self._get_entity_graph_context(call)
         return {"error": f"unknown tool: {call.name}"}
 
     async def _enqueue_workflow(self, call: CompletedFunctionCall) -> dict[str, Any]:
@@ -390,6 +394,15 @@ class StreamingToolExecutor:
             return await self._knowledge_link_evidence(call)
         except Exception as e:
             log.warning("link_evidence failed: %s", e)
+            return {"error": str(e)}
+
+    async def _get_entity_graph_context(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._knowledge_graph_context is None:
+            return {"error": "get_entity_graph_context not configured"}
+        try:
+            return await self._knowledge_graph_context(call)
+        except Exception as e:
+            log.warning("get_entity_graph_context failed: %s", e)
             return {"error": str(e)}
 
     async def _read_task_plan(self) -> dict[str, Any]:

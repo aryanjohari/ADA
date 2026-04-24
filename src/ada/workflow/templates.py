@@ -6,7 +6,9 @@ import json
 from typing import Any
 
 # Public set of kinds for CLI/help and validation.
-WORKFLOW_KINDS: frozenset[str] = frozenset({"rss_fetch_then_graph_then_synth"})
+WORKFLOW_KINDS: frozenset[str] = frozenset(
+    {"rss_fetch_then_graph_then_synth", "publish_entity_v1"}
+)
 
 
 def _base_steps(kind: str) -> list[dict[str, Any]]:
@@ -28,6 +30,13 @@ def _base_steps(kind: str) -> list[dict[str, Any]]:
                 "step_type": "SYNTHESIZE",
                 "input_json": {},
             },
+        ]
+    if k == "publish_entity_v1":
+        return [
+            {"step_index": 0, "step_type": "ENRICH", "input_json": {}},
+            {"step_index": 1, "step_type": "GATE", "input_json": {}},
+            {"step_index": 2, "step_type": "DRAFT", "input_json": {}},
+            {"step_index": 3, "step_type": "DEPLOY", "input_json": {}},
         ]
     raise ValueError(f"unknown workflow kind: {kind!r}")
 
@@ -63,9 +72,43 @@ def expand_workflow_template(
 ) -> list[dict[str, Any]]:
     """
     Return step rows ready for PersistentState.enqueue_workflow (step_index, step_type, input_json).
-    Merges ``params`` into SYNTHESIZE step (topic) and EXTRACT (recent_item_limit override).
+    Merges ``params`` into SYNTHESIZE step (topic), EXTRACT (recent_item_limit), or
+    publisher fields for ``publish_entity_v1``.
     """
     steps = [dict(s) for s in _base_steps(kind)]
+    k = str(kind).strip()
+    if k == "publish_entity_v1":
+        eid = params.get("entity_id")
+        if eid is None:
+            raise ValueError("publish_entity_v1 requires params_json entity_id (int)")
+        try:
+            int(eid)
+        except (TypeError, ValueError) as e:
+            raise ValueError("entity_id must be an integer") from e
+        for fld in ("project_id", "campaign_id", "niche"):
+            if not str(params.get(fld) or "").strip():
+                raise ValueError(f"publish_entity_v1 requires params_json {fld!r}")
+        for st in steps:
+            inp = dict(st.get("input_json") or {})
+            inp["entity_id"] = int(eid)
+            for key in (
+                "project_id",
+                "campaign_id",
+                "niche",
+                "slug",
+                "idempotency_key",
+                "page_profile",
+                "workflow_kind",
+            ):
+                if key in params and params[key] is not None:
+                    inp[key] = params[key]
+            st["input_json"] = inp
+        _validate_dependency_graph(steps)
+        if max_steps is not None and len(steps) > max_steps:
+            raise ValueError(
+                f"workflow has {len(steps)} steps; ADA_MAX_TASK_STEPS allows {max_steps}"
+            )
+        return steps
     topic = str(params.get("topic") or "Summarize recent ingested knowledge.").strip()
     lim_raw = params.get("recent_item_limit")
     recent_lim = 40

@@ -11,7 +11,7 @@
 - **Knowledge layer:** SQLite **`knowledge_*`** tables + **FTS5** over **`knowledge_items`**. **`ada ingest-rss`** (no API key) reads **`knowledge_sources`** (`kind=rss`) and fills **`knowledge_items`** (deduped). When **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**, chat/daemon expose **`search_knowledge`**, **`record_synthesis`**, **`add_knowledge_source`**, and graph-lite tools **`record_entity`**, **`record_edge`**, **`link_evidence`** to the model (see §7).
 - **Triage:** **`ada triage`** scores items and assigns **primary + secondary** triage categories (JSON); optional **`ada triage --backfill-categories`** fills categories for rows that already have **`impact_score`**. See §5 and `.env.example` (`ADA_TRIAGE_*`).
 - **Graph extraction (operator CLI):** **`ada extract-graph-lite`** runs Gemini JSON extraction into **`entities`**, **`graph_edges`**, and **`edge_evidence`** (see `src/ada/extract/graph_lite.py`). Requires **`GEMINI_API_KEY`** when using the built-in LLM path.
-- **Phase 3 workflows:** SQLite **`workflows`** + **`workflow_steps`** (child types **`FETCH`**, **`EXTRACT`**, **`SYNTHESIZE`** only in v1; no `DRAFT_BRIEF` / `DEPLOY`). Operator CLI **`ada workflow enqueue`** / **`ada workflow status`**; optional tools **`enqueue_workflow`** / **`get_workflow_status`** when **`ADA_ENABLE_WORKFLOW_TOOLS=1`**. If a pending **`tasks`** row has a matching **`workflows.parent_task_id`**, **`ada daemon`** runs the **workflow runner** (RSS fetch, then strict tool-surface model steps) instead of a single open-ended `orchestrate_turn`. See [`docs/ROADMAP_APEX_OS.md`](docs/ROADMAP_APEX_OS.md) §8.
+- **Phase 3 workflows:** SQLite **`workflows`** + **`workflow_steps`**. **Legacy** template: **`rss_fetch_then_graph_then_synth`** = **`FETCH`** → **`EXTRACT`** → **`SYNTHESIZE`**. **B2B pSEO / ISR publisher** template: **`publish_entity_v1`** = **`ENRICH`** → **`GATE`** (fact threshold) → **`DRAFT`** (schema-locked `page.json` via Gemini) → **`DEPLOY`** (S3 `page.json` + merged `manifest.json`). CLI **`ada workflow enqueue`** / **`ada workflow status`**; **`ada matrix-scan`** (optional **`--dry-run`**) enqueues publish workflows from the graph when **`ADA_MATRIX_ENABLE=1`**. If a pending **`tasks`** row has a matching **`workflows.parent_task_id`**, **`ada daemon`** runs the workflow runner. Normative S3/ISR field names: [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md). See [`docs/ROADMAP_APEX_OS.md`](docs/ROADMAP_APEX_OS.md) §8.
 
 ---
 
@@ -127,7 +127,7 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 | **`knowledge_items`** | Ingested facts: FK to `knowledge_sources`, optional `external_id`, `published_at`, `ingested_at`, `tags_json`, `content_excerpt`, optional `payload_json`, `content_hash`, optional **`relevance_score`** (0–1), optional **`impact_score`** (1–10, from **`ada triage`**), optional **`triage_primary_category`** and **`triage_secondary_categories_json`** (fixed taxonomy; surfaced in API as **`triage_secondary_categories`**), optional **`expires_at`** (ISO), **`tombstoned`** (0/1); legacy rows may have **`relevance_score` NULL** (treat as unknown; queries often use `COALESCE(relevance_score, 1.0)`). **FTS5** `doc` can include triage text after migration (`schema.knowledge_fts.triage_doc_v1`). Insert **dedupes** by `(source_id, external_id)` or `(source_id, content_hash)` when `external_id` is null |
 | **`knowledge_synthesis`** | Optional “opinion” text with `ref_item_ids_json` and optional `task_id` → `tasks` (soft refs to items) |
 | **`workflows`** | Phase 3: `kind`, `goal_text`, `params_json`, optional **`idempotency_key`** (unique with `kind` when set), `status`, **`parent_task_id`** → `tasks.id` |
-| **`workflow_steps`** | Ordered child steps: `step_index`, **`step_type`** (`FETCH` \| `EXTRACT` \| `SYNTHESIZE`), `status`, `input_json`, `output_json`, `error`, `attempt_count` |
+| **`workflow_steps`** | Ordered child steps: `step_index`, **`step_type`** (`FETCH` \| `EXTRACT` \| `SYNTHESIZE` \| `ENRICH` \| `GATE` \| `DRAFT` \| `DEPLOY`), `status`, `input_json`, `output_json`, `error`, `attempt_count` |
 | **`knowledge_items_fts`** | FTS5 virtual table (`doc`); `rowid` = `knowledge_items.id`; maintained by triggers (not used directly by chat) |
 
 Indexes: messages by `(session_id, sequence)` and `(session_id, tombstone)`; usage and action_log by time/session as in `src/ada/db/schema.sql`.
@@ -159,9 +159,10 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **`ada goal add …`** | Enqueue a **`task_kind=goal`** row with `status=pending` (optional **`--plan-json`**). **Does not** call the model; **`GEMINI_API_KEY`** not required. |
 | **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--limit`**). |
 | **`ada goal show <id>`** | Print one goal task’s metadata plus **`tasks.current_output`** (the daemon’s final model reply or error text). Long output is **previewed** by default; use **`--full`** for the entire string. |
-| **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**. If **`workflows.parent_task_id`** matches the task, runs the **Phase 3 workflow runner** (FETCH → EXTRACT → SYNTHESIZE); otherwise runs **one** `orchestrate_turn`. Sets `completed` / `failed`. Use **systemd** (or similar), not cron. |
-| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`** (e.g. `rss_fetch_then_graph_then_synth`). Optional **`--params-json`**, **`--idempotency-key`**. Respects **`ADA_MAX_TASK_STEPS`**. |
+| **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**. If **`workflows.parent_task_id`** matches the task, runs the **Phase 3 workflow runner**; otherwise runs **one** `orchestrate_turn`. Sets `completed` / `failed`. Use **systemd** (or similar), not cron. |
+| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`**. Kinds: **`rss_fetch_then_graph_then_synth`** (RSS → graph-extract → synthesis) or **`publish_entity_v1`** (enrich → gate → draft → deploy). Optional **`--params-json`**, **`--idempotency-key`**. Respects **`ADA_MAX_TASK_STEPS`**. |
 | **`ada workflow status <id>`** | Print **`workflows`** row and all **`workflow_steps`** as JSON. |
+| **`ada matrix-scan`** | Scan **publishable** subject **`entities`** with **`classified_as`** → category edges; for each, enqueue **`publish_entity_v1`** with **`ADA_PROJECT_ID`** / **`ADA_CAMPAIGN_ID`** and idempotent key **`publish:{entity_id}:{content_hash}`**. Use **`--dry-run`** to list candidates without **`ADA_MATRIX_ENABLE`**. |
 | **`ada dream`** | **Manual** compression: model summarizes recent transcript + usage → append **master** / optional **soul**; logs **`action_log`**; **`--dry-run`**, **`--session N`**, **`--max-messages`** |
 | **`ada ingest-rss`** | **Offline** fetch: reads **`knowledge_sources`** where **`kind=rss`** and **`base_url`** is set, downloads each feed, parses Atom/RSS, inserts **`knowledge_items`** (deduped). **`GEMINI_API_KEY`** is optional unless **`ADA_INGEST_GATEKEEPER=1`** or **`ADA_KNOWLEDGE_EMBEDDINGS=1`** (gate scores entries; embeddings write vectors). Schedule with **cron** / **systemd** (often **daily**). |
 | **`ada triage`** | Score and classify **`knowledge_items`** (impact 1–10 + primary/secondary triage categories via JSON). Optional **`--limit`**, **`--backfill-categories`** (fill categories for rows that already have **`impact_score`**). Requires **`GEMINI_API_KEY`**. |
@@ -254,9 +255,22 @@ See **`.env.example`** for the full list. Important groups:
 
 `Settings.load()` in `src/ada/config.py` is the single source of parsed values.
 
----
+### 9.1 B2B Data Publisher (pSEO / ISR)
+
+The **publish** pipeline is **deterministic** where possible: **`ENRICH`** writes **`knowledge_items`**, graph edges (with optional **`source_url`**) and **`entities.last_enriched_at`**; **`GATE`** counts **distinct** non-empty `source_url` on active outgoing edges for `entity_id` and fails the workflow if below **`ADA_PUBLISH_MIN_UNIQUE_FACTS`** (default **3**), so **`DRAFT`** (Gemini JSON) and **`DEPLOY`** (S3) do not run. **Matrix** (**`ada matrix-scan`**) is a separate **cron**-friendly process that enqueues work; the **daemon** executes workflows. **AWS:** set **`S3_BUCKET_NAME`** (or **`ADA_S3_BUCKET`**, same value as the Next app’s bucket), **`AWS_REGION`**, and credentials (or an instance role) with `s3:PutObject` and `s3:GetObject` on `/{project_id}/{campaign_id}/*` for the write identity; the Next **read** role typically needs `s3:ListBucket` + `GetObject`/`HeadObject` (IAM split; see `docs/pseo-isr-contract.md`).
+
+| Kind | Steps (order) | `params_json` (minimum) |
+|------|----------------|-------------------------|
+| **`rss_fetch_then_graph_then_synth`** | `FETCH` → `EXTRACT` → `SYNTHESIZE` | `topic?`, `recent_item_limit?` |
+| **`publish_entity_v1`** | `ENRICH` → `GATE` → `DRAFT` → `DEPLOY` | **`entity_id`**, **`project_id`**, **`campaign_id`**, **`niche`**, optional **`slug`**, workflow-level **`idempotency` via `--idempotency-key` on enqueue** |
+
+**Publisher env:** all variables are documented in [`.env.example`](.env.example) (S3, AWS credentials, `ADA_PUBLISH_MIN_UNIQUE_FACTS`, `ADA_PUBLISH_DRAFT_MODEL`, `ADA_MATRIX_*`, `ADA_PROJECT_ID`, `ADA_CAMPAIGN_ID`).
+
+**Tests:** `pytest` modules matching **`tests/test_publish_*.py`**.
 
 ## 10. Setup and tests
+
+Run the full suite with **`pytest`**; publisher tests use **moto** (no real S3 in CI). Install dev extras with **`pip install -e .[dev]`** (or **`pip install -e ".[dev]"`**).
 
 ```bash
 python3 -m venv .venv

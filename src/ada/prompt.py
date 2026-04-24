@@ -103,7 +103,7 @@ def format_knowledge_tools_note(settings: Settings) -> str | None:
         "(for triage/deep-dive graphing). "
         "`record_entity` upserts graph-lite entities by normalized name + type. "
         "`record_edge` writes graph-lite edges with confidence and evidence ids; non-hypothesis edges "
-        "must include evidence. "
+        "must include evidence and a valid https `source_url` (page provenance for publishing GATE). "
         "`link_evidence` attaches additional knowledge item evidence to an existing graph-lite edge. "
         "`add_knowledge_source` registers a new RSS (or web) feed URL in SQLite; "
         "the operator or cron runs `ada ingest-rss` to fetch into `knowledge_items`. "

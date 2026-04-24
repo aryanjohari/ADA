@@ -24,6 +24,38 @@ def test_fc_from_part_dict_function_call_key() -> None:
     assert out.name == "web_search"
 
 
+def test_fc_from_part_args_json_string() -> None:
+    """Wire JSON sometimes sends args as a stringified object."""
+    part = {"functionCall": {"name": "web_search", "args": '{"q": "hello"}'}}
+    out = gs._fc_from_part(part)
+    assert out is not None
+    assert out.args.get("q") == "hello"
+
+
+def test_function_calls_from_response_dump_finds_nested() -> None:
+    class Blob:
+        def model_dump(self, *args: object, **kwargs: object) -> dict:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "functionCall": {
+                                        "name": "record_edge",
+                                        "args": {"edge_type": "cites", "confidence": 0.5},
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    fcs = gs._function_calls_from_response_dump(Blob())
+    assert any(c.name == "record_edge" for c in fcs)
+
+
 def test_fc_from_part_tool_call_google_search_web() -> None:
     """genai 1.7+ may emit ``tool_call`` (server ToolCall) instead of ``function_call``."""
     if not hasattr(gtypes, "ToolCall") or not hasattr(gtypes, "ToolType"):

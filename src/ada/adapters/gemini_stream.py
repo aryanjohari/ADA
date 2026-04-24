@@ -187,7 +187,16 @@ def _fc_from_part(part: object) -> types.FunctionCall | None:
     if isinstance(pfc, types.FunctionCall):
         return pfc
     if pfc is not None and isinstance(pfc, dict):
-        return types.FunctionCall.model_validate(pfc)
+        raw = dict(pfc)
+        if isinstance(raw.get("args"), str):
+            try:
+                raw["args"] = json.loads(raw["args"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        try:
+            return types.FunctionCall.model_validate(raw)
+        except Exception:
+            return None
 
     tm = _tool_call_to_function_call(getattr(part, "tool_call", None))
     if tm is not None:
@@ -199,7 +208,16 @@ def _fc_from_part(part: object) -> types.FunctionCall | None:
             if isinstance(raw, types.FunctionCall):
                 return raw
             if isinstance(raw, dict):
-                return types.FunctionCall.model_validate(raw)
+                p = dict(raw)
+                if isinstance(p.get("args"), str):
+                    try:
+                        p["args"] = json.loads(p["args"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                try:
+                    return types.FunctionCall.model_validate(p)
+                except Exception:
+                    return None
         raw_tc = part.get("tool_call") or part.get("toolCall")
         tm = _tool_call_to_function_call(raw_tc)
         if tm is not None:
@@ -222,12 +240,114 @@ def _fc_from_part(part: object) -> types.FunctionCall | None:
                 if isinstance(raw, types.FunctionCall):
                     return raw
                 if isinstance(raw, dict):
-                    return types.FunctionCall.model_validate(raw)
+                    p = dict(raw)
+                    if isinstance(p.get("args"), str):
+                        try:
+                            p["args"] = json.loads(p["args"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    try:
+                        return types.FunctionCall.model_validate(p)
+                    except Exception:
+                        return None
             raw_tc = d.get("tool_call") or d.get("toolCall")
             tm = _tool_call_to_function_call(raw_tc)
             if tm is not None:
                 return tm
     return None
+
+
+def _coerce_args_dict(v: object) -> dict[str, Any] | None:
+    if v is None:
+        return {}
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str) and v.strip():
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _function_calls_from_response_dump(obj: object) -> list[types.FunctionCall]:
+    """
+    Last-resort extraction when streaming yields STOP with no parsed parts but the
+    wire response still contains function_call (e.g. gemini-2.5-flash-lite + genai).
+    """
+    acc: list[dict[str, Any]] = []
+    md = getattr(obj, "model_dump", None)
+    if callable(md):
+        d = None
+        try:
+            d = md(mode="python", exclude_none=False)
+        except TypeError:
+            try:
+                d = md()
+            except Exception:
+                d = None
+        except Exception:
+            d = None
+        if d is not None:
+            _collect_function_call_dicts_from_obj(d, acc, 0)
+    _collect_function_call_dicts_from_obj(obj, acc, 0)
+    out: list[types.FunctionCall] = []
+    for d in acc:
+        nm = d.get("name")
+        if not isinstance(nm, str) or not nm.strip():
+            continue
+        ad = _coerce_args_dict(d.get("args"))
+        if ad is None:
+            continue
+        p = {**d, "name": nm, "args": ad}
+        try:
+            out.append(types.FunctionCall.model_validate(p))
+        except Exception:
+            continue
+    return out
+
+
+def _collect_function_call_dicts_from_obj(
+    o: object, out: list[dict[str, Any]], depth: int
+) -> None:
+    if depth > 18:
+        return
+    if isinstance(o, types.FunctionCall):
+        try:
+            a = o.args
+            if a is None:
+                a_d: dict[str, Any] = {}
+            elif isinstance(a, dict):
+                a_d = a
+            else:
+                try:
+                    a_d = dict(a)  # type: ignore[arg-type]
+                except Exception:
+                    a_d = {}
+            out.append(
+                {
+                    "name": o.name,
+                    "args": a_d,
+                    "id": getattr(o, "id", None),
+                }
+            )
+        except Exception:
+            pass
+        return
+    if isinstance(o, dict):
+        if (
+            isinstance(o.get("name"), str)
+            and o.get("name", "").strip()
+            and "args" in o
+        ):
+            out.append(o)
+        for v in o.values():
+            _collect_function_call_dicts_from_obj(v, out, depth + 1)
+    elif isinstance(o, (list, tuple)):
+        for v in o:
+            _collect_function_call_dicts_from_obj(v, out, depth + 1)
 
 
 def _part_text_delta(part: object) -> str | None:
@@ -353,6 +473,7 @@ async def stream_one_model_leg(
     aiter = stream.__aiter__()
     loop_start = time.monotonic()
     chunk_idx = 0
+    last_chunk: Any = None
 
     async def _next_chunk() -> object:
         if chunk_idle_timeout_sec is not None and chunk_idle_timeout_sec > 0:
@@ -370,6 +491,7 @@ async def stream_one_model_leg(
         except asyncio.TimeoutError:
             raise StreamTimeout("no stream chunk within idle timeout") from None
 
+        last_chunk = chunk
         chunk_idx += 1
         fc_before = len(fc_order)
 
@@ -459,6 +581,10 @@ async def stream_one_model_leg(
                 f"new_fc_this_chunk={added_fc}",
                 f"fc_keys_total={keys}",
             )
+
+    if not text_buf and not fc_order and last_chunk is not None:
+        for pfc in _function_calls_from_response_dump(last_chunk):
+            _remember_fc(fc_bucket, fc_order, pfc)
 
     text = "".join(text_buf)
     calls = [_fc_to_completed(fc_bucket[k]) for k in fc_order if k in fc_bucket]

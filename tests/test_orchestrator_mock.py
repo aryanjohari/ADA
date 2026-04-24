@@ -89,6 +89,45 @@ async def test_orchestrator_retry_tombstones_failed_assistant(
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_empty_stream_retried_before_finalize(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    """Empty text must not be finalized; next stream attempt gets a clean chain head."""
+    calls = {"n": 0}
+
+    async def empty_then_ok(**kwargs: object) -> StreamLegResult:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return StreamLegResult("", [], {}, None)
+        return StreamLegResult("recovered", [], {}, None)
+
+    monkeypatch.setattr(orch, "stream_one_model_leg", empty_then_ok)
+
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=5)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task(
+            "Interactive", status="executing", task_kind=TASK_KIND_CHAT
+        )
+        out = await orch.orchestrate_turn(
+            qe,
+            session_id=tid,
+            user_text="hi",
+            system_instruction="sys",
+            api_key="k",
+            model="m",
+            max_retries=0,
+            enable_memory_tools=False,
+            include_plan_tools=False,
+        )
+        assert out == "recovered"
+        assert calls["n"] == 3
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_tool_round_persists_tool_row(
     tmp_path, schema_sql_path, monkeypatch
 ):

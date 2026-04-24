@@ -10,6 +10,7 @@ from typing import Any
 
 from ada.adapters.gemini_stream import chain_rows_to_contents, stream_one_model_leg
 from ada.knowledge_urls import validate_knowledge_feed_url
+from ada.tools.web_runtime import validate_https_url
 from ada.stream_debug import is_stream_debug_on, log_stream
 from ada.stream_types import CompletedFunctionCall
 from ada.query_engine import QueryEngine
@@ -31,6 +32,10 @@ from ada.workflow.enqueue import (
 )
 
 log = logging.getLogger("ada.orchestrator")
+
+# Stream occasionally returns 200 with empty text (esp. flash-lite). Retry before
+# persisting: otherwise finalize+raise leaves empty assistant rows in the chain.
+_EMPTY_MODEL_STREAM_RETRIES = 3
 
 
 class StreamFailed(Exception):
@@ -99,8 +104,10 @@ async def orchestrate_turn(
     knowledge_tool_excerpt_chars: int = 1200,
     knowledge_tool_subset: frozenset[str] | None = None,
     workflow_strict: bool = False,
+    workflow_strict_allow_web: bool = False,
     include_workflow_tools: bool = False,
     workflow_max_steps: int | None = None,
+    enrich_subject_entity_id: int | None = None,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -111,12 +118,13 @@ async def orchestrate_turn(
     user_uuid = await qe.persist_user(session_id, user_text)
     allow = shell_allowlist or frozenset()
     wf_strict = bool(workflow_strict)
+    strict_web = wf_strict and bool(workflow_strict_allow_web)
     eff_memory = enable_memory_tools and not wf_strict
     eff_plan = include_plan_tools and not wf_strict
     eff_goal_recall = include_goal_recall_tool and not wf_strict
     eff_file_cfg = None if wf_strict else file_config
-    eff_web_cfg = None if wf_strict else web_config
-    eff_ws_list = enable_list_session_web_sources and not wf_strict
+    eff_web_cfg = web_config if (not wf_strict or strict_web) else None
+    eff_ws_list = enable_list_session_web_sources and (not wf_strict or strict_web)
     eff_shell = frozenset() if wf_strict else allow
     gemini_tool = build_agent_tools(
         allowed_exact_commands=eff_shell,
@@ -170,6 +178,7 @@ async def orchestrate_turn(
     knowledge_record_entity_fn = None
     knowledge_record_edge_fn = None
     knowledge_link_evidence_fn = None
+    knowledge_graph_context_fn = None
     need_knowledge = include_knowledge_tools or knowledge_tool_subset is not None
     if need_knowledge:
         hosts = knowledge_feed_host_allowlist
@@ -420,6 +429,10 @@ async def orchestrate_turn(
                 dst_entity_id = int(call.args.get("dst_entity_id"))
             except (TypeError, ValueError):
                 return {"error": "src_entity_id and dst_entity_id must be integers"}
+            if enrich_subject_entity_id is not None and src_entity_id != int(
+                enrich_subject_entity_id
+            ):
+                return {"error": "src_entity_id must match enrich subject"}
             edge_type = str(call.args.get("edge_type") or "").strip().lower()
             if not edge_type:
                 return {"error": "edge_type required"}
@@ -441,6 +454,25 @@ async def orchestrate_turn(
             is_hypothesis = bool(call.args.get("is_hypothesis", False))
             if not is_hypothesis and len(evidence_item_ids) == 0:
                 return {"error": "evidence_item_ids required for non-hypothesis edges"}
+            source_url_val: str | None = None
+            if not is_hypothesis:
+                raw_su = call.args.get("source_url")
+                su_s = str(raw_su).strip() if raw_su is not None else ""
+                if not su_s:
+                    return {
+                        "error": (
+                            "source_url is required for non-hypothesis edges "
+                            "(canonical https page URL for GATE provenance)"
+                        )
+                    }
+                norm, v_err = validate_https_url(su_s)
+                if v_err or norm is None:
+                    return {
+                        "error": (
+                            f"source_url must be a valid https URL for fact edges: {v_err or 'invalid'}"
+                        )
+                    }
+                source_url_val = norm
             status_raw = call.args.get("status")
             status = str(status_raw).strip().lower() if status_raw is not None else "active"
             superseded_by_raw = call.args.get("superseded_by")
@@ -461,6 +493,7 @@ async def orchestrate_turn(
                 confidence=confidence,
                 status=status,
                 superseded_by=superseded_by,
+                source_url=source_url_val,
             )
             linked = 0
             for kid in evidence_item_ids:
@@ -492,6 +525,22 @@ async def orchestrate_turn(
                 "upserted": rec["upserted"],
             }
 
+        async def _knowledge_graph_context_bound(
+            call: CompletedFunctionCall,
+        ) -> dict[str, Any]:
+            try:
+                eid_arg = int(call.args.get("entity_id"))
+            except (TypeError, ValueError):
+                return {"error": "entity_id must be an integer"}
+            if enrich_subject_entity_id is not None and eid_arg != int(
+                enrich_subject_entity_id
+            ):
+                return {"error": "entity_id must match enrich subject"}
+            pack = await qe.load_subject_subgraph_context_pack(eid_arg)
+            if pack.get("subject") is None:
+                return {"error": f"unknown entity_id={eid_arg}"}
+            return pack
+
         knowledge_search_fn = _knowledge_search_bound
         knowledge_record_fn = _knowledge_record_bound
         knowledge_record_market_edge_fn = _knowledge_record_market_edge_bound
@@ -499,6 +548,7 @@ async def orchestrate_turn(
         knowledge_record_entity_fn = _knowledge_record_entity_bound
         knowledge_record_edge_fn = _knowledge_record_edge_bound
         knowledge_link_evidence_fn = _knowledge_link_evidence_bound
+        knowledge_graph_context_fn = _knowledge_graph_context_bound
 
         if knowledge_tool_subset is not None:
             if "search_knowledge" not in knowledge_tool_subset:
@@ -515,6 +565,8 @@ async def orchestrate_turn(
                 knowledge_record_edge_fn = None
             if "link_evidence" not in knowledge_tool_subset:
                 knowledge_link_evidence_fn = None
+            if "get_entity_graph_context" not in knowledge_tool_subset:
+                knowledge_graph_context_fn = None
 
     async def _enqueue_workflow_bound(
         call: CompletedFunctionCall,
@@ -586,6 +638,7 @@ async def orchestrate_turn(
             knowledge_record_entity=knowledge_record_entity_fn,
             knowledge_record_edge=knowledge_record_edge_fn,
             knowledge_link_evidence=knowledge_link_evidence_fn,
+            knowledge_graph_context=knowledge_graph_context_fn,
             dispatch_allowlist=dispatch_allowlist,
             workflow_enqueue=wf_enqueue_h,
             workflow_get_status=wf_status_h,
@@ -666,26 +719,76 @@ async def _agentic_loop(
     parent = user_parent_uuid
 
     for _ in range(legs_cap):
-        chain = await qe.load_chain_for_api(session_id)
-        gemini_contents = chain_rows_to_contents(chain)
-        assistant_uuid = await qe.persist_assistant_begin(session_id, parent)
         tool_rows_this_leg: list[str] = []
+        leg: Any = None
+        assistant_uuid: str | None = None
+        for empty_try in range(_EMPTY_MODEL_STREAM_RETRIES):
+            chain = await qe.load_chain_for_api(session_id)
+            gemini_contents = chain_rows_to_contents(chain)
+            assistant_uuid = await qe.persist_assistant_begin(session_id, parent)
 
-        async def _td(s: str) -> None:
-            if on_delta:
-                await on_delta(s)
+            async def _td(s: str) -> None:
+                if on_delta:
+                    await on_delta(s)
 
-        try:
-            leg = await stream_one_model_leg(
-                api_key=api_key,
-                model=model,
-                system_instruction=system_instruction,
-                contents=gemini_contents,
-                tool=gemini_tool,
-                on_text_delta=_td if on_delta else None,
-                chunk_idle_timeout_sec=stream_chunk_idle_timeout_sec,
-                leg_max_wall_sec=stream_leg_max_wall_sec,
+            try:
+                leg = await stream_one_model_leg(
+                    api_key=api_key,
+                    model=model,
+                    system_instruction=system_instruction,
+                    contents=gemini_contents,
+                    tool=gemini_tool,
+                    on_text_delta=_td if on_delta else None,
+                    chunk_idle_timeout_sec=stream_chunk_idle_timeout_sec,
+                    leg_max_wall_sec=stream_leg_max_wall_sec,
+                )
+            except asyncio.CancelledError:
+                await qe.tombstone(
+                    [assistant_uuid, *tool_rows_this_leg],
+                    session_id,
+                    rewire_orphans=rewire_after_tombstone,
+                )
+                raise
+            except Exception:
+                await qe.tombstone(
+                    [assistant_uuid, *tool_rows_this_leg],
+                    session_id,
+                    rewire_orphans=rewire_after_tombstone,
+                )
+                raise
+
+            if leg.function_calls or (leg.text or "").strip():
+                break
+
+            log_stream(
+                debug_stream,
+                "orchestrator",
+                "empty_model_output",
+                f"finish_reason={leg.finish_reason!r}",
+                f"usage={leg.usage!r}",
+                f"function_calls={leg.function_calls!r}",
+                f"text_len={len(leg.text)}",
             )
+            log.info(
+                "orchestrator: empty text from model, retrying stream (attempt %s/%s, finish=%r)",
+                empty_try + 1,
+                _EMPTY_MODEL_STREAM_RETRIES,
+                leg.finish_reason,
+            )
+            await qe.tombstone(
+                [assistant_uuid, *tool_rows_this_leg],
+                session_id,
+                rewire_orphans=rewire_after_tombstone,
+            )
+            assistant_uuid = None
+            if empty_try < _EMPTY_MODEL_STREAM_RETRIES - 1:
+                await asyncio.sleep(0.25 * (empty_try + 1))
+        else:
+            raise StreamFailed("empty model output after stream retries")
+        if leg is None or assistant_uuid is None:
+            raise StreamFailed("empty model output after stream retries")
+        # Persist only after a non-empty stream (or tool call path).
+        try:
             fc_payload = (
                 [{"name": c.name, "args": c.args, "id": c.id} for c in leg.function_calls]
                 if leg.function_calls
@@ -747,17 +850,6 @@ async def _agentic_loop(
             raise
 
         if not leg.function_calls:
-            if not leg.text.strip():
-                log_stream(
-                    debug_stream,
-                    "orchestrator",
-                    "empty_model_output",
-                    f"finish_reason={leg.finish_reason!r}",
-                    f"usage={leg.usage!r}",
-                    f"function_calls={leg.function_calls!r}",
-                    f"text_len={len(leg.text)}",
-                )
-                raise StreamFailed("empty model output")
             await qe.state_set("session.active_model", model)
             if leg.finish_reason:
                 await qe.state_set("session.last_finish_reason", leg.finish_reason)
@@ -833,6 +925,7 @@ async def _agentic_loop(
             c.name
             in (
                 "search_knowledge",
+                "get_entity_graph_context",
                 "record_synthesis",
                 "record_market_edge",
                 "add_knowledge_source",

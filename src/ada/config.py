@@ -144,6 +144,30 @@ class Settings:
     graph_lite_extract_limit: int
     graph_lite_token_cap_per_job: int
     graph_lite_extract_model: str
+    # B2B pSEO / S3 publisher
+    s3_bucket_name: str
+    aws_region: str
+    aws_endpoint_url: str | None
+    ada_publish_min_unique_facts: int
+    publish_draft_model: str
+    # ENRICH live: optional DB-only preflight; skip Serper/Jina when graph is already dense
+    enrich_suff_min_unique_facts: int | None
+    enrich_suff_min_outgoing_edges: int
+    enrich_suff_mode: str
+    enrich_suff_force_web: bool
+    enrich_suff_graph_refine: bool
+    # DRAFT: subject subgraph in prompt; graph-anchored knowledge_items RAG (lexical / embedding)
+    publish_draft_graph_anchored_knowledge: bool
+    publish_draft_subgraph_max_json_chars: int
+    publish_draft_knowledge_retrieval: bool
+    publish_draft_knowledge_top_k: int
+    publish_draft_knowledge_max_total_chars: int
+    publish_draft_knowledge_excerpt_per_item: int
+    publish_draft_knowledge_min_cosine: float
+    publish_draft_knowledge_search_mode: str
+    ada_matrix_enable: bool
+    ada_matrix_max_enqueues: int
+    ada_matrix_entity_types: frozenset[str]
 
     @classmethod
     def load(cls) -> "Settings":
@@ -409,6 +433,102 @@ class Settings:
             or triage_model
         )
 
+        s3_raw = os.environ.get("S3_BUCKET_NAME", "").strip() or os.environ.get(
+            "ADA_S3_BUCKET", ""
+        ).strip()
+        aws_region = os.environ.get("AWS_REGION", "us-east-1").strip() or "us-east-1"
+        aws_ep = os.environ.get("AWS_ENDPOINT_URL", "").strip() or None
+        try:
+            ada_publish_min = max(0, int(os.environ.get("ADA_PUBLISH_MIN_UNIQUE_FACTS", "3")))
+        except ValueError:
+            ada_publish_min = 3
+        publish_draft_model = os.environ.get("ADA_PUBLISH_DRAFT_MODEL", "").strip() or (
+            model or DEFAULT_GEMINI_MODEL
+        )
+        raw_esuf = os.environ.get("ADA_ENRICH_SUFF_MIN_UNIQUE_FACTS", "").strip()
+        if not raw_esuf:
+            enrich_suff_min_unique_facts: int | None = None
+        else:
+            try:
+                enrich_suff_min_unique_facts = int(raw_esuf)
+            except ValueError:
+                enrich_suff_min_unique_facts = None
+        try:
+            enrich_suff_min_outgoing_edges = max(
+                0, int(os.environ.get("ADA_ENRICH_SUFF_MIN_OUTGOING_EDGES", "0"))
+            )
+        except ValueError:
+            enrich_suff_min_outgoing_edges = 0
+        enrich_suff_mode = (os.environ.get("ADA_ENRICH_SUFF_MODE", "all").strip().lower() or "all")
+        enrich_suff_force_web = os.environ.get(
+            "ADA_ENRICH_SUFF_FORCE_WEB", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        enrich_suff_graph_refine = os.environ.get(
+            "ADA_ENRICH_SUFF_GRAPH_REFINE", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        publish_draft_graph_anchored_knowledge = os.environ.get(
+            "ADA_PUBLISH_DRAFT_GRAPH_ANCHORED", "1"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            publish_draft_subgraph_max_json_chars = max(
+                4096,
+                int(os.environ.get("ADA_PUBLISH_DRAFT_SUBGRAPH_MAX_JSON", "40000")),
+            )
+        except ValueError:
+            publish_draft_subgraph_max_json_chars = 40_000
+        publish_draft_knowledge_retrieval = os.environ.get(
+            "ADA_PUBLISH_DRAFT_KNOWLEDGE_RETRIEVAL", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            publish_draft_knowledge_top_k = max(
+                1, int(os.environ.get("ADA_PUBLISH_DRAFT_KNOWLEDGE_TOP_K", "8"))
+            )
+        except ValueError:
+            publish_draft_knowledge_top_k = 8
+        try:
+            publish_draft_knowledge_max_total_chars = max(
+                500,
+                int(os.environ.get("ADA_PUBLISH_DRAFT_KNOWLEDGE_MAX_TOTAL_CHARS", "12000")),
+            )
+        except ValueError:
+            publish_draft_knowledge_max_total_chars = 12_000
+        try:
+            publish_draft_knowledge_excerpt_per_item = max(
+                200,
+                int(os.environ.get("ADA_PUBLISH_DRAFT_KNOWLEDGE_EXCERPT_PER_ITEM", "2000")),
+            )
+        except ValueError:
+            publish_draft_knowledge_excerpt_per_item = 2000
+        pdk_mcos = os.environ.get("ADA_PUBLISH_DRAFT_KNOWLEDGE_MIN_COSINE", "").strip()
+        if pdk_mcos:
+            try:
+                publish_draft_knowledge_min_cosine = float(pdk_mcos)
+            except ValueError:
+                publish_draft_knowledge_min_cosine = know_emb_min
+        else:
+            publish_draft_knowledge_min_cosine = know_emb_min
+        pdk_raw = os.environ.get("ADA_PUBLISH_DRAFT_KNOWLEDGE_SEARCH_MODE", "auto").strip()
+        publish_draft_knowledge_search_mode = (pdk_raw or "auto").lower()
+        ada_matrix_enable = os.environ.get("ADA_MATRIX_ENABLE", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        try:
+            ada_matrix_max = max(1, int(os.environ.get("ADA_MATRIX_MAX_ENQUEUES", "20")))
+        except ValueError:
+            ada_matrix_max = 20
+        matrix_types_raw = os.environ.get("ADA_MATRIX_ENTITY_TYPES", "").strip()
+        if matrix_types_raw:
+            ada_matrix_types = frozenset(
+                t.strip().lower() for t in matrix_types_raw.split(",") if t.strip()
+            )
+        else:
+            ada_matrix_types = frozenset(
+                {"service", "regulation", "organization", "jurisdiction"}
+            )
+
         return cls(
             project_root=root,
             data_dir=data_dir,
@@ -496,6 +616,27 @@ class Settings:
             graph_lite_extract_limit=graph_lite_extract_limit,
             graph_lite_token_cap_per_job=graph_lite_token_cap_per_job,
             graph_lite_extract_model=graph_lite_extract_model,
+            s3_bucket_name=s3_raw,
+            aws_region=aws_region,
+            aws_endpoint_url=aws_ep,
+            ada_publish_min_unique_facts=ada_publish_min,
+            publish_draft_model=publish_draft_model,
+            enrich_suff_min_unique_facts=enrich_suff_min_unique_facts,
+            enrich_suff_min_outgoing_edges=enrich_suff_min_outgoing_edges,
+            enrich_suff_mode=enrich_suff_mode,
+            enrich_suff_force_web=enrich_suff_force_web,
+            enrich_suff_graph_refine=enrich_suff_graph_refine,
+            publish_draft_graph_anchored_knowledge=publish_draft_graph_anchored_knowledge,
+            publish_draft_subgraph_max_json_chars=publish_draft_subgraph_max_json_chars,
+            publish_draft_knowledge_retrieval=publish_draft_knowledge_retrieval,
+            publish_draft_knowledge_top_k=publish_draft_knowledge_top_k,
+            publish_draft_knowledge_max_total_chars=publish_draft_knowledge_max_total_chars,
+            publish_draft_knowledge_excerpt_per_item=publish_draft_knowledge_excerpt_per_item,
+            publish_draft_knowledge_min_cosine=publish_draft_knowledge_min_cosine,
+            publish_draft_knowledge_search_mode=publish_draft_knowledge_search_mode,
+            ada_matrix_enable=ada_matrix_enable,
+            ada_matrix_max_enqueues=ada_matrix_max,
+            ada_matrix_entity_types=ada_matrix_types,
         )
 
     def ensure_data_dir(self) -> None:

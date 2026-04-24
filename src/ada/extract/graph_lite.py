@@ -46,6 +46,28 @@ def _default_extractor_payload(items: list[dict[str, Any]]) -> dict[str, Any]:
     return {"entities": [], "edges": [], "evidence": []}
 
 
+def _parse_model_json_object(raw: str) -> dict[str, Any] | None:
+    """Parse Gemini JSON text; return None on empty/invalid output (e.g. truncation)."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if s.startswith("```"):
+        lines = s.splitlines()
+        if len(lines) >= 2 and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() in ("```", "```json"):
+            lines = lines[:-1]
+        s = "\n".join(lines).strip()
+    try:
+        data = json.loads(s)
+    except json.JSONDecodeError as e:
+        log.warning("graph-lite model output is not valid JSON (%s); skipping batch", e)
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
 def _build_extraction_prompt(items: list[dict[str, Any]]) -> str:
     blocks: list[str] = []
     for d in items:
@@ -97,7 +119,9 @@ def build_llm_graph_extractor(
         "and optional schema_rationale explaining e.g. skipped: excluded content."
     )
     client = genai.Client(api_key=api_key)
-    max_out = max(256, min(4096, token_cap))
+    # `token_cap` bounds the *input* excerpt budget in `run_graph_lite_extraction`; reusing
+    # it for max_output_tokens makes small --token-cap values truncate JSON (invalid JSON).
+    max_out = min(8192, max(4096, token_cap))
 
     async def _extract(items: list[dict[str, Any]]) -> dict[str, Any]:
         if not items:
@@ -119,9 +143,9 @@ def build_llm_graph_extractor(
             ),
         )
         raw = (getattr(resp, "text", None) or "").strip()
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            raise ValueError("extractor JSON is not an object")
+        data = _parse_model_json_object(raw)
+        if data is None:
+            return _default_extractor_payload(items)
         data.pop("schema_rationale", None)
         return data
 
