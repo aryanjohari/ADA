@@ -7,6 +7,7 @@ import os
 from unittest import mock
 
 import boto3
+import pytest
 from moto import mock_aws
 
 from ada.config import Settings
@@ -35,6 +36,10 @@ def test_manifest_normalize_array_and_upsert():
         ent, niche="a", slug="x", title="T2", excerpt="e2"
     )
     assert any(r.get("excerpt") == "e2" for r in merged)
+    merged2 = upsert_route_entry(
+        ent, niche="a", slug="x", title="T2", excerpt="e2", image_url="https://img.test/1.jpg"
+    )
+    assert any(r.get("image_url") == "https://img.test/1.jpg" for r in merged2)
 
 
 @mock_aws
@@ -60,6 +65,7 @@ def test_deploy_page_and_manifest_writes_both():
         slug="s",
         title="T",
         meta_description="M",
+        og_image="https://img.test/hero.jpg",
         content="<p>hi</p>",
         lead_gen=LeadGenV1(
             form_fields=[],
@@ -82,4 +88,38 @@ def test_deploy_page_and_manifest_writes_both():
     arr = json.loads(mobj["Body"].read().decode("utf-8"))
     assert isinstance(arr, list)
     assert any(e.get("slug") == "s" and e.get("niche") == "n" for e in arr)
+    assert any(e.get("slug") == "s" and e.get("image_url") == "https://img.test/hero.jpg" for e in arr)
     assert any(e.get("slug") == "old" for e in arr)
+
+
+@mock_aws
+def test_deploy_requires_og_image():
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+    bucket = "ada-test-bucket-xyz-noimage"
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.create_bucket(Bucket=bucket)
+    with mock.patch.dict(
+        os.environ,
+        {
+            "S3_BUCKET_NAME": bucket,
+            "AWS_DEFAULT_REGION": "us-east-1",
+        },
+    ):
+        settings = Settings.load()
+    page = PageJsonV1(
+        slug="s",
+        title="T",
+        meta_description="M",
+        content="<p>hi</p>",
+        lead_gen=LeadGenV1(
+            form_fields=[],
+            form_action_url="https://x",
+            call_display_phone="1",
+            call_tel_link="tel:1",
+        ),
+        json_ld={},
+    )
+    with pytest.raises(ValueError, match="og_image"):
+        deploy_page_and_manifest(
+            settings, page=page, project_id="p", campaign_id="c", niche="n"
+        )

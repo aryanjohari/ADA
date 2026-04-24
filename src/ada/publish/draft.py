@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
 
+import httpx
 from google import genai
 from google.genai import types
 
@@ -18,6 +20,34 @@ log = logging.getLogger("ada.publish.draft")
 
 # Cap graph-anchored RAG query length (embedding + FTS input).
 _DRAFT_GRAPH_ANCHORED_QUERY_MAX = 8000
+
+# Stable, hotlinkable Unsplash CDN images (source.unsplash.com is shut down; see Unsplash API changelog).
+# Format: 1200×630-friendly crop; deterministic pick via sha256 of niche + entity type (+ optional page_type).
+_DRAFT_OG_UNSPLASH_CDN_URLS: tuple[str, ...] = (
+    "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1520607162513-77705c0f7d3a?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=1200&h=630&fit=crop&auto=format&q=80",
+    "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=1200&h=630&fit=crop&auto=format&q=80",
+)
+
+# Shared system text: non-obvious facts need inline <a> citations from grounding or [K#] link lines only.
+_DRAFT_SYS_CITATIONS = (
+    " Citations: when you state a specific fact, statistic, regulation, or attributable product/detail claim"
+    " in `content`, you MUST include an inline HTML link <a href=\"EXACT_URL\">anchor text</a> where"
+    " EXACT_URL is taken only from: (1) the `source_url` value in the corresponding Grounding excerpts line [i],"
+    " or (2) the `link` on a [K#] line in the Additional knowledge section when the fact comes from that item."
+    " Use the URL character-for-character as given (no rewriting). Do not invent, guess, or use URLs not"
+    " listed in those sections. General marketing or navigational phrasing with no evidential claim may omit"
+    " links. Field `og_image` should be a full https image URL; if omitted or null, server-side defaults apply."
+)
 
 
 def _draft_retrieval_query_string(params: dict[str, Any], entity: dict[str, Any]) -> str:
@@ -219,11 +249,108 @@ async def load_draft_knowledge_for_prompt(
     return block, pick
 
 
+def _og_image_seed_key(params: dict[str, Any], entity: dict[str, Any]) -> str:
+    niche = str(params.get("niche") or "").strip()
+    et = str(entity.get("type") or "").strip()
+    page_type = str(params.get("page_type") or "").strip()
+    return f"{niche}\0{et}\0{page_type}"
+
+
+def _unsplash_image_search_query(params: dict[str, Any], entity: dict[str, Any]) -> str:
+    """
+    Bias the Unsplash /photos/random `query` with niche and category/entity class — not the page or entity
+    name (avoids over-specific stock searches).
+    """
+    # Keep query intentionally broad for better hit-rate.
+    for key in ("category", "niche", "page_type", "image_query"):
+        v = str(params.get(key) or "").strip()
+        if v:
+            return v[:40]
+    et = str(entity.get("type") or "").strip()
+    if et:
+        return et[:40]
+    return "business"
+
+
+def _static_curated_hero_url(params: dict[str, Any], entity: dict[str, Any]) -> str:
+    """Last resort: deterministic built-in `images.unsplash.com` hotlinks (no network)."""
+    h = hashlib.sha256(_og_image_seed_key(params, entity).encode("utf-8")).digest()
+    idx = int.from_bytes(h[:4], "big") % len(_DRAFT_OG_UNSPLASH_CDN_URLS)
+    return _DRAFT_OG_UNSPLASH_CDN_URLS[idx]
+
+
+async def _try_fetch_unsplash_random_hero(
+    settings: Settings, params: dict[str, Any], entity: dict[str, Any]
+) -> str | None:
+    key = (settings.unsplash_access_key or "").strip()
+    if not key:
+        return None
+    q = _unsplash_image_search_query(params, entity)
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            r = await client.get(
+                "https://api.unsplash.com/photos/random",
+                params={"query": q, "orientation": "landscape"},
+                headers={"Authorization": f"Client-ID {key}"},
+            )
+            r.raise_for_status()
+            data = r.json()
+    except (httpx.HTTPError, OSError, ValueError) as e:
+        log.warning("Unsplash /photos/random failed (%s), using static fallback", e)
+        return None
+    if not isinstance(data, dict):
+        return None
+    urls = data.get("urls")
+    if not isinstance(urls, dict):
+        return None
+    raw = str(urls.get("raw") or urls.get("full") or urls.get("regular") or "").strip()
+    if not raw:
+        return None
+    if "w=" not in raw and "fit=" not in raw:
+        sep = "&" if "?" in raw else "?"
+        raw = f"{raw}{sep}w=1200&h=630&fit=crop&auto=format&q=80"
+    return raw
+
+
+async def _resolve_draft_hero_image_url(
+    settings: Settings, params: dict[str, Any], entity: dict[str, Any]
+) -> str:
+    """
+    Canonical page hero URL. Order: operator override, Unsplash API random+query, static CDN.
+    """
+    ovr = (settings.publish_draft_og_image_default or "").strip()
+    if ovr:
+        return ovr
+    u = await _try_fetch_unsplash_random_hero(settings, params, entity)
+    if u:
+        return u
+    return _static_curated_hero_url(params, entity)
+
+
+def _inject_top_hero_image(content_html: str, image_url: str) -> str:
+    """
+    Optionally render the chosen hero image in the article body near the top.
+    No-op when content already includes an <img>.
+    """
+    body = str(content_html or "").strip()
+    img = str(image_url or "").strip()
+    if not body or not img:
+        return body
+    if "<img" in body.lower():
+        return body
+    snippet = (
+        f'<figure><img src="{img}" alt="" loading="lazy" decoding="async" />'
+        "</figure>"
+    )
+    return snippet + body
+
+
 def _format_grounding_pack(excerpts: list[dict[str, Any]]) -> str:
     if not excerpts:
         return ""
     lines: list[str] = [
         "\n--- Grounding excerpts (evidence linked from this entity; stay faithful) ---",
+        "Map facts you draw from a block's text to that block's `source_url` in <a href=\"...\"> (exact URL).",
     ]
     for i, ex in enumerate(excerpts, 1):
         su = str(ex.get("source_url") or "").strip()
@@ -259,6 +386,8 @@ def _build_draft_user_text(
             "When the grounding sections provide enough substance, make `content` rich and specific",
             "— target roughly 800+ words with concrete data; otherwise do the best you can without inventing "
             "facts beyond the provided evidence.",
+            "Citations: for specific factual claims, include inline <a href=\"...\"> with the exact"
+            " `source_url` (grounding) or [K#] `link` (additional knowledge) as given; do not fabricate URLs.",
         ]
     )
 
@@ -320,6 +449,7 @@ async def run_publish_draft(
         "You output JSON only, matching the PageJsonV1 contract, for a pSEO"
         " landing page. No tool calls; no preambles. Required top-level keys:"
         " slug, title, meta_description, content, lead_gen, json_ld; optional og_image."
+        + _DRAFT_SYS_CITATIONS
     )
     if has_extra or n_facts >= 3 or len(excerpts) >= 3:
         sys = (
@@ -372,4 +502,15 @@ async def run_publish_draft(
         raise ValueError(
             f"PageJsonV1 validation failed: {e}"
         ) from e
+    og = (str(page.og_image).strip() if page.og_image is not None else "")
+    if not og:
+        og = await _resolve_draft_hero_image_url(settings, params, ent)
+    if not og:
+        raise ValueError("DRAFT: unable to resolve og_image")
+    page = page.model_copy(
+        update={
+            "og_image": og,
+            "content": _inject_top_hero_image(page.content, og),
+        }
+    )
     return {"page": page.model_dump(mode="json", exclude_none=True)}

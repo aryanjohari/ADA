@@ -165,6 +165,11 @@ class Settings:
     publish_draft_knowledge_excerpt_per_item: int
     publish_draft_knowledge_min_cosine: float
     publish_draft_knowledge_search_mode: str
+    # DRAFT: if set, used when the model leaves `og_image` empty; else curated Unsplash CDN URL
+    publish_draft_og_image_default: str
+    # Unsplash API access key (https://api.unsplash.com) — DRAFT uses /photos/random with a
+    # niche/category-biased query; falls back to static CDN if unset or on error.
+    unsplash_access_key: str
     ada_matrix_enable: bool
     ada_matrix_max_enqueues: int
     ada_matrix_entity_types: frozenset[str]
@@ -509,6 +514,13 @@ class Settings:
             publish_draft_knowledge_min_cosine = know_emb_min
         pdk_raw = os.environ.get("ADA_PUBLISH_DRAFT_KNOWLEDGE_SEARCH_MODE", "auto").strip()
         publish_draft_knowledge_search_mode = (pdk_raw or "auto").lower()
+        publish_draft_og_image_default = os.environ.get(
+            "ADA_PUBLISH_DRAFT_OG_IMAGE_DEFAULT", ""
+        ).strip()
+        unsplash_access_key = (
+            os.environ.get("ADA_UNSPLASH_ACCESS_KEY", "").strip()
+            or os.environ.get("UNSPLASH_ACCESS_KEY", "").strip()
+        )
         ada_matrix_enable = os.environ.get("ADA_MATRIX_ENABLE", "0").strip().lower() in (
             "1",
             "true",
@@ -634,6 +646,8 @@ class Settings:
             publish_draft_knowledge_excerpt_per_item=publish_draft_knowledge_excerpt_per_item,
             publish_draft_knowledge_min_cosine=publish_draft_knowledge_min_cosine,
             publish_draft_knowledge_search_mode=publish_draft_knowledge_search_mode,
+            publish_draft_og_image_default=publish_draft_og_image_default,
+            unsplash_access_key=unsplash_access_key,
             ada_matrix_enable=ada_matrix_enable,
             ada_matrix_max_enqueues=ada_matrix_max,
             ada_matrix_entity_types=ada_matrix_types,

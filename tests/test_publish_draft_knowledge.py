@@ -10,7 +10,12 @@ import pytest
 
 from ada.config import Settings
 from ada.query_engine import QueryEngine
-from ada.publish.draft import _draft_graph_anchored_query, load_draft_knowledge_for_prompt, run_publish_draft
+from ada.publish.draft import (
+    _draft_graph_anchored_query,
+    _static_curated_hero_url,
+    load_draft_knowledge_for_prompt,
+    run_publish_draft,
+)
 
 
 def test_draft_graph_anchored_query_includes_edges():
@@ -145,20 +150,165 @@ async def test_draft_user_prompt_includes_edge_and_knowledge_blocks(
             with mock.patch("ada.publish.draft.genai.Client") as client_cls:
                 inst = client_cls.return_value
                 inst.aio.models.generate_content = mock.AsyncMock(side_effect=capture_gc)
-                await run_publish_draft(
+                out = await run_publish_draft(
                     qe,
                     Settings.load(),
                     goal_text="g",
                     params={"entity_id": eid},
                 )
         u = captured.get("user", "")
+        sys_text = captured.get("sys") or ""
         assert "Subject subgraph" in u
         assert "outgoing_edges" in u
         assert "Grounding excerpts" in u
+        assert "Map facts you draw" in u
         assert "evidence body for edge" in u
         assert "knowledge (knowledge_items search" in u
         assert "extra RAG line" in u
-        assert "800+" in (captured.get("sys") or "")
+        assert "800+" in sys_text
         assert "SEO" in u
+        assert "inline HTML link" in sys_text
+        assert "source_url" in sys_text
+        assert "Citations" in u
+        page = out.get("page") or {}
+        og = page.get("og_image", "")
+        assert og.startswith("https://images.unsplash.com/photo-")
+        assert "<img " in str(page.get("content") or "")
+    finally:
+        await qe.close()
+
+
+def test_default_og_image_url_deterministic():
+    a = _static_curated_hero_url({"niche": "dairy", "page_type": "guide"}, {"type": "farm"})
+    b = _static_curated_hero_url({"niche": "dairy", "page_type": "guide"}, {"type": "farm"})
+    assert a == b
+    assert a.startswith("https://images.unsplash.com/photo-")
+    c = _static_curated_hero_url(
+        {"niche": "a-niche-unique-xyz", "page_type": ""}, {"type": "other-type"}
+    )
+    assert a != c
+
+
+@pytest.mark.asyncio
+async def test_draft_hero_uses_unsplash_api_when_key_set(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_UNSPLASH_ACCESS_KEY", "test-unsplash-key")
+    monkeypatch.setenv("ADA_PUBLISH_DRAFT_KNOWLEDGE_RETRIEVAL", "0")
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    db = tmp_path / "dus.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        subj = await qe.upsert_entity(type="service", name="E3", payload_json={})
+        eid = int(subj["entity_id"])
+        fixture = Path(__file__).resolve().parent / "fixtures" / "pseo_page.json"
+        page_json = json.loads(fixture.read_text(encoding="utf-8"))
+        assert page_json.get("og_image") is None
+
+        fake_http = mock.MagicMock()
+        fake_resp = mock.MagicMock()
+        fake_resp.raise_for_status = mock.Mock()
+        fake_resp.json = mock.Mock(
+            return_value={"urls": {"raw": "https://images.unsplash.com/photo-abc-xyz-123"}}
+        )
+        fake_http.get = mock.AsyncMock(return_value=fake_resp)
+        fake_http.__aenter__ = mock.AsyncMock(return_value=fake_http)
+        fake_http.__aexit__ = mock.AsyncMock(return_value=None)
+
+        async def capture_gc(*args: object, **kwargs: object) -> object:
+            m = mock.MagicMock()
+            m.text = json.dumps(page_json)
+            return m
+
+        with (
+            mock.patch("ada.publish.draft.httpx.AsyncClient", return_value=fake_http),
+            mock.patch("ada.publish.draft.genai.Client") as client_cls,
+        ):
+            ginst = client_cls.return_value
+            ginst.aio.models.generate_content = mock.AsyncMock(side_effect=capture_gc)
+            out = await run_publish_draft(
+                qe,
+                Settings.load(),
+                goal_text="g",
+                params={"entity_id": eid, "niche": "fintech", "category": "safety"},
+            )
+        call_kwargs = fake_http.get.await_args.kwargs
+        assert (call_kwargs.get("params") or {}).get("query") == "safety"
+        d = out.get("page") or {}
+        assert d.get("og_image", "").startswith("https://images.unsplash.com/photo-abc-xyz-123")
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_draft_og_image_env_override(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_PUBLISH_DRAFT_OG_IMAGE_DEFAULT", "https://operator.example/og.png")
+    monkeypatch.setenv("ADA_PUBLISH_DRAFT_KNOWLEDGE_RETRIEVAL", "0")
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    db = tmp_path / "d3.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        subj = await qe.upsert_entity(type="service", name="E", payload_json={})
+        eid = int(subj["entity_id"])
+        fixture = Path(__file__).resolve().parent / "fixtures" / "pseo_page.json"
+        page_json = json.loads(fixture.read_text(encoding="utf-8"))
+        assert page_json.get("og_image") is None
+
+        async def capture_gc(*args: object, **kwargs: object) -> object:
+            m = mock.MagicMock()
+            m.text = json.dumps(page_json)
+            return m
+
+        with mock.patch("ada.publish.draft.genai.Client") as client_cls:
+            inst = client_cls.return_value
+            inst.aio.models.generate_content = mock.AsyncMock(side_effect=capture_gc)
+            out = await run_publish_draft(
+                qe,
+                Settings.load(),
+                goal_text="g",
+                params={"entity_id": eid, "project_id": "p", "campaign_id": "c", "niche": "n"},
+            )
+        p = out.get("page") or {}
+        assert p.get("og_image") == "https://operator.example/og.png"
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_draft_og_image_preserves_model_value(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_PUBLISH_DRAFT_KNOWLEDGE_RETRIEVAL", "0")
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    db = tmp_path / "d4.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        subj = await qe.upsert_entity(type="service", name="E2", payload_json={})
+        eid = int(subj["entity_id"])
+        fixture = Path(__file__).resolve().parent / "fixtures" / "pseo_page.json"
+        page_json = json.loads(fixture.read_text(encoding="utf-8"))
+        page_json["og_image"] = "https://from-model.example/hero.jpg"
+
+        async def capture_gc(*args: object, **kwargs: object) -> object:
+            m = mock.MagicMock()
+            m.text = json.dumps(page_json)
+            return m
+
+        with mock.patch("ada.publish.draft.genai.Client") as client_cls:
+            inst = client_cls.return_value
+            inst.aio.models.generate_content = mock.AsyncMock(side_effect=capture_gc)
+            out = await run_publish_draft(
+                qe,
+                Settings.load(),
+                goal_text="g",
+                params={"entity_id": eid},
+            )
+        p2 = out.get("page") or {}
+        assert p2.get("og_image") == "https://from-model.example/hero.jpg"
     finally:
         await qe.close()

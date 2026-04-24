@@ -58,6 +58,7 @@ def upsert_route_entry(
     slug: str,
     title: str,
     excerpt: str,
+    image_url: str = "",
 ) -> list[dict[str, Any]]:
     n = str(niche).strip()
     s = str(slug).strip()
@@ -71,6 +72,8 @@ def upsert_route_entry(
             row["title"] = title
             if excerpt:
                 row["excerpt"] = excerpt
+            if image_url:
+                row["image_url"] = image_url
             out[i] = row
             return out
     out.append(
@@ -79,6 +82,7 @@ def upsert_route_entry(
             "slug": s,
             "title": title,
             "excerpt": excerpt,
+            **({"image_url": image_url} if image_url else {}),
         }
     )
     return out
@@ -110,6 +114,8 @@ def deploy_page_and_manifest(
     bucket = (settings.s3_bucket_name or "").strip()
     if not bucket:
         raise ValueError("S3 bucket not configured (S3_BUCKET_NAME or ADA_S3_BUCKET)")
+    if not str(page.og_image or "").strip():
+        raise ValueError("DEPLOY requires page.og_image")
 
     d = page.model_dump(mode="json", exclude_none=True)
     page_body = json.dumps(d, ensure_ascii=False)
@@ -140,12 +146,14 @@ def deploy_page_and_manifest(
         entries = []
 
     ex = (page.meta_description or "")[:240]
+    img = str(page.og_image or "").strip()
     merged = upsert_route_entry(
         entries,
         niche=niche,
         slug=page.slug,
         title=page.title,
         excerpt=ex,
+        image_url=img,
     )
     mbody = json.dumps(merged, ensure_ascii=False)
     client.put_object(

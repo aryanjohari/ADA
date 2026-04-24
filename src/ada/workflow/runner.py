@@ -569,6 +569,8 @@ async def run_workflow_for_parent_task(
                 if draft_page_dict is None:
                     raise ValueError("DEPLOY: no DRAFT page in memory (run DRAFT first)")
                 page = PageJsonV1.model_validate(draft_page_dict)
+                if not str(page.og_image or "").strip():
+                    raise ValueError("DEPLOY: missing og_image on draft page")
                 nich = str(merged.get("niche") or "").strip()
                 pr = str(merged.get("project_id") or "").strip()
                 camp = str(merged.get("campaign_id") or "").strip()
