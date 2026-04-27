@@ -2,6 +2,18 @@
 
 **ADA** is a **headless Python 3.11+ asyncio harness** for a local “agent” on edge devices (e.g. Raspberry Pi): **SQLite** for durable transcript and ops metadata, **Google GenAI (`google-genai`)** for streaming chat with **manual function calling**, **allowlisted shell probes**, optional **memory file writes**, a **goal queue** (`ada goal` + `ada daemon` with `task_kind`), optional **web search / URL fetch** tools (Serper + Jina or direct fetch, env-gated), optional **bounded logging** to **`web_sources`**, and a **manual dream / compression** job. Behavior is aligned with the norms in [`docs/claude_logic.md`](docs/claude_logic.md); high-level shape is described in [`docs/system_architecure.md`](docs/system_architecure.md) (note: that doc is **Phase-1–oriented** and predates several features below—this README is the **current** status).
 
+### Operator docs (Pi / one profile / pSEO)
+
+- [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — cron + systemd, env matrix, spend caps, dual graph paths, matrix vs keyword tracks, **`ada approval`** for enqueue and publish  
+- [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — stable `page.json` v1 + S3 keys (canonical: `src/ada/publish/page_schema_v1.py`)  
+- [`docs/legal-ops-checklist.md`](docs/legal-ops-checklist.md) — ranking / leads / retention / PII (not legal advice)  
+- [`ops/schedule.md`](ops/schedule.md) — ingest / triage / dream cadence + `ada daemon` unit (cross-link to runbook for entity/keyword publisher cron)  
+- [`scripts/ada_entity_track.sh`](scripts/ada_entity_track.sh), [`scripts/ada_keyword_track.sh`](scripts/ada_keyword_track.sh) — cron-friendly entity vs keyword pipelines  
+- [`docs/OPERATOR_SQLITE_BACKUP.md`](docs/OPERATOR_SQLITE_BACKUP.md) — `state.db` backup / restore drill  
+- [`docs/OPERATOR_LOGGING.md`](docs/OPERATOR_LOGGING.md) — systemd / file logging for daemon on Pi  
+
+**GATE** (`ADA_PUBLISH_MIN_UNIQUE_FACTS`, distinct `source_url` on graph edges) applies only to **`publish_entity_v1`**, not **`publish_keyword_v1`**. **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`** gates **`DEPLOY`** for **both** publish kinds when enabled.
+
 ### Recently added (keep reading for full detail)
 
 - **`task_kind`** (`chat` \| `goal`), **`ada goal`** subcommands (`add` / `list` / `show`), and **daemon dequeue** of **pending goals only**; **worker-mode** extra system text for `ada daemon`.
@@ -282,7 +294,7 @@ The **publish** pipeline is **deterministic** where possible: **`ENRICH`** write
 
 ## 10. Setup and tests
 
-Run the full suite with **`pytest`**; publisher tests use **moto** (no real S3 in CI). Install dev extras with **`pip install -e .[dev]`** (or **`pip install -e ".[dev]"`**).
+Run the full suite with **`pytest`**; publisher tests use **moto** (no real S3 in CI). Install dev extras with **`pip install -e .[dev]`** (or **`pip install -e ".[dev]"`**). The optional observability dashboard needs **`pip install -e ".[streamlit]"`** (see **§10.4**); it is not required for tests.
 
 ```bash
 python3 -m venv .venv
@@ -369,6 +381,28 @@ Keyword-only (no pre-existing **entity_id**; no **GATE**): `ada workflow enqueue
 
 Fallback behavior is explicit: if GSC tables/data are missing, publish workflow continues in brand/entity-only mode and logs the fallback reason (`gsc_table_missing`, `gsc_no_rows`, or `keyword_missing`) in workflow step output and `action_log`.
 
+### 10.4 Optional Streamlit observability dashboard (read-only)
+
+**Architecture:** this dashboard is **not** the agent: it does not run the orchestrator, tool executor, or daemon; it only runs **SELECT** queries against `state.db` in SQLite **read-only** URI mode. Existing `ada` CLI commands and security boundaries ([`docs/claude_logic.md`](docs/claude_logic.md) norms, allowlists, env-gated tools) are unchanged.
+
+**Install (optional extra — Streamlit is not a core dependency):**
+
+```bash
+pip install -e ".[streamlit]"
+```
+
+**Run** (from repo root, with the same env you use for `ada`, e.g. `ADA_DATA_DIR` or profile vars):
+
+```bash
+streamlit run scripts/ada_observability_app.py
+```
+
+Bind **localhost** only (Streamlit default); use **SSH port forwarding** or a host firewall for remote access. Do not expose this UI to the public internet. The app does not load `.env` files by itself; it reads **already-exported** environment variables for path resolution and the “caps” panel—**never** paste API keys into the UI or commit them to git.
+
+**PII / secrets (operator note):** PII-specific features are out of scope; do not paste secrets into chat. Raw leads are not Ada’s storage model today. The dashboard avoids transcript browsing and shows **aggregates / digests** for columns that might hold sensitive text (goal length + hash, truncated errors, sanitized `action_log` payloads).
+
+**SQLite backup / restore:** see [`docs/OPERATOR_SQLITE_BACKUP.md`](docs/OPERATOR_SQLITE_BACKUP.md). **Daemon logging on Pi:** see [`docs/OPERATOR_LOGGING.md`](docs/OPERATOR_LOGGING.md).
+
 **Example SQL** (`sqlite3 data/state.db`):
 
 ```sql
@@ -394,7 +428,7 @@ Paste-only voice starters for **`memory/master.md`** / **`soul.md`**: see [`docs
 
 Suggested **next planning** items (prioritize as you like):
 
-1. **Operator observability** — read-only **`get_usage_summary`** tool or allowlisted `sqlite3` one-liner so “tokens used” questions are grounded.
+1. **Operator observability** — optional read-only Streamlit dashboard (**§10.4**); optional future: **`get_usage_summary`** tool or allowlisted `sqlite3` one-liners for ad-hoc questions.
 2. **Scheduled dream** — `cron` / systemd timer calling `ada dream` (no in-repo scheduler yet).
 3. **Datalake / RAG / skills** — optional **`ADA_KNOWLEDGE_EMBEDDINGS=1`** already covers **knowledge** vectors; north-star: richer transcript RAG, JSON **`api`** ingest sources, and broader “skill library” beyond today’s store + tools.
 4. **Docs sync** — refresh [`docs/system_architecure.md`](docs/system_architecure.md) to match this README (tools, tables, dream, goals, web).
@@ -404,7 +438,9 @@ Suggested **next planning** items (prioritize as you like):
 
 ## 12. Further reading
 
-- [`docs/claude_logic.md`](docs/claude_logic.md) — normative transcript, roles, tombstones, tool ordering intent  
+- [`docs/claude_logic.md`](docs/claude_logic.md) — transcript / security pointers (stub linking into `store.py`, `query_engine.py`, `orchestrator.py`)  
+- [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — Raspberry Pi single-profile runbook  
+- [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — ISR `page.json` v1 + S3 layout  
 - [`docs/system_architecure.md`](docs/system_architecure.md) — early phase-1 system view (partially superseded by this README)  
 - Google GenAI: [Gemini API docs](https://ai.google.dev/gemini-api/docs)
 

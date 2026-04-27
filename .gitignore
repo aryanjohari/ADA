@@ -9,3 +9,4 @@ data/
 docs/
 memory/
 secrets/
+.env.business_test

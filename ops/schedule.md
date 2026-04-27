@@ -1,5 +1,9 @@
 # ADA Ops Schedule (Raspberry Pi)
 
+**Publisher / pSEO tracks (entity vs keyword):** For matrix → `publish_entity_v1`, GSC → `publish_keyword_v1`, spend caps, approval gates, and a full single-profile cron sketch, see [`docs/operator-runbook-raspberry-pi.md`](../docs/operator-runbook-raspberry-pi.md). Optional shell wrappers: [`scripts/ada_entity_track.sh`](../scripts/ada_entity_track.sh), [`scripts/ada_keyword_track.sh`](../scripts/ada_keyword_track.sh). **GATE** (graph fact threshold) applies only to **`publish_entity_v1`**; **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`** can still block **`DEPLOY`** for **`publish_keyword_v1`**.
+
+---
+
 This document defines the production automation loop for ingestion, triage, nightly meta-synthesis enqueue, continuous daemon processing, and nightly dream compression.
 
 ## 1) Required cron schedule
