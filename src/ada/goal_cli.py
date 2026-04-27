@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ada.config import Settings
 from ada.query_engine import TASK_KIND_GOAL, QueryEngine
+from ada.profile_runtime import enforce_profile_identity
 
 
 # Max goal text length (bytes) — pathological input guard
@@ -143,6 +144,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         if args.subcmd == "add":
             return await _run_add(qe, args)

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ada.config import Settings
 from ada.query_engine import QueryEngine
+from ada.profile_runtime import enforce_profile_identity
 from ada.workflow.enqueue import enqueue_workflow_via_tool, get_workflow_status_via_tool
 
 
@@ -27,6 +28,7 @@ async def run_workflow_enqueue_cli(
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         out = await enqueue_workflow_via_tool(
             qe,
@@ -35,6 +37,7 @@ async def run_workflow_enqueue_cli(
             params_json=params_json,
             idempotency_key=idempotency_key,
             max_steps=settings.ada_max_task_steps,
+            require_approval=settings.require_approval_for_enqueue,
         )
         if out.get("error"):
             print(out["error"], file=sys.stderr)
@@ -54,6 +57,7 @@ async def run_workflow_status_cli(settings: Settings, *, workflow_id: int) -> in
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         out = await get_workflow_status_via_tool(qe, workflow_id=workflow_id)
         if out.get("error"):

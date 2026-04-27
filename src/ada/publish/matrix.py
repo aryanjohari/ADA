@@ -127,6 +127,7 @@ async def run_matrix_scan(
             params_json=json.dumps(params, ensure_ascii=False),
             idempotency_key=idem,
             max_steps=settings.ada_max_task_steps,
+            require_approval=settings.require_approval_for_enqueue,
         )
         if r.get("error"):
             log.warning("matrix enqueue error: %s", r)

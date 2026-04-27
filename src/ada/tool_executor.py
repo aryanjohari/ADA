@@ -65,6 +65,10 @@ WorkflowToolHandler = Callable[
     [CompletedFunctionCall], Awaitable[dict[str, Any]]
 ]
 
+GSCReadToolHandler = Callable[
+    [CompletedFunctionCall], Awaitable[dict[str, Any]]
+]
+
 
 @dataclass(frozen=True)
 class WebToolConfig:
@@ -138,6 +142,7 @@ class StreamingToolExecutor:
         dispatch_allowlist: frozenset[str] | None = None,
         workflow_enqueue: WorkflowToolHandler | None = None,
         workflow_get_status: WorkflowToolHandler | None = None,
+        gsc_read: GSCReadToolHandler | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
@@ -161,6 +166,7 @@ class StreamingToolExecutor:
         self._dispatch_allowlist = dispatch_allowlist
         self._workflow_enqueue = workflow_enqueue
         self._workflow_get_status = workflow_get_status
+        self._gsc_read = gsc_read
         self.discarded = False
 
     def discard(self) -> None:
@@ -236,7 +242,18 @@ class StreamingToolExecutor:
             return await self._link_evidence(call)
         if call.name == "get_entity_graph_context":
             return await self._get_entity_graph_context(call)
+        if call.name == "get_gsc_opportunities":
+            return await self._get_gsc_opportunities(call)
         return {"error": f"unknown tool: {call.name}"}
+
+    async def _get_gsc_opportunities(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._gsc_read is None:
+            return {"error": "get_gsc_opportunities not configured"}
+        try:
+            return await self._gsc_read(call)
+        except Exception as e:
+            log.warning("get_gsc_opportunities failed: %s", e)
+            return {"error": str(e)}
 
     async def _enqueue_workflow(self, call: CompletedFunctionCall) -> dict[str, Any]:
         if self._workflow_enqueue is None:

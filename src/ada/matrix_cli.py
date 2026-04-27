@@ -8,6 +8,7 @@ from pathlib import Path
 from ada.config import Settings
 from ada.publish.matrix import run_matrix_scan
 from ada.query_engine import QueryEngine
+from ada.profile_runtime import enforce_profile_identity
 
 
 async def run_matrix_scan_cli(
@@ -22,6 +23,7 @@ async def run_matrix_scan_cli(
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         out = await run_matrix_scan(qe, settings, dry_run=dry_run)
     finally:

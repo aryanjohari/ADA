@@ -171,6 +171,39 @@ def _goal_recall_function_declaration() -> types.FunctionDeclaration:
     )
 
 
+def _gsc_read_function_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="get_gsc_opportunities",
+        description=(
+            "Read deterministic Google Search Console opportunity slices from local SQLite "
+            "(top queries/pages, quick wins, content gaps, page fixes). "
+            "Use for campaign planning before write_task_plan."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "site": {
+                    "type": "string",
+                    "description": "GSC property_ref/site URL used during ingest.",
+                },
+                "start_date": {
+                    "type": "string",
+                    "description": "Inclusive YYYY-MM-DD lower bound.",
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "Inclusive YYYY-MM-DD upper bound.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Per-slice result cap (1..200).",
+                },
+            },
+            "required": ["site", "start_date", "end_date"],
+        },
+    )
+
+
 def _plan_function_declarations() -> list[types.FunctionDeclaration]:
     return [
         types.FunctionDeclaration(
@@ -420,8 +453,8 @@ def _knowledge_function_declarations() -> list[types.FunctionDeclaration]:
                 "properties": {
                     "kind": {
                         "type": "string",
-                        "description": "Source kind: 'rss' (Atom/RSS feed) or 'web' (placeholder for future use).",
-                        "enum": ["rss", "web"],
+                        "description": "Source kind: 'rss', 'web', or 'brand' (bounded site truth ingest).",
+                        "enum": ["rss", "web", "brand"],
                     },
                     "base_url": {
                         "type": "string",
@@ -646,6 +679,7 @@ def build_agent_tools(
     include_memory_tools: bool,
     include_plan_tools: bool = False,
     include_goal_recall_tool: bool = False,
+    include_gsc_read_tools: bool = False,
     include_file_tools: bool = False,
     include_web_search: bool = False,
     include_web_fetch: bool = False,
@@ -662,6 +696,8 @@ def build_agent_tools(
         decls.extend(_plan_function_declarations())
     if include_goal_recall_tool:
         decls.append(_goal_recall_function_declaration())
+    if include_gsc_read_tools:
+        decls.append(_gsc_read_function_declaration())
     if include_file_tools:
         decls.extend(_file_function_declarations())
     decls.extend(

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +12,7 @@ from ada.tools.file_sandbox import load_denylist_paths_from_file, parse_sandbox_
 
 # Default Gemini model: 2.5 Flash-Lite (verify against https://ai.google.dev/gemini-api/docs/models ).
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+PROFILE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 
 
 def _find_project_root() -> Path:
@@ -140,6 +143,10 @@ class Settings:
     gov_api_host_allowlist: frozenset[str]
     ada_gets_poll_url: str
     ingest_rss_max_feeds: int | None
+    brand_site_url: str
+    brand_ingest_max_urls: int
+    brand_ingest_timeout_sec: float
+    brand_ingest_max_response_bytes: int
     enable_graph_lite: bool
     graph_lite_extract_limit: int
     graph_lite_token_cap_per_job: int
@@ -173,17 +180,86 @@ class Settings:
     ada_matrix_enable: bool
     ada_matrix_max_enqueues: int
     ada_matrix_entity_types: frozenset[str]
+    # Profile isolation
+    ada_require_profile_isolation: bool
+    ada_profile: str
+    ada_profile_data_root: Path
+    profile_data_dir: Path
+    profile_artifacts_dir: Path
+    profile_audit_dir: Path
+    profile_fingerprint: str
+    # Analytics / GSC
+    enable_gsc_ingest: bool
+    gsc_site_url: str
+    gsc_auth_mode: str
+    gsc_service_account_json: str
+    gsc_service_account_file: str
+    gsc_api_base_url: str
+    gsc_timeout_connect_sec: float
+    gsc_timeout_read_sec: float
+    gsc_timeout_total_sec: float
+    gsc_retry_max_attempts: int
+    gsc_retry_base_ms: int
+    gsc_retry_max_ms: int
+    gsc_page_size: int
+    gsc_max_days_per_request: int
+    gsc_max_rows_per_run: int
+    gsc_dry_run_default: bool
+    enable_gsc_read_tools: bool
+    gsc_plan_default_lookback_days: int
+    gsc_plan_max_items: int
+    # Approval gates
+    require_approval_for_enqueue: bool
+    require_approval_for_publish: bool
 
     @classmethod
     def load(cls) -> "Settings":
         root = _find_project_root()
+        require_profile_isolation = os.environ.get(
+            "ADA_REQUIRE_PROFILE_ISOLATION", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        profile_raw = os.environ.get("ADA_PROFILE", "").strip().lower()
+        profile_root_raw = os.environ.get("ADA_PROFILE_DATA_ROOT", "").strip()
         commercial_raw = os.environ.get("ADA_COMMERCIAL_DATA_DIR", "").strip()
-        if commercial_raw:
+        if profile_raw or profile_root_raw:
+            if commercial_raw:
+                raise ValueError(
+                    "ADA_COMMERCIAL_DATA_DIR cannot be combined with ADA_PROFILE/ADA_PROFILE_DATA_ROOT"
+                )
+            if not profile_raw:
+                raise ValueError("ADA_PROFILE is required when ADA_PROFILE_DATA_ROOT is set")
+            if not PROFILE_SLUG_RE.match(profile_raw):
+                raise ValueError(
+                    "ADA_PROFILE must match ^[a-z0-9][a-z0-9_-]{1,63}$"
+                )
+            if not profile_root_raw:
+                raise ValueError("ADA_PROFILE_DATA_ROOT is required when ADA_PROFILE is set")
+            profile_data_root = Path(profile_root_raw).expanduser()
+            if not profile_data_root.is_absolute():
+                raise ValueError("ADA_PROFILE_DATA_ROOT must be an absolute path")
+            profile_data_dir = (profile_data_root / profile_raw).resolve()
+            data_dir = profile_data_dir
+            ada_profile = profile_raw
+            ada_profile_data_root = profile_data_root.resolve()
+        elif commercial_raw:
             data_dir = Path(commercial_raw).expanduser()
+            ada_profile = "legacy-commercial"
+            ada_profile_data_root = data_dir.parent.resolve()
         else:
             data_dir = Path(
                 os.environ.get("ADA_DATA_DIR", str(root / "data"))
             ).expanduser()
+            ada_profile = "legacy-default"
+            ada_profile_data_root = data_dir.parent.resolve()
+        if require_profile_isolation and not profile_raw:
+            raise ValueError(
+                "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_PROFILE and ADA_PROFILE_DATA_ROOT"
+            )
+        profile_data_dir = data_dir.resolve()
+        profile_artifacts_dir = profile_data_dir / "artifacts"
+        profile_audit_dir = profile_data_dir / "audit"
+        fp_seed = f"{ada_profile}|{profile_data_dir}|{root.resolve()}"
+        profile_fingerprint = hashlib.sha256(fp_seed.encode("utf-8")).hexdigest()[:24]
         memory_dir = root / "memory"
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
@@ -423,6 +499,16 @@ class Settings:
                 ingest_rss_max_feeds = max(1, int(ingest_rss_max_feeds_raw))
             except ValueError:
                 ingest_rss_max_feeds = None
+        brand_site_url = os.environ.get("ADA_BRAND_SITE_URL", "").strip()
+        brand_ingest_max_urls = max(
+            1, min(20, int(os.environ.get("ADA_BRAND_INGEST_MAX_URLS", "8")))
+        )
+        brand_ingest_timeout_sec = float(
+            os.environ.get("ADA_BRAND_INGEST_TIMEOUT_SEC", "30")
+        )
+        brand_ingest_max_response_bytes = max(
+            4096, int(os.environ.get("ADA_BRAND_INGEST_MAX_RESPONSE_BYTES", "1500000"))
+        )
         enable_graph_lite = os.environ.get(
             "ADA_ENABLE_GRAPH_LITE", "0"
         ).strip().lower() in ("1", "true", "yes", "on")
@@ -540,6 +626,51 @@ class Settings:
             ada_matrix_types = frozenset(
                 {"service", "regulation", "organization", "jurisdiction"}
             )
+        enable_gsc_ingest = os.environ.get("ADA_ENABLE_GSC_INGEST", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        gsc_site_url = os.environ.get("GSC_SITE_URL", "").strip()
+        gsc_auth_mode = os.environ.get("GSC_AUTH_MODE", "service_account_json").strip()
+        if gsc_auth_mode not in ("service_account_json",):
+            raise ValueError("GSC_AUTH_MODE must be 'service_account_json'")
+        gsc_service_account_json = os.environ.get("GSC_SERVICE_ACCOUNT_JSON", "").strip()
+        gsc_service_account_file = os.environ.get("GSC_SERVICE_ACCOUNT_FILE", "").strip()
+        gsc_api_base_url = os.environ.get(
+            "GSC_API_BASE_URL", "https://www.googleapis.com/webmasters/v3"
+        ).strip()
+        gsc_timeout_connect_sec = float(os.environ.get("ADA_GSC_TIMEOUT_CONNECT_SEC", "5"))
+        gsc_timeout_read_sec = float(os.environ.get("ADA_GSC_TIMEOUT_READ_SEC", "30"))
+        gsc_timeout_total_sec = float(os.environ.get("ADA_GSC_TIMEOUT_TOTAL_SEC", "120"))
+        gsc_retry_max_attempts = max(1, int(os.environ.get("ADA_GSC_RETRY_MAX_ATTEMPTS", "5")))
+        gsc_retry_base_ms = max(10, int(os.environ.get("ADA_GSC_RETRY_BASE_MS", "250")))
+        gsc_retry_max_ms = max(100, int(os.environ.get("ADA_GSC_RETRY_MAX_MS", "8000")))
+        gsc_page_size = max(1, min(25000, int(os.environ.get("ADA_GSC_PAGE_SIZE", "25000"))))
+        gsc_max_days_per_request = max(
+            1, int(os.environ.get("ADA_GSC_MAX_DAYS_PER_REQUEST", "7"))
+        )
+        gsc_max_rows_per_run = max(100, int(os.environ.get("ADA_GSC_MAX_ROWS_PER_RUN", "200000")))
+        gsc_dry_run_default = os.environ.get("ADA_GSC_DRY_RUN_DEFAULT", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        enable_gsc_read_tools = os.environ.get(
+            "ADA_ENABLE_GSC_READ_TOOLS", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        gsc_plan_default_lookback_days = max(
+            1, int(os.environ.get("ADA_GSC_PLAN_DEFAULT_LOOKBACK_DAYS", "28"))
+        )
+        gsc_plan_max_items = max(1, min(200, int(os.environ.get("ADA_GSC_PLAN_MAX_ITEMS", "25"))))
+        require_approval_for_enqueue = os.environ.get(
+            "ADA_REQUIRE_APPROVAL_FOR_ENQUEUE", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        require_approval_for_publish = os.environ.get(
+            "ADA_REQUIRE_APPROVAL_FOR_PUBLISH", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
 
         return cls(
             project_root=root,
@@ -624,6 +755,10 @@ class Settings:
             gov_api_host_allowlist=gov_api_host_allowlist,
             ada_gets_poll_url=ada_gets_poll_url,
             ingest_rss_max_feeds=ingest_rss_max_feeds,
+            brand_site_url=brand_site_url,
+            brand_ingest_max_urls=brand_ingest_max_urls,
+            brand_ingest_timeout_sec=brand_ingest_timeout_sec,
+            brand_ingest_max_response_bytes=brand_ingest_max_response_bytes,
             enable_graph_lite=enable_graph_lite,
             graph_lite_extract_limit=graph_lite_extract_limit,
             graph_lite_token_cap_per_job=graph_lite_token_cap_per_job,
@@ -651,10 +786,40 @@ class Settings:
             ada_matrix_enable=ada_matrix_enable,
             ada_matrix_max_enqueues=ada_matrix_max,
             ada_matrix_entity_types=ada_matrix_types,
+            ada_require_profile_isolation=require_profile_isolation,
+            ada_profile=ada_profile,
+            ada_profile_data_root=ada_profile_data_root,
+            profile_data_dir=profile_data_dir,
+            profile_artifacts_dir=profile_artifacts_dir,
+            profile_audit_dir=profile_audit_dir,
+            profile_fingerprint=profile_fingerprint,
+            enable_gsc_ingest=enable_gsc_ingest,
+            gsc_site_url=gsc_site_url,
+            gsc_auth_mode=gsc_auth_mode,
+            gsc_service_account_json=gsc_service_account_json,
+            gsc_service_account_file=gsc_service_account_file,
+            gsc_api_base_url=gsc_api_base_url,
+            gsc_timeout_connect_sec=gsc_timeout_connect_sec,
+            gsc_timeout_read_sec=gsc_timeout_read_sec,
+            gsc_timeout_total_sec=gsc_timeout_total_sec,
+            gsc_retry_max_attempts=gsc_retry_max_attempts,
+            gsc_retry_base_ms=gsc_retry_base_ms,
+            gsc_retry_max_ms=gsc_retry_max_ms,
+            gsc_page_size=gsc_page_size,
+            gsc_max_days_per_request=gsc_max_days_per_request,
+            gsc_max_rows_per_run=gsc_max_rows_per_run,
+            gsc_dry_run_default=gsc_dry_run_default,
+            enable_gsc_read_tools=enable_gsc_read_tools,
+            gsc_plan_default_lookback_days=gsc_plan_default_lookback_days,
+            gsc_plan_max_items=gsc_plan_max_items,
+            require_approval_for_enqueue=require_approval_for_enqueue,
+            require_approval_for_publish=require_approval_for_publish,
         )
 
     def ensure_data_dir(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.profile_artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.profile_audit_dir.mkdir(parents=True, exist_ok=True)
 
 
 def load_dotenv_if_present() -> None:

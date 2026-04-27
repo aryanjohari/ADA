@@ -7,8 +7,29 @@ from typing import Any
 
 # Public set of kinds for CLI/help and validation.
 WORKFLOW_KINDS: frozenset[str] = frozenset(
-    {"rss_fetch_then_graph_then_synth", "publish_entity_v1"}
+    {"rss_fetch_then_graph_then_synth", "publish_entity_v1", "publish_keyword_v1"}
 )
+
+_KEYWORD_CLUSTER_MAX_CHARS = 160
+
+
+def validate_target_keyword_cluster(value: Any) -> str:
+    """Validate optional publish keyword targeting input."""
+    if not isinstance(value, str):
+        raise ValueError("target_keyword_cluster must be a string")
+    s = value.strip()
+    if not s:
+        raise ValueError("target_keyword_cluster must not be empty")
+    if len(s) > _KEYWORD_CLUSTER_MAX_CHARS:
+        raise ValueError(
+            f"target_keyword_cluster exceeds max length {_KEYWORD_CLUSTER_MAX_CHARS}"
+        )
+    # Keep cluster text plain and deterministic in prompts/logs.
+    for ch in s:
+        if ch.isalnum() or ch in (" ", "-", "_", "/", "&", "+", ",", "."):
+            continue
+        raise ValueError("target_keyword_cluster has unsupported characters")
+    return s
 
 
 def _base_steps(kind: str) -> list[dict[str, Any]]:
@@ -37,6 +58,12 @@ def _base_steps(kind: str) -> list[dict[str, Any]]:
             {"step_index": 1, "step_type": "GATE", "input_json": {}},
             {"step_index": 2, "step_type": "DRAFT", "input_json": {}},
             {"step_index": 3, "step_type": "DEPLOY", "input_json": {}},
+        ]
+    if k == "publish_keyword_v1":
+        return [
+            {"step_index": 0, "step_type": "ENRICH", "input_json": {}},
+            {"step_index": 1, "step_type": "DRAFT", "input_json": {}},
+            {"step_index": 2, "step_type": "DEPLOY", "input_json": {}},
         ]
     raise ValueError(f"unknown workflow kind: {kind!r}")
 
@@ -73,10 +100,44 @@ def expand_workflow_template(
     """
     Return step rows ready for PersistentState.enqueue_workflow (step_index, step_type, input_json).
     Merges ``params`` into SYNTHESIZE step (topic), EXTRACT (recent_item_limit), or
-    publisher fields for ``publish_entity_v1``.
+    publisher fields for ``publish_entity_v1`` / ``publish_keyword_v1``.
     """
     steps = [dict(s) for s in _base_steps(kind)]
     k = str(kind).strip()
+    if k == "publish_keyword_v1":
+        for fld in ("project_id", "campaign_id", "niche"):
+            if not str(params.get(fld) or "").strip():
+                raise ValueError(f"publish_keyword_v1 requires params_json {fld!r}")
+        if params.get("target_keyword_cluster") is None:
+            raise ValueError("publish_keyword_v1 requires params_json target_keyword_cluster")
+        kw = validate_target_keyword_cluster(params.get("target_keyword_cluster"))
+        for st in steps:
+            inp = dict(st.get("input_json") or {})
+            inp["target_keyword_cluster"] = kw
+            for key in (
+                "project_id",
+                "campaign_id",
+                "niche",
+                "slug",
+                "idempotency_key",
+                "page_profile",
+                "keyword_source",
+                "brand_name",
+                "vertical",
+            ):
+                if key in params and params[key] is not None:
+                    inp[key] = params[key]
+            wk = params.get("workflow_kind")
+            inp["workflow_kind"] = (
+                str(wk).strip() if wk is not None and str(wk).strip() else "publish_keyword_v1"
+            )
+            st["input_json"] = inp
+        _validate_dependency_graph(steps)
+        if max_steps is not None and len(steps) > max_steps:
+            raise ValueError(
+                f"workflow has {len(steps)} steps; ADA_MAX_TASK_STEPS allows {max_steps}"
+            )
+        return steps
     if k == "publish_entity_v1":
         eid = params.get("entity_id")
         if eid is None:
@@ -99,9 +160,14 @@ def expand_workflow_template(
                 "idempotency_key",
                 "page_profile",
                 "workflow_kind",
+                "keyword_source",
             ):
                 if key in params and params[key] is not None:
                     inp[key] = params[key]
+            if "target_keyword_cluster" in params and params["target_keyword_cluster"] is not None:
+                inp["target_keyword_cluster"] = validate_target_keyword_cluster(
+                    params["target_keyword_cluster"]
+                )
             st["input_json"] = inp
         _validate_dependency_graph(steps)
         if max_steps is not None and len(steps) > max_steps:

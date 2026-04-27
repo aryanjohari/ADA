@@ -154,7 +154,10 @@ async def test_draft_user_prompt_includes_edge_and_knowledge_blocks(
                     qe,
                     Settings.load(),
                     goal_text="g",
-                    params={"entity_id": eid},
+                    params={
+                        "entity_id": eid,
+                        "target_keyword_cluster": "roof repair auckland",
+                    },
                 )
         u = captured.get("user", "")
         sys_text = captured.get("sys") or ""
@@ -170,10 +173,33 @@ async def test_draft_user_prompt_includes_edge_and_knowledge_blocks(
         assert "inline HTML link" in sys_text
         assert "source_url" in sys_text
         assert "Citations" in u
+        assert "Keyword intent target: 'roof repair auckland'" in u
         page = out.get("page") or {}
         og = page.get("og_image", "")
         assert og.startswith("https://images.unsplash.com/photo-")
         assert "<img " in str(page.get("content") or "")
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_draft_rejects_invalid_keyword_cluster(tmp_path, schema_sql_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    db = tmp_path / "dk-invalid.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        subj = await qe.upsert_entity(type="service", name="S-invalid", payload_json={})
+        with pytest.raises(ValueError, match="unsupported characters"):
+            await run_publish_draft(
+                qe,
+                Settings.load(),
+                goal_text="g",
+                params={
+                    "entity_id": int(subj["entity_id"]),
+                    "target_keyword_cluster": "roof<script>",
+                },
+            )
     finally:
         await qe.close()
 

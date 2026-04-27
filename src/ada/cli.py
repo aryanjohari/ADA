@@ -25,6 +25,7 @@ from ada.prompt import (
     read_soul_text,
     read_text_file,
 )
+from ada.profile_runtime import enforce_profile_identity
 from ada.query_engine import TASK_KIND_CHAT, QueryEngine
 from ada.tool_executor import (
     FileToolConfig,
@@ -75,6 +76,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         if new_session:
             task_id = await qe.insert_task(
@@ -156,6 +158,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
                     include_goal_recall_tool=settings.enable_goal_recall_tool,
+                    include_gsc_read_tools=settings.enable_gsc_read_tools,
                     file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
                     on_file_guard_violation=file_guard_audit_hook(
@@ -218,6 +221,7 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                     memory_config=_memory_tool_config(settings),
                     include_plan_tools=settings.enable_plan_tools,
                     include_goal_recall_tool=settings.enable_goal_recall_tool,
+                    include_gsc_read_tools=settings.enable_gsc_read_tools,
                     file_config=file_cfg,
                     max_session_tokens=settings.max_session_tokens,
                     on_file_guard_violation=file_guard_audit_hook(
@@ -279,6 +283,7 @@ async def run_dream_cli(
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         out = await run_dream_job(
             qe,
@@ -307,6 +312,7 @@ async def run_extract_graph_lite_cli(
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         extractor = None
         if settings.gemini_api_key.strip():

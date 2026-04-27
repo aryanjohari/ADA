@@ -11,7 +11,7 @@
 - **Knowledge layer:** SQLite **`knowledge_*`** tables + **FTS5** over **`knowledge_items`**. **`ada ingest-rss`** (no API key) reads **`knowledge_sources`** (`kind=rss`) and fills **`knowledge_items`** (deduped). When **`ADA_ENABLE_KNOWLEDGE_TOOLS=1`**, chat/daemon expose **`search_knowledge`**, **`record_synthesis`**, **`add_knowledge_source`**, and graph-lite tools **`record_entity`**, **`record_edge`**, **`link_evidence`** to the model (see §7).
 - **Triage:** **`ada triage`** scores items and assigns **primary + secondary** triage categories (JSON); optional **`ada triage --backfill-categories`** fills categories for rows that already have **`impact_score`**. See §5 and `.env.example` (`ADA_TRIAGE_*`).
 - **Graph extraction (operator CLI):** **`ada extract-graph-lite`** runs Gemini JSON extraction into **`entities`**, **`graph_edges`**, and **`edge_evidence`** (see `src/ada/extract/graph_lite.py`). Requires **`GEMINI_API_KEY`** when using the built-in LLM path.
-- **Phase 3 workflows:** SQLite **`workflows`** + **`workflow_steps`**. **Legacy** template: **`rss_fetch_then_graph_then_synth`** = **`FETCH`** → **`EXTRACT`** → **`SYNTHESIZE`**. **B2B pSEO / ISR publisher** template: **`publish_entity_v1`** = **`ENRICH`** → **`GATE`** (fact threshold) → **`DRAFT`** (schema-locked `page.json` via Gemini) → **`DEPLOY`** (S3 `page.json` + merged `manifest.json`). CLI **`ada workflow enqueue`** / **`ada workflow status`**; **`ada matrix-scan`** (optional **`--dry-run`**) enqueues publish workflows from the graph when **`ADA_MATRIX_ENABLE=1`**. If a pending **`tasks`** row has a matching **`workflows.parent_task_id`**, **`ada daemon`** runs the workflow runner. Normative S3/ISR field names: [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md). See [`docs/ROADMAP_APEX_OS.md`](docs/ROADMAP_APEX_OS.md) §8.
+- **Phase 3 workflows:** SQLite **`workflows`** + **`workflow_steps`**. **Legacy** template: **`rss_fetch_then_graph_then_synth`** = **`FETCH`** → **`EXTRACT`** → **`SYNTHESIZE`**. **B2B pSEO / ISR publisher** template: **`publish_entity_v1`** = **`ENRICH`** → **`GATE`** (fact threshold) → **`DRAFT`** (schema-locked `page.json` via Gemini) → **`DEPLOY`** (S3 `page.json` + merged `manifest.json`). **Keyword-led** template: **`publish_keyword_v1`** = **`ENRICH`** → **`DRAFT`** → **`DEPLOY`** (no **`GATE`**); the daemon **auto-provisions** a small internal **`keyword_landing`** subject entity for the target cluster (you do not pick a matrix entity). CLI **`ada workflow enqueue`** / **`ada workflow status`**; **`ada matrix-scan`** (optional **`--dry-run`**) enqueues **`publish_entity_v1`** from the graph when **`ADA_MATRIX_ENABLE=1`**. If a pending **`tasks`** row has a matching **`workflows.parent_task_id`**, **`ada daemon`** runs the workflow runner. Normative S3/ISR field names: [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md). See [`docs/ROADMAP_APEX_OS.md`](docs/ROADMAP_APEX_OS.md) §8.
 
 ---
 
@@ -74,7 +74,8 @@ flowchart LR
     GoalCLI[ada goal]
     Daemon[ada daemon]
     Dream[ada dream]
-    Ingest[ada ingest-rss]
+    Ingest[ingest / triage / graph CLIs]
+    Wf[workflow / matrix-scan]
   end
   subgraph core [Core]
     QE[QueryEngine]
@@ -92,6 +93,7 @@ flowchart LR
   Daemon --> QE
   Dream --> QE
   Ingest --> QE
+  Wf --> QE
   QE --> PS
   PS --> DB
   Orch --> QE
@@ -160,15 +162,22 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--limit`**). |
 | **`ada goal show <id>`** | Print one goal task’s metadata plus **`tasks.current_output`** (the daemon’s final model reply or error text). Long output is **previewed** by default; use **`--full`** for the entire string. |
 | **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**. If **`workflows.parent_task_id`** matches the task, runs the **Phase 3 workflow runner**; otherwise runs **one** `orchestrate_turn`. Sets `completed` / `failed`. Use **systemd** (or similar), not cron. |
-| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`**. Kinds: **`rss_fetch_then_graph_then_synth`** (RSS → graph-extract → synthesis) or **`publish_entity_v1`** (enrich → gate → draft → deploy). Optional **`--params-json`**, **`--idempotency-key`**. Respects **`ADA_MAX_TASK_STEPS`**. |
+| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`**. Kinds: **`rss_fetch_then_graph_then_synth`** (RSS → graph-extract → synthesis), **`publish_entity_v1`** (enrich → gate → draft → deploy), or **`publish_keyword_v1`** (enrich → draft → deploy; keyword-led, no gate). Optional **`--params-json`**, **`--idempotency-key`**. Respects **`ADA_MAX_TASK_STEPS`**. |
 | **`ada workflow status <id>`** | Print **`workflows`** row and all **`workflow_steps`** as JSON. |
 | **`ada matrix-scan`** | Scan **publishable** subject **`entities`** with **`classified_as`** → category edges; for each, enqueue **`publish_entity_v1`** with **`ADA_PROJECT_ID`** / **`ADA_CAMPAIGN_ID`** and idempotent key **`publish:{entity_id}:{content_hash}`**. Use **`--dry-run`** to list candidates without **`ADA_MATRIX_ENABLE`**. |
 | **`ada dream`** | **Manual** compression: model summarizes recent transcript + usage → append **master** / optional **soul**; logs **`action_log`**; **`--dry-run`**, **`--session N`**, **`--max-messages`** |
 | **`ada ingest-rss`** | **Offline** fetch: reads **`knowledge_sources`** where **`kind=rss`** and **`base_url`** is set, downloads each feed, parses Atom/RSS, inserts **`knowledge_items`** (deduped). **`GEMINI_API_KEY`** is optional unless **`ADA_INGEST_GATEKEEPER=1`** or **`ADA_KNOWLEDGE_EMBEDDINGS=1`** (gate scores entries; embeddings write vectors). Schedule with **cron** / **systemd** (often **daily**). |
+| **`ada add-rss-source URL [--label …]`** | Register an RSS **`base_url`** in **`knowledge_sources`** (then run **`ada ingest-rss`**). |
+| **`ada ingest-gsc …`** | Google Search Console Search Analytics → local `gsc_*` tables (requires **`ADA_ENABLE_GSC_INGEST=1`**; **`--site`** or **`GSC_SITE_URL`**). Optional **`ingest-gsc verify`** for auth smoke test. |
+| **`ada ingest-keywords`** | Batch keyword volume via DataForSEO → **`ingest_raw`** (see **`ADA_KEYWORD_TERMS`**, **`DATAFORSEO_*`** in **`.env.example`**). |
+| **`ada ingest-gets`** | Public GETS tender index (**`ADA_GETS_POLL_URL`**) → **`ingest_raw`** + **`knowledge_items`**. |
+| **`ada ingest-brand --site-url URL [--max-urls N] [--dry-run]`** | Bounded brand truth ingest (homepage + key internal pages) into **`knowledge_items`** with `source_kind=brand` metadata. Uses `ADA_BRAND_SITE_URL` when `--site-url` is omitted. |
+| **`ada keyword-select --entity-id ID --site URL --start-date YYYY-MM-DD --end-date YYYY-MM-DD`** | Deterministically select a top keyword cluster from local GSC tables; returns explicit fallback (`gsc_table_missing` / `gsc_no_rows`) when no data is available. |
 | **`ada triage`** | Score and classify **`knowledge_items`** (impact 1–10 + primary/secondary triage categories via JSON). Optional **`--limit`**, **`--backfill-categories`** (fill categories for rows that already have **`impact_score`**). Requires **`GEMINI_API_KEY`**. |
 | **`ada extract-graph-lite`** | Batch graph-lite extraction from recent **`knowledge_items`** into **`entities`** / **`graph_edges`** / **`edge_evidence`** (Gemini JSON). Optional **`--limit`**, **`--token-cap`**, **`--source-id`**. Requires **`GEMINI_API_KEY`** for the default LLM extractor. |
+| **`ada approval request` / `decide` / `show`** | Durable approval records in SQLite (**`artifact-type`**, **`artifact-ref`**, status). Used with publish approval env vars; no LLM. |
 
-**`GEMINI_API_KEY`** is required for **`ada chat`**, **`ada daemon`**, **`ada dream`**, **`ada triage`**, and **`ada extract-graph-lite`** (when using the built-in model). **`ada goal`** does not call the model. **`ada ingest-rss`** uses HTTP only unless gate or embeddings are enabled (then Gemini).
+**`GEMINI_API_KEY`** is required for **`ada chat`**, **`ada daemon`**, **`ada dream`**, **`ada triage`**, and **`ada extract-graph-lite`** (when using the built-in model). **`ada goal`**, **`ada approval`**, and **`ada add-rss-source`** do not call the model. **`ada ingest-rss`** uses HTTP only unless gate or embeddings are enabled (then Gemini).
 
 ---
 
@@ -251,7 +260,7 @@ See **`.env.example`** for the full list. Important groups:
 - **Web tools & `web_sources`:** `ADA_ENABLE_WEB_TOOLS`, `ADA_SERPER_API_KEY` / `SERPER_API_KEY`, search/fetch caps and timeouts, **`ADA_WEB_FETCH_MODE`**, **`ADA_JINA_API_KEY`** (if using Jina), **`ADA_ENABLE_WEB_SOURCES_TOOL`** — see **`.env.example`**
 - **Knowledge tools & RSS ingest:** `ADA_ENABLE_KNOWLEDGE_TOOLS`, **`ADA_KNOWLEDGE_FEED_HOST_ALLOWLIST`** (optional), **`ADA_INGEST_RSS_MAX_ITEMS`**, **`ADA_INGEST_RSS_MAX_RESPONSE_BYTES`**, **`ADA_INGEST_RSS_TIMEOUT_SEC`**, **`ADA_KNOWLEDGE_DEFAULT_RETENTION_DAYS`**, **`ADA_INGEST_GATEKEEPER`**, **`ADA_INGEST_GATE_MODEL`**, **`ADA_INGEST_GATE_MAX_OUTPUT_TOKENS`** — see **`.env.example`**
 - **Knowledge embeddings (optional):** **`ADA_KNOWLEDGE_EMBEDDINGS=1`** enables Gemini vectors for **`search_knowledge`** semantic/hybrid modes and embeds new items during **`ada ingest-rss`** (uses **`GEMINI_API_KEY`**); tune **`ADA_KNOWLEDGE_EMBEDDING_MODEL`**, **`ADA_KNOWLEDGE_EMBEDDING_DIM`**, **`ADA_KNOWLEDGE_EMBEDDING_MIN_COSINE`**
-- **Phase 0 control plane (`ada daemon` only):** **`ADA_KILL_SWITCH`** — when `1` / `true` / `yes`, the daemon **does not** dequeue goals (`pending` stays `pending`); **`ada goal add`** still enqueues. **`ADA_DAILY_TOKEN_BUDGET`** / **`ADA_MONTHLY_TOKEN_BUDGET`** — optional caps on **global** summed `usage_ledger` tokens (input+output) for the **current UTC** calendar day / month; when exceeded, the daemon skips execution (same as kill switch: task stays pending). **`ADA_COMMERCIAL_DATA_DIR`** — if set, used as the runtime **`data_dir`** / `state.db` location for that process (overrides **`ADA_DATA_DIR`**; isolated “commercial” profile vs personal `data/`). **`ADA_MAX_TASK_STEPS`** — reserved for Phase 3 workflows (parsed into settings; no enforcement yet). See [`docs/ROADMAP_APEX_OS.md`](docs/ROADMAP_APEX_OS.md) §5 for normative behavior, `action_log` kinds **`kill_switch_skip`** and **`global_budget_block`**, and implementation notes.
+- **Phase 0 control plane (`ada daemon` only):** **`ADA_KILL_SWITCH`** — when `1` / `true` / `yes`, the daemon **does not** dequeue goals (`pending` stays `pending`); **`ada goal add`** still enqueues. **`ADA_DAILY_TOKEN_BUDGET`** / **`ADA_MONTHLY_TOKEN_BUDGET`** — optional caps on **global** summed `usage_ledger` tokens (input+output) for the **current UTC** calendar day / month; when exceeded, the daemon skips execution (same as kill switch: task stays pending). **`ADA_COMMERCIAL_DATA_DIR`** — if set, used as the runtime **`data_dir`** / `state.db` location for that process (overrides **`ADA_DATA_DIR`**; isolated “commercial” profile vs personal `data/`). **`ADA_MAX_TASK_STEPS`** — when set, **workflow enqueue** fails if a template’s expanded step list exceeds this count (see **`src/ada/workflow/templates.py`**); when unset, no cap from this variable. See [`docs/ROADMAP_APEX_OS.md`](docs/ROADMAP_APEX_OS.md) §5 for normative behavior, `action_log` kinds **`kill_switch_skip`** and **`global_budget_block`**, and implementation notes.
 
 `Settings.load()` in `src/ada/config.py` is the single source of parsed values.
 
@@ -262,7 +271,10 @@ The **publish** pipeline is **deterministic** where possible: **`ENRICH`** write
 | Kind | Steps (order) | `params_json` (minimum) |
 |------|----------------|-------------------------|
 | **`rss_fetch_then_graph_then_synth`** | `FETCH` → `EXTRACT` → `SYNTHESIZE` | `topic?`, `recent_item_limit?` |
-| **`publish_entity_v1`** | `ENRICH` → `GATE` → `DRAFT` → `DEPLOY` | **`entity_id`**, **`project_id`**, **`campaign_id`**, **`niche`**, optional **`slug`**, workflow-level **`idempotency` via `--idempotency-key` on enqueue** |
+| **`publish_entity_v1`** | `ENRICH` → `GATE` → `DRAFT` → `DEPLOY` | **`entity_id`**, **`project_id`**, **`campaign_id`**, **`niche`**, optional **`slug`**, optional **`target_keyword_cluster`** (string), optional **`keyword_source`** metadata; workflow-level **`idempotency` via `--idempotency-key` on enqueue** |
+| **`publish_keyword_v1`** | `ENRICH` → `DRAFT` → `DEPLOY` | **`target_keyword_cluster`**, **`project_id`**, **`campaign_id`**, **`niche`**; optional **`keyword_source`**, **`slug`**, **`brand_name`**, **`vertical`**. A **`keyword_landing`** subject entity is created/merged on first **ENRICH**; **`workflows.params_json`** is updated with **`entity_id`** (resume-safe). **No** graph fact **GATE**. |
+
+**Full graph vs keyword-first (operator note):** Use **`publish_entity_v1`** when a **real graph subject** (matrix/ISR entity) is ready: **GATE** enforces **ADA_PUBLISH_MIN_UNIQUE_FACTS** on outgoing edges. Use **`publish_keyword_v1`** to ship a page **tied to a keyword** without selecting a matrix entity—the daemon **ENRICH** step uses the same web/graph rules as **`publish_entity_v1`** (e.g. connector ENRICH when live web is off) but **skips** **GATE**. **Enqueue and deploy** approval env vars (**`ADA_REQUIRE_APPROVAL_FOR_ENQUEUE`**, **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`**) are unchanged. **`ada matrix-scan`** only enqueues **`publish_entity_v1`**, not the keyword kind.
 
 **Publisher env:** all variables are documented in [`.env.example`](.env.example) (S3, AWS credentials, `ADA_PUBLISH_MIN_UNIQUE_FACTS`, `ADA_PUBLISH_DRAFT_MODEL`, `ADA_MATRIX_*`, `ADA_PROJECT_ID`, `ADA_CAMPAIGN_ID`).
 
@@ -317,6 +329,46 @@ ada goal add "Search knowledge for topics X and Y from the last week. Call searc
 
 **systemd** (sketch): `ada daemon` as `Type=simple` `ExecStart=/path/to/.venv/bin/ada daemon`, `Restart=on-failure`; timers for `ingest-rss` / `dream` using `OnCalendar` instead of cron if you prefer.
 
+### 10.2 Using GSC data for campaign planning
+
+When GSC ingestion is enabled, ADA can read deterministic opportunity slices from `gsc_search_analytics_rows` and pre-populate `tasks.plan_json` for queued goals.
+
+- Set env flags: `ADA_ENABLE_GSC_INGEST=1`, `ADA_ENABLE_GSC_READ_TOOLS=1`, `GSC_SITE_URL=...`
+- Optional planning bounds: `ADA_GSC_PLAN_DEFAULT_LOOKBACK_DAYS` and `ADA_GSC_PLAN_MAX_ITEMS`
+- `ada daemon` pre-generates a GSC campaign plan payload (approval status defaults to `pending`) before running the model turn for each eligible `task_kind=goal`
+- In chat/daemon tool mode, `get_gsc_opportunities` returns `top_queries`, `top_pages`, `quick_wins`, `content_gaps`, and `page_fixes`
+
+Example sequence:
+
+```bash
+# 1) Ingest GSC rows for recent window
+ada ingest-gsc --site "https://example.com/" --days 28 --dimensions "date,query,page,country,device" --row-limit 25000
+
+# 2) Queue a campaign objective
+ada goal add "Build an SEO campaign plan from GSC quick wins and content gaps"
+
+# 3) Run daemon worker (or let systemd keep it running)
+ada daemon
+
+# 4) Inspect generated deterministic plan_json
+ada goal list
+ada goal show <task_id>
+```
+
+### 10.3 Operator flow for publish targeting
+
+Recommended safe flow for pSEO publish runs:
+
+1. `ada ingest-brand --site-url "https://example.com/"` (or set `ADA_BRAND_SITE_URL`)
+2. `ada ingest-gsc ...` when Search Console is available
+3. `ada keyword-select --entity-id ... --site ... --start-date ... --end-date ...`
+4. `ada workflow enqueue --kind publish_entity_v1 --params-json '{"entity_id":...,"project_id":"...","campaign_id":"...","niche":"...","target_keyword_cluster":"...","keyword_source":{"kind":"gsc","site":"...","start_date":"...","end_date":"..."}}'`
+5. `ada daemon`
+
+Keyword-only (no pre-existing **entity_id**; no **GATE**): `ada workflow enqueue --kind publish_keyword_v1 --params-json '{"target_keyword_cluster":"...","project_id":"...","campaign_id":"...","niche":"..."}'`
+
+Fallback behavior is explicit: if GSC tables/data are missing, publish workflow continues in brand/entity-only mode and logs the fallback reason (`gsc_table_missing`, `gsc_no_rows`, or `keyword_missing`) in workflow step output and `action_log`.
+
 **Example SQL** (`sqlite3 data/state.db`):
 
 ```sql
@@ -338,13 +390,13 @@ Paste-only voice starters for **`memory/master.md`** / **`soul.md`**: see [`docs
 
 **Phase 0 (control plane)** — implemented: see [`docs/ROADMAP_APEX_OS.md`](docs/ROADMAP_APEX_OS.md) §5, [`src/ada/budget.py`](src/ada/budget.py), and env vars in **§9** / `.env.example`.
 
-**Phase 3 (workflow engine)** — implemented (v1): **`FETCH`** / **`EXTRACT`** / **`SYNTHESIZE`** child steps only; **`DRAFT_BRIEF`** and **`DEPLOY`** remain future (Phases 4–5). Code: [`src/ada/workflow/`](src/ada/workflow/), daemon branch in [`src/ada/main.py`](src/ada/main.py), tests **`tests/test_phase3_workflow.py`**.
+**Phase 3 (workflow engine)** — implemented: RSS → graph → synth (`FETCH` / `EXTRACT` / `SYNTHESIZE`) and B2B publish templates with **`ENRICH`**, optional **`GATE`**, **`DRAFT`**, **`DEPLOY`** (see **§9.1**). Code: [`src/ada/workflow/`](src/ada/workflow/), daemon branch in [`src/ada/main.py`](src/ada/main.py), tests **`tests/test_phase3_workflow.py`** and **`tests/test_publish_*.py`**.
 
 Suggested **next planning** items (prioritize as you like):
 
 1. **Operator observability** — read-only **`get_usage_summary`** tool or allowlisted `sqlite3` one-liner so “tokens used” questions are grounded.
 2. **Scheduled dream** — `cron` / systemd timer calling `ada dream` (no in-repo scheduler yet).
-3. **Datalake / RAG / skills** — embeddings / semantic retrieval over stored chunks, graph memory; optional JSON **`api`** sources and richer synthesis beyond today’s RSS + FTS (**`web_sources`** remains session audit excerpts; knowledge store is structured + FTS, not embedding vectors yet).
+3. **Datalake / RAG / skills** — optional **`ADA_KNOWLEDGE_EMBEDDINGS=1`** already covers **knowledge** vectors; north-star: richer transcript RAG, JSON **`api`** ingest sources, and broader “skill library” beyond today’s store + tools.
 4. **Docs sync** — refresh [`docs/system_architecure.md`](docs/system_architecure.md) to match this README (tools, tables, dream, goals, web).
 5. **Transcript search / RAG** — richer recall over **`messages`** beyond **`read_goal_task_view`** (optional).
 

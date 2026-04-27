@@ -11,6 +11,77 @@ from ada.query_engine import (
 )
 
 
+async def _seed_gsc_rows(qe: QueryEngine, *, site: str = "https://example.com/") -> None:
+    provider_id = await qe.ensure_analytics_provider(
+        provider="gsc",
+        property_ref=site,
+        config_json={"schema_version": "gsc.v1"},
+    )
+    snapshot_id = await qe.upsert_analytics_snapshot(
+        provider_id=provider_id,
+        ingest_job_id=None,
+        window_start="2026-01-01",
+        window_end="2026-01-31",
+        request_hash="req-1",
+        response_version="gsc.v1",
+        row_count=4,
+    )
+    rows = [
+        {
+            "data_date": "2026-01-02",
+            "query": "ada pricing",
+            "page": "https://example.com/pricing",
+            "clicks": 12.0,
+            "impressions": 1000.0,
+            "ctr": 0.012,
+            "position": 9.0,
+        },
+        {
+            "data_date": "2026-01-02",
+            "query": "ada pricing",
+            "page": "https://example.com/home",
+            "clicks": 1.0,
+            "impressions": 700.0,
+            "ctr": 0.0014,
+            "position": 13.0,
+        },
+        {
+            "data_date": "2026-01-03",
+            "query": "ada onboarding",
+            "page": "https://example.com/onboarding",
+            "clicks": 5.0,
+            "impressions": 500.0,
+            "ctr": 0.01,
+            "position": 8.0,
+        },
+        {
+            "data_date": "2026-01-04",
+            "query": "ada docs",
+            "page": "https://example.com/docs",
+            "clicks": 1.0,
+            "impressions": 600.0,
+            "ctr": 0.0017,
+            "position": 17.0,
+        },
+    ]
+    for idx, row in enumerate(rows, start=1):
+        await qe.upsert_gsc_search_analytics_row(
+            provider_id=provider_id,
+            snapshot_id=snapshot_id,
+            data_date=row["data_date"],
+            query=row["query"],
+            page=row["page"],
+            country="nz",
+            device="desktop",
+            clicks=row["clicks"],
+            impressions=row["impressions"],
+            ctr=row["ctr"],
+            position=row["position"],
+            row_hash=f"h-{idx}",
+        )
+    await qe.append_action_log("test_seed_gsc", {"site": site})
+
+
 @pytest.mark.asyncio
 async def test_get_goal_task_view_for_tool(tmp_path, schema_sql_path):
     db = tmp_path / "s.db"
@@ -233,5 +304,83 @@ async def test_task_plan_json_missing_task_raises(tmp_path, schema_sql_path):
             await qe.get_task_plan_json(bad_id)
         with pytest.raises(LookupError):
             await qe.set_task_plan_json(bad_id, "{}")
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_gsc_read_aggregations_and_ordering(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        await _seed_gsc_rows(qe)
+        q = await qe.list_gsc_top_queries(
+            site="https://example.com/",
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            limit=3,
+        )
+        assert q[0]["query"] == "ada pricing"
+        assert q[0]["impressions"] == pytest.approx(1700.0)
+        quick = await qe.list_gsc_quick_wins(
+            site="https://example.com/",
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            limit=10,
+        )
+        assert quick[0]["query"] == "ada pricing"
+        gaps = await qe.list_gsc_content_gaps(
+            site="https://example.com/",
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            limit=10,
+        )
+        assert any(r["query"] == "ada pricing" for r in gaps)
+        fixes = await qe.list_gsc_page_fixes(
+            site="https://example.com/",
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            limit=10,
+        )
+        assert fixes[0]["page"] == "https://example.com/pricing"
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_gsc_limit_validation_fail_fast(tmp_path, schema_sql_path):
+    db = tmp_path / "s.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        await _seed_gsc_rows(qe)
+        with pytest.raises(ValueError, match="between 1 and 200"):
+            await qe.list_gsc_top_queries(
+                site="https://example.com/",
+                start_date="2026-01-01",
+                end_date="2026-01-31",
+                limit=0,
+            )
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_gsc_safe_query_handles_missing_tables(tmp_path, schema_sql_path):
+    db = tmp_path / "safe.db"
+    qe = QueryEngine(db, schema_sql_path)
+    await qe.connect()
+    try:
+        await qe._store._conn.execute("DROP TABLE gsc_search_analytics_rows")
+        await qe._store._conn.commit()
+        out = await qe.list_gsc_top_queries_safe(
+            site="https://example.com/",
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            limit=10,
+        )
+        assert out["tables_present"] is False
+        assert out["rows"] == []
     finally:
         await qe.close()

@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_web_sources_session_fetched
 
 CREATE TABLE IF NOT EXISTS knowledge_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web')),
+    kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web', 'brand')),
     label TEXT,
     base_url TEXT NOT NULL DEFAULT '',
     config_json TEXT NOT NULL DEFAULT '{}',
@@ -118,6 +118,88 @@ CREATE TABLE IF NOT EXISTS ingest_raw (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ingest_raw_sha ON ingest_raw(content_sha256);
+
+CREATE TABLE IF NOT EXISTS analytics_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL,
+    account_ref TEXT NOT NULL DEFAULT '',
+    property_ref TEXT NOT NULL,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider, property_ref)
+);
+
+CREATE TABLE IF NOT EXISTS analytics_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL REFERENCES analytics_providers(id) ON DELETE CASCADE,
+    ingest_job_id INTEGER REFERENCES ingest_jobs(id) ON DELETE SET NULL,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_version TEXT NOT NULL DEFAULT 'gsc.v1',
+    row_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider_id, request_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_provider_window
+    ON analytics_snapshots(provider_id, window_start, window_end);
+
+CREATE TABLE IF NOT EXISTS gsc_search_analytics_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id INTEGER NOT NULL REFERENCES analytics_providers(id) ON DELETE CASCADE,
+    snapshot_id INTEGER NOT NULL REFERENCES analytics_snapshots(id) ON DELETE CASCADE,
+    data_date TEXT NOT NULL,
+    query TEXT NOT NULL DEFAULT '',
+    page TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    device TEXT NOT NULL DEFAULT '',
+    clicks REAL NOT NULL DEFAULT 0,
+    impressions REAL NOT NULL DEFAULT 0,
+    ctr REAL NOT NULL DEFAULT 0,
+    position REAL NOT NULL DEFAULT 0,
+    row_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider_id, data_date, query, page, country, device)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gsc_rows_date_property
+    ON gsc_search_analytics_rows(provider_id, data_date);
+CREATE INDEX IF NOT EXISTS idx_gsc_rows_query
+    ON gsc_search_analytics_rows(provider_id, query);
+
+CREATE TABLE IF NOT EXISTS campaign_opportunities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_provider TEXT NOT NULL,
+    source_row_ref TEXT NOT NULL,
+    score_version TEXT NOT NULL,
+    score_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'approved', 'rejected', 'applied')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(source_provider, source_row_ref, score_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_opportunities_status_score
+    ON campaign_opportunities(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS approval_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    artifact_type TEXT NOT NULL,
+    artifact_ref TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('requested', 'approved', 'rejected', 'expired')),
+    requested_by TEXT NOT NULL DEFAULT '',
+    approved_by TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT '',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(artifact_type, artifact_ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_artifact_status
+    ON approval_records(artifact_type, status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS source_catalog (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

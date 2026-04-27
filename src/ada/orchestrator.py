@@ -87,6 +87,7 @@ async def orchestrate_turn(
     memory_config: MemoryToolConfig | None = None,
     include_plan_tools: bool = False,
     include_goal_recall_tool: bool = False,
+    include_gsc_read_tools: bool = False,
     file_config: FileToolConfig | None = None,
     max_session_tokens: int = 50000,
     on_file_guard_violation: Callable[[str, str, str], Coroutine[Any, Any, None]]
@@ -107,6 +108,7 @@ async def orchestrate_turn(
     workflow_strict_allow_web: bool = False,
     include_workflow_tools: bool = False,
     workflow_max_steps: int | None = None,
+    workflow_require_approval: bool = False,
     enrich_subject_entity_id: int | None = None,
 ) -> str:
     """
@@ -122,6 +124,7 @@ async def orchestrate_turn(
     eff_memory = enable_memory_tools and not wf_strict
     eff_plan = include_plan_tools and not wf_strict
     eff_goal_recall = include_goal_recall_tool and not wf_strict
+    eff_gsc_read = include_gsc_read_tools and not wf_strict
     eff_file_cfg = None if wf_strict else file_config
     eff_web_cfg = web_config if (not wf_strict or strict_web) else None
     eff_ws_list = enable_list_session_web_sources and (not wf_strict or strict_web)
@@ -131,6 +134,7 @@ async def orchestrate_turn(
         include_memory_tools=eff_memory,
         include_plan_tools=eff_plan,
         include_goal_recall_tool=eff_goal_recall,
+        include_gsc_read_tools=eff_gsc_read,
         include_file_tools=eff_file_cfg is not None,
         include_web_search=eff_web_cfg is not None and bool(eff_web_cfg.serper_api_key),
         include_web_fetch=eff_web_cfg is not None,
@@ -170,6 +174,81 @@ async def orchestrate_turn(
         return await qe.get_goal_task_view_for_tool(task_id)
 
     goal_recall_reader = _goal_recall_bound if eff_goal_recall else None
+    gsc_read_fn = None
+    if eff_gsc_read:
+
+        async def _gsc_read_bound(call: CompletedFunctionCall) -> dict[str, Any]:
+            site = str(call.args.get("site") or "").strip()
+            start_date = str(call.args.get("start_date") or "").strip()
+            end_date = str(call.args.get("end_date") or "").strip()
+            lim_raw = call.args.get("limit")
+            lim = 25
+            if lim_raw is not None:
+                try:
+                    lim = int(lim_raw)
+                except (TypeError, ValueError):
+                    return {"error": "limit must be an integer"}
+            if not site:
+                return {"error": "site is required"}
+            quick_wins = await qe.list_gsc_quick_wins(
+                site=site,
+                start_date=start_date,
+                end_date=end_date,
+                limit=lim,
+            )
+            content_gaps = await qe.list_gsc_content_gaps(
+                site=site,
+                start_date=start_date,
+                end_date=end_date,
+                limit=lim,
+            )
+            page_fixes = await qe.list_gsc_page_fixes(
+                site=site,
+                start_date=start_date,
+                end_date=end_date,
+                limit=lim,
+            )
+            top_queries = await qe.list_gsc_top_queries(
+                site=site,
+                start_date=start_date,
+                end_date=end_date,
+                limit=lim,
+            )
+            top_pages = await qe.list_gsc_top_pages(
+                site=site,
+                start_date=start_date,
+                end_date=end_date,
+                limit=lim,
+            )
+            await qe.append_action_log(
+                "gsc_read_tool_called",
+                {
+                    "site": site,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "limit": lim,
+                    "counts": {
+                        "top_queries": len(top_queries),
+                        "top_pages": len(top_pages),
+                        "quick_wins": len(quick_wins),
+                        "content_gaps": len(content_gaps),
+                        "page_fixes": len(page_fixes),
+                    },
+                },
+                session_id=session_id,
+            )
+            return {
+                "site": site,
+                "start_date": start_date,
+                "end_date": end_date,
+                "top_queries": top_queries,
+                "top_pages": top_pages,
+                "quick_wins": quick_wins,
+                "content_gaps": content_gaps,
+                "page_fixes": page_fixes,
+            }
+
+        gsc_read_fn = _gsc_read_bound
 
     knowledge_search_fn = None
     knowledge_record_fn = None
@@ -594,6 +673,7 @@ async def orchestrate_turn(
             params_json=params_str,
             idempotency_key=idem,
             max_steps=workflow_max_steps,
+            require_approval=workflow_require_approval,
         )
 
     async def _workflow_status_bound(
@@ -642,6 +722,7 @@ async def orchestrate_turn(
             dispatch_allowlist=dispatch_allowlist,
             workflow_enqueue=wf_enqueue_h,
             workflow_get_status=wf_status_h,
+            gsc_read=gsc_read_fn,
         )
         try:
             return await _agentic_loop(
@@ -667,6 +748,7 @@ async def orchestrate_turn(
                 web_fetch_configured=eff_web_cfg is not None,
                 web_sources_list_configured=eff_ws_list,
                 goal_recall_configured=goal_recall_reader is not None,
+                gsc_read_configured=gsc_read_fn is not None,
                 knowledge_tools_configured=need_knowledge,
                 workflow_tools_configured=include_workflow_tools,
                 max_session_tokens=max_session_tokens,
@@ -711,6 +793,7 @@ async def _agentic_loop(
     web_fetch_configured: bool,
     web_sources_list_configured: bool,
     goal_recall_configured: bool,
+    gsc_read_configured: bool,
     knowledge_tools_configured: bool,
     workflow_tools_configured: bool,
     max_session_tokens: int,
@@ -910,6 +993,13 @@ async def _agentic_loop(
         if needs_goal_recall and not goal_recall_configured:
             raise StreamFailed(
                 "model requested read_goal_task_view but it is not configured"
+            )
+        needs_gsc_read = any(
+            c.name == "get_gsc_opportunities" for c in leg.function_calls
+        )
+        if needs_gsc_read and not gsc_read_configured:
+            raise StreamFailed(
+                "model requested get_gsc_opportunities but it is not configured"
             )
 
         needs_workflow_tool = any(

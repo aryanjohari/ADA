@@ -207,6 +207,19 @@ class QueryEngine:
     async def state_get(self, key: str) -> str | None:
         return await self._store.state_get(key)
 
+    async def ensure_profile_identity(
+        self,
+        *,
+        profile_id: str,
+        profile_data_root: str,
+        profile_fingerprint: str,
+    ) -> None:
+        await self._store.ensure_profile_identity(
+            profile_id=profile_id,
+            profile_data_root=profile_data_root,
+            profile_fingerprint=profile_fingerprint,
+        )
+
     async def get_task_plan_json(self, task_id: int) -> str:
         return await self._store.get_task_plan_json(task_id)
 
@@ -270,6 +283,146 @@ class QueryEngine:
         session_id: int | None = None,
     ) -> int:
         return await self._store.append_action_log(kind, payload, session_id)
+
+    async def upsert_approval_record(
+        self,
+        *,
+        artifact_type: str,
+        artifact_ref: str,
+        status: str,
+        requested_by: str = "",
+        approved_by: str = "",
+        reason: str = "",
+        payload_json: dict[str, Any] | None = None,
+        set_decided: bool = False,
+    ) -> None:
+        await self._store.upsert_approval_record(
+            artifact_type=artifact_type,
+            artifact_ref=artifact_ref,
+            status=status,
+            requested_by=requested_by,
+            approved_by=approved_by,
+            reason=reason,
+            payload_json=payload_json,
+            set_decided=set_decided,
+        )
+
+    async def get_approval_record(
+        self, *, artifact_type: str, artifact_ref: str
+    ) -> dict[str, Any] | None:
+        return await self._store.get_approval_record(
+            artifact_type=artifact_type,
+            artifact_ref=artifact_ref,
+        )
+
+    async def ensure_analytics_provider(
+        self,
+        *,
+        provider: str,
+        property_ref: str,
+        account_ref: str = "",
+        config_json: dict[str, Any] | None = None,
+    ) -> int:
+        return await self._store.ensure_analytics_provider(
+            provider=provider,
+            property_ref=property_ref,
+            account_ref=account_ref,
+            config_json=config_json,
+        )
+
+    async def upsert_analytics_snapshot(
+        self,
+        *,
+        provider_id: int,
+        ingest_job_id: int | None,
+        window_start: str,
+        window_end: str,
+        request_hash: str,
+        response_version: str,
+        row_count: int,
+    ) -> int:
+        return await self._store.upsert_analytics_snapshot(
+            provider_id=provider_id,
+            ingest_job_id=ingest_job_id,
+            window_start=window_start,
+            window_end=window_end,
+            request_hash=request_hash,
+            response_version=response_version,
+            row_count=row_count,
+        )
+
+    async def upsert_gsc_search_analytics_row(
+        self,
+        *,
+        provider_id: int,
+        snapshot_id: int,
+        data_date: str,
+        query: str,
+        page: str,
+        country: str,
+        device: str,
+        clicks: float,
+        impressions: float,
+        ctr: float,
+        position: float,
+        row_hash: str,
+    ) -> None:
+        await self._store.upsert_gsc_search_analytics_row(
+            provider_id=provider_id,
+            snapshot_id=snapshot_id,
+            data_date=data_date,
+            query=query,
+            page=page,
+            country=country,
+            device=device,
+            clicks=clicks,
+            impressions=impressions,
+            ctr=ctr,
+            position=position,
+            row_hash=row_hash,
+        )
+
+    async def list_gsc_top_queries(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_gsc_top_queries(
+            site=site, start_date=start_date, end_date=end_date, limit=limit
+        )
+
+    async def list_gsc_top_queries_safe(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> dict[str, Any]:
+        return await self._store.list_gsc_top_queries_safe(
+            site=site, start_date=start_date, end_date=end_date, limit=limit
+        )
+
+    async def list_gsc_top_pages(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_gsc_top_pages(
+            site=site, start_date=start_date, end_date=end_date, limit=limit
+        )
+
+    async def list_gsc_quick_wins(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_gsc_quick_wins(
+            site=site, start_date=start_date, end_date=end_date, limit=limit
+        )
+
+    async def list_gsc_content_gaps(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_gsc_content_gaps(
+            site=site, start_date=start_date, end_date=end_date, limit=limit
+        )
+
+    async def list_gsc_page_fixes(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_gsc_page_fixes(
+            site=site, start_date=start_date, end_date=end_date, limit=limit
+        )
 
     async def load_messages_for_dream(
         self, *, session_id: int | None, limit: int
@@ -691,6 +844,11 @@ class QueryEngine:
         status: str | None = None,
     ) -> None:
         await self._store.update_workflow_row(workflow_id, status=status)
+
+    async def merge_workflow_params_json(
+        self, workflow_id: int, patch: dict[str, Any]
+    ) -> None:
+        await self._store.merge_workflow_params_json(workflow_id, patch)
 
     async def update_workflow_step_row(
         self,

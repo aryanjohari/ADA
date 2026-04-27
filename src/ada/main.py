@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 
+from ada.analytics.planner import build_gsc_campaign_plan_payload, default_window
 from ada.budget import daemon_should_execute_goal, maybe_log_daemon_block
 from ada.config import Settings, load_dotenv_if_present
 from ada.orchestrator import file_guard_audit_hook, orchestrate_turn
@@ -22,6 +24,7 @@ from ada.prompt import (
     read_text_file,
 )
 from ada.query_engine import QueryEngine
+from ada.profile_runtime import enforce_profile_identity
 from ada.tool_executor import (
     FileToolConfig,
     MemoryToolConfig,
@@ -63,6 +66,49 @@ log = logging.getLogger("ada.daemon")
 POLL_INTERVAL_SEC = 2.0
 
 
+async def _maybe_generate_gsc_plan_for_goal(
+    qe: QueryEngine, *, settings: Settings, task_id: int, goal: str
+) -> None:
+    if not settings.enable_gsc_read_tools:
+        return
+    site = settings.gsc_site_url.strip()
+    if not site:
+        return
+    raw_plan = await qe.get_task_plan_json(task_id)
+    try:
+        existing = json.loads(raw_plan)
+    except json.JSONDecodeError:
+        existing = {}
+    if isinstance(existing, dict) and (
+        existing.get("top_opportunities") or existing.get("approval_status") == "pending"
+    ):
+        return
+    window = default_window(
+        site=site,
+        lookback_days=settings.gsc_plan_default_lookback_days,
+        limit=settings.gsc_plan_max_items,
+    )
+    payload = await build_gsc_campaign_plan_payload(
+        qe,
+        campaign_goal=goal,
+        window=window,
+        max_items=settings.gsc_plan_max_items,
+    )
+    await qe.set_task_plan_json(task_id, json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    await qe.append_action_log(
+        "gsc_plan_generated",
+        {
+            "task_id": task_id,
+            "site": site,
+            "start_date": window.start_date,
+            "end_date": window.end_date,
+            "max_items": settings.gsc_plan_max_items,
+            "opportunities": len(payload.get("top_opportunities", [])),
+        },
+        session_id=task_id,
+    )
+
+
 async def run_daemon_loop(settings: Settings) -> None:
     settings.ensure_data_dir()
     schema_path = Path(__file__).resolve().parent / "db" / "schema.sql"
@@ -72,6 +118,7 @@ async def run_daemon_loop(settings: Settings) -> None:
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     allow = load_allowlist_exact_lines(settings.allowlist_path)
     soul = read_soul_text(settings.soul_path)
     master = read_text_file(settings.master_path)
@@ -135,6 +182,9 @@ async def run_daemon_loop(settings: Settings) -> None:
                 continue
             await qe.update_task(task_id, status="executing")
             try:
+                await _maybe_generate_gsc_plan_for_goal(
+                    qe, settings=settings, task_id=task_id, goal=goal
+                )
                 wf_attached = await qe.get_workflow_by_parent_task_id(task_id)
                 if wf_attached is not None:
                     final = await run_workflow_for_parent_task(
@@ -179,6 +229,7 @@ async def run_daemon_loop(settings: Settings) -> None:
                         memory_config=_memory_tool_config(settings),
                         include_plan_tools=settings.enable_plan_tools,
                         include_goal_recall_tool=settings.enable_goal_recall_tool,
+                        include_gsc_read_tools=settings.enable_gsc_read_tools,
                         file_config=file_cfg,
                         max_session_tokens=settings.max_session_tokens,
                         on_file_guard_violation=file_guard_audit_hook(
@@ -199,6 +250,7 @@ async def run_daemon_loop(settings: Settings) -> None:
                         debug_stream=settings.debug_stream,
                         include_workflow_tools=settings.enable_workflow_tools,
                         workflow_max_steps=settings.ada_max_task_steps,
+                        workflow_require_approval=settings.require_approval_for_enqueue,
                     )
                 await qe.update_task(
                     task_id,

@@ -6,6 +6,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Sequence
+from datetime import datetime
 from urllib.parse import urlparse, urlunparse
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,7 +15,7 @@ from typing import Any, Literal
 import aiosqlite
 
 TaskKind = Literal["chat", "goal"]
-KnowledgeKind = Literal["api", "rss", "web"]
+KnowledgeKind = Literal["api", "rss", "web", "brand"]
 TASK_KIND_CHAT: TaskKind = "chat"
 TASK_KIND_GOAL: TaskKind = "goal"
 
@@ -194,7 +195,7 @@ class PersistentState:
                 """
                 CREATE TABLE knowledge_sources (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web')),
+                    kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web', 'brand')),
                     label TEXT,
                     base_url TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -257,6 +258,7 @@ class PersistentState:
         await self._migrate_knowledge_fts_triage_doc_v1()
         await self._ensure_market_metrics_and_synthesis_edges()
         await self._ensure_phase1_ingest_audit()
+        await self._ensure_knowledge_source_kind_brand()
         await self._ensure_phase2_graph_lite()
         await self._ensure_publisher_graph_columns()
         await self._ensure_phase3_workflows()
@@ -559,6 +561,49 @@ class PersistentState:
             "CREATE INDEX IF NOT EXISTS idx_edge_evidence_knowledge ON edge_evidence(knowledge_id)"
         )
         await self._conn.commit()
+
+    async def _ensure_knowledge_source_kind_brand(self) -> None:
+        """Allow knowledge_sources.kind='brand' on upgraded DBs."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='knowledge_sources'"
+        )
+        row = await cur.fetchone()
+        create_sql = str((row[0] if row else "") or "")
+        if "'brand'" in create_sql:
+            return
+        try:
+            await self._conn.execute("PRAGMA foreign_keys = OFF")
+            await self._conn.execute("DROP TABLE IF EXISTS knowledge_sources__brand")
+            await self._conn.execute(
+                """
+                CREATE TABLE knowledge_sources__brand (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind TEXT NOT NULL CHECK (kind IN ('api', 'rss', 'web', 'brand')),
+                    label TEXT,
+                    base_url TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    config_json TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            await self._conn.execute(
+                """
+                INSERT INTO knowledge_sources__brand(id, kind, label, base_url, created_at, config_json)
+                SELECT id, kind, label, base_url, created_at, COALESCE(config_json, '{}')
+                FROM knowledge_sources
+                """
+            )
+            await self._conn.execute("DROP TABLE knowledge_sources")
+            await self._conn.execute(
+                "ALTER TABLE knowledge_sources__brand RENAME TO knowledge_sources"
+            )
+            await self._conn.execute("PRAGMA foreign_keys = ON")
+            await self._conn.commit()
+        except Exception:
+            await self._conn.execute("PRAGMA foreign_keys = ON")
+            await self._conn.rollback()
+            raise
 
     async def _ensure_impact_score_and_kernel_indexes(self) -> None:
         """Add impact_score + triage indexes for upgraded DBs."""
@@ -1096,6 +1141,7 @@ class PersistentState:
             ),
         )
         await self._conn.commit()
+        await self._conn.commit()
         return mid
 
     async def record_web_tool_artifacts(
@@ -1331,6 +1377,621 @@ class PersistentState:
         )
         row = await cur.fetchone()
         return str(row[0]) if row else None
+
+    async def ensure_profile_identity(
+        self,
+        *,
+        profile_id: str,
+        profile_data_root: str,
+        profile_fingerprint: str,
+    ) -> None:
+        """
+        Bind the SQLite file to a single runtime profile. First writer initializes
+        profile keys; subsequent writers must match exactly.
+        """
+        assert self._conn is not None
+        expected = {
+            "profile.id": str(profile_id),
+            "profile.data_root": str(profile_data_root),
+            "profile.fingerprint": str(profile_fingerprint),
+        }
+        for key, value in expected.items():
+            cur = await self._conn.execute("SELECT value FROM state WHERE key = ?", (key,))
+            row = await cur.fetchone()
+            if row is None:
+                await self._conn.execute(
+                    "INSERT INTO state(key, value) VALUES(?, ?)",
+                    (key, value),
+                )
+                continue
+            current = str(row[0])
+            if current != value:
+                raise ValueError(
+                    f"profile mismatch for {key}: db={current!r} runtime={value!r}"
+                )
+        await self._conn.commit()
+
+    async def upsert_approval_record(
+        self,
+        *,
+        artifact_type: str,
+        artifact_ref: str,
+        status: str,
+        requested_by: str = "",
+        approved_by: str = "",
+        reason: str = "",
+        payload_json: dict[str, Any] | None = None,
+        set_decided: bool = False,
+    ) -> None:
+        assert self._conn is not None
+        if status not in ("requested", "approved", "rejected", "expired"):
+            raise ValueError(f"invalid approval status: {status!r}")
+        payload = json.dumps(payload_json or {}, ensure_ascii=False)
+        await self._conn.execute(
+            """
+            INSERT INTO approval_records (
+                artifact_type, artifact_ref, status, requested_by, approved_by, reason, payload_json, requested_at, updated_at, decided_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), CASE WHEN ? THEN datetime('now') ELSE NULL END)
+            ON CONFLICT(artifact_type, artifact_ref) DO UPDATE SET
+                status = excluded.status,
+                requested_by = excluded.requested_by,
+                approved_by = excluded.approved_by,
+                reason = excluded.reason,
+                payload_json = excluded.payload_json,
+                updated_at = datetime('now'),
+                decided_at = CASE WHEN excluded.status IN ('approved', 'rejected', 'expired') THEN datetime('now') ELSE approval_records.decided_at END
+            """,
+            (
+                artifact_type,
+                artifact_ref,
+                status,
+                requested_by,
+                approved_by,
+                reason,
+                payload,
+                1 if set_decided else 0,
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_approval_record(
+        self, *, artifact_type: str, artifact_ref: str
+    ) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, artifact_type, artifact_ref, status, requested_by, approved_by, reason,
+                   payload_json, requested_at, decided_at, updated_at
+            FROM approval_records
+            WHERE artifact_type = ? AND artifact_ref = ?
+            LIMIT 1
+            """,
+            (artifact_type, artifact_ref),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(str(row[7] or "{}"))
+            if not isinstance(payload, dict):
+                payload = {}
+        except json.JSONDecodeError:
+            payload = {}
+        return {
+            "id": int(row[0]),
+            "artifact_type": str(row[1]),
+            "artifact_ref": str(row[2]),
+            "status": str(row[3]),
+            "requested_by": str(row[4] or ""),
+            "approved_by": str(row[5] or ""),
+            "reason": str(row[6] or ""),
+            "payload_json": payload,
+            "requested_at": str(row[8] or ""),
+            "decided_at": str(row[9] or "") if row[9] is not None else None,
+            "updated_at": str(row[10] or ""),
+        }
+
+    async def ensure_analytics_provider(
+        self,
+        *,
+        provider: str,
+        property_ref: str,
+        account_ref: str = "",
+        config_json: dict[str, Any] | None = None,
+    ) -> int:
+        assert self._conn is not None
+        cfg = json.dumps(config_json or {}, ensure_ascii=False)
+        try:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO analytics_providers(provider, account_ref, property_ref, config_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                (provider, account_ref, property_ref, cfg),
+            )
+            await self._conn.commit()
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            cur = await self._conn.execute(
+                """
+                SELECT id FROM analytics_providers WHERE provider = ? AND property_ref = ? LIMIT 1
+                """,
+                (provider, property_ref),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise
+            return int(row[0])
+
+    async def upsert_analytics_snapshot(
+        self,
+        *,
+        provider_id: int,
+        ingest_job_id: int | None,
+        window_start: str,
+        window_end: str,
+        request_hash: str,
+        response_version: str,
+        row_count: int,
+    ) -> int:
+        assert self._conn is not None
+        try:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO analytics_snapshots(
+                    provider_id, ingest_job_id, window_start, window_end, request_hash, response_version, row_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    provider_id,
+                    ingest_job_id,
+                    window_start,
+                    window_end,
+                    request_hash,
+                    response_version,
+                    row_count,
+                ),
+            )
+            await self._conn.commit()
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            cur = await self._conn.execute(
+                """
+                SELECT id FROM analytics_snapshots WHERE provider_id = ? AND request_hash = ? LIMIT 1
+                """,
+                (provider_id, request_hash),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise
+            return int(row[0])
+
+    async def upsert_gsc_search_analytics_row(
+        self,
+        *,
+        provider_id: int,
+        snapshot_id: int,
+        data_date: str,
+        query: str,
+        page: str,
+        country: str,
+        device: str,
+        clicks: float,
+        impressions: float,
+        ctr: float,
+        position: float,
+        row_hash: str,
+    ) -> None:
+        assert self._conn is not None
+        await self._conn.execute(
+            """
+            INSERT INTO gsc_search_analytics_rows(
+                provider_id, snapshot_id, data_date, query, page, country, device,
+                clicks, impressions, ctr, position, row_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider_id, data_date, query, page, country, device)
+            DO UPDATE SET
+                snapshot_id = excluded.snapshot_id,
+                clicks = excluded.clicks,
+                impressions = excluded.impressions,
+                ctr = excluded.ctr,
+                position = excluded.position,
+                row_hash = excluded.row_hash
+            """,
+            (
+                provider_id,
+                snapshot_id,
+                data_date,
+                query,
+                page,
+                country,
+                device,
+                clicks,
+                impressions,
+                ctr,
+                position,
+                row_hash,
+            ),
+        )
+
+    @staticmethod
+    def _validate_iso_date(value: str, *, field: str) -> str:
+        s = str(value).strip()
+        try:
+            datetime.strptime(s, "%Y-%m-%d")
+        except ValueError as e:
+            raise ValueError(f"{field} must be YYYY-MM-DD") from e
+        return s
+
+    @staticmethod
+    def _validate_gsc_read_limit(limit: int, *, max_limit: int = 200) -> int:
+        lim = int(limit)
+        if lim < 1 or lim > max_limit:
+            raise ValueError(f"limit must be between 1 and {max_limit}")
+        return lim
+
+    async def _gsc_tables_present(self) -> bool:
+        assert self._conn is not None
+        for tbl in ("analytics_providers", "gsc_search_analytics_rows"):
+            cur = await self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (tbl,),
+            )
+            if await cur.fetchone() is None:
+                return False
+        return True
+
+    async def list_gsc_top_queries(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        if not await self._gsc_tables_present():
+            raise ValueError("GSC tables are not available")
+        assert self._conn is not None
+        site_s = str(site).strip()
+        if not site_s:
+            raise ValueError("site is required")
+        start_s = self._validate_iso_date(start_date, field="start_date")
+        end_s = self._validate_iso_date(end_date, field="end_date")
+        if start_s > end_s:
+            raise ValueError("start_date must be <= end_date")
+        lim = self._validate_gsc_read_limit(limit)
+        cur = await self._conn.execute(
+            """
+            SELECT
+                r.query,
+                SUM(r.clicks) AS clicks,
+                SUM(r.impressions) AS impressions,
+                CASE
+                    WHEN SUM(r.impressions) > 0 THEN SUM(r.clicks) / SUM(r.impressions)
+                    ELSE 0
+                END AS ctr,
+                CASE
+                    WHEN SUM(r.impressions) > 0 THEN SUM(r.position * r.impressions) / SUM(r.impressions)
+                    ELSE 0
+                END AS avg_position
+            FROM gsc_search_analytics_rows r
+            JOIN analytics_providers p ON p.id = r.provider_id
+            WHERE p.provider = 'gsc'
+              AND p.property_ref = ?
+              AND r.data_date >= ?
+              AND r.data_date <= ?
+              AND TRIM(r.query) <> ''
+            GROUP BY r.query
+            ORDER BY impressions DESC, avg_position ASC, ctr ASC, r.query ASC
+            LIMIT ?
+            """,
+            (site_s, start_s, end_s, lim),
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "query": str(r[0]),
+                "clicks": float(r[1] or 0.0),
+                "impressions": float(r[2] or 0.0),
+                "ctr": float(r[3] or 0.0),
+                "avg_position": float(r[4] or 0.0),
+            }
+            for r in rows
+        ]
+
+    async def list_gsc_top_queries_safe(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> dict[str, Any]:
+        if not await self._gsc_tables_present():
+            return {"tables_present": False, "rows": []}
+        rows = await self.list_gsc_top_queries(
+            site=site, start_date=start_date, end_date=end_date, limit=limit
+        )
+        return {"tables_present": True, "rows": rows}
+
+    async def list_gsc_top_pages(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        if not await self._gsc_tables_present():
+            raise ValueError("GSC tables are not available")
+        assert self._conn is not None
+        site_s = str(site).strip()
+        if not site_s:
+            raise ValueError("site is required")
+        start_s = self._validate_iso_date(start_date, field="start_date")
+        end_s = self._validate_iso_date(end_date, field="end_date")
+        if start_s > end_s:
+            raise ValueError("start_date must be <= end_date")
+        lim = self._validate_gsc_read_limit(limit)
+        cur = await self._conn.execute(
+            """
+            SELECT
+                r.page,
+                SUM(r.clicks) AS clicks,
+                SUM(r.impressions) AS impressions,
+                CASE
+                    WHEN SUM(r.impressions) > 0 THEN SUM(r.clicks) / SUM(r.impressions)
+                    ELSE 0
+                END AS ctr,
+                CASE
+                    WHEN SUM(r.impressions) > 0 THEN SUM(r.position * r.impressions) / SUM(r.impressions)
+                    ELSE 0
+                END AS avg_position
+            FROM gsc_search_analytics_rows r
+            JOIN analytics_providers p ON p.id = r.provider_id
+            WHERE p.provider = 'gsc'
+              AND p.property_ref = ?
+              AND r.data_date >= ?
+              AND r.data_date <= ?
+              AND TRIM(r.page) <> ''
+            GROUP BY r.page
+            ORDER BY impressions DESC, avg_position ASC, ctr ASC, r.page ASC
+            LIMIT ?
+            """,
+            (site_s, start_s, end_s, lim),
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "page": str(r[0]),
+                "clicks": float(r[1] or 0.0),
+                "impressions": float(r[2] or 0.0),
+                "ctr": float(r[3] or 0.0),
+                "avg_position": float(r[4] or 0.0),
+            }
+            for r in rows
+        ]
+
+    async def list_gsc_quick_wins(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        if not await self._gsc_tables_present():
+            raise ValueError("GSC tables are not available")
+        assert self._conn is not None
+        site_s = str(site).strip()
+        if not site_s:
+            raise ValueError("site is required")
+        start_s = self._validate_iso_date(start_date, field="start_date")
+        end_s = self._validate_iso_date(end_date, field="end_date")
+        if start_s > end_s:
+            raise ValueError("start_date must be <= end_date")
+        lim = self._validate_gsc_read_limit(limit)
+        cur = await self._conn.execute(
+            """
+            WITH query_page AS (
+                SELECT
+                    r.query AS query,
+                    r.page AS page,
+                    SUM(r.clicks) AS clicks,
+                    SUM(r.impressions) AS impressions
+                FROM gsc_search_analytics_rows r
+                JOIN analytics_providers p ON p.id = r.provider_id
+                WHERE p.provider = 'gsc'
+                  AND p.property_ref = ?
+                  AND r.data_date >= ?
+                  AND r.data_date <= ?
+                  AND TRIM(r.query) <> ''
+                GROUP BY r.query, r.page
+            ),
+            ranked AS (
+                SELECT
+                    query,
+                    page,
+                    clicks,
+                    impressions,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY query
+                        ORDER BY impressions DESC, clicks DESC, page ASC
+                    ) AS rn
+                FROM query_page
+            ),
+            query_rollup AS (
+                SELECT
+                    r.query AS query,
+                    SUM(r.clicks) AS clicks,
+                    SUM(r.impressions) AS impressions,
+                    CASE
+                        WHEN SUM(r.impressions) > 0 THEN SUM(r.clicks) / SUM(r.impressions)
+                        ELSE 0
+                    END AS ctr,
+                    CASE
+                        WHEN SUM(r.impressions) > 0 THEN SUM(r.position * r.impressions) / SUM(r.impressions)
+                        ELSE 0
+                    END AS avg_position
+                FROM gsc_search_analytics_rows r
+                JOIN analytics_providers p ON p.id = r.provider_id
+                WHERE p.provider = 'gsc'
+                  AND p.property_ref = ?
+                  AND r.data_date >= ?
+                  AND r.data_date <= ?
+                  AND TRIM(r.query) <> ''
+                GROUP BY r.query
+            )
+            SELECT
+                q.query,
+                COALESCE(r.page, '') AS page,
+                q.clicks,
+                q.impressions,
+                q.ctr,
+                q.avg_position
+            FROM query_rollup q
+            LEFT JOIN ranked r
+              ON r.query = q.query AND r.rn = 1
+            WHERE q.impressions > 0
+              AND q.avg_position BETWEEN 6.0 AND 20.0
+            ORDER BY q.impressions DESC, q.ctr ASC, q.avg_position ASC, q.query ASC
+            LIMIT ?
+            """,
+            (site_s, start_s, end_s, site_s, start_s, end_s, lim),
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "query": str(r[0]),
+                "page": str(r[1] or ""),
+                "clicks": float(r[2] or 0.0),
+                "impressions": float(r[3] or 0.0),
+                "ctr": float(r[4] or 0.0),
+                "avg_position": float(r[5] or 0.0),
+            }
+            for r in rows
+        ]
+
+    async def list_gsc_content_gaps(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        if not await self._gsc_tables_present():
+            raise ValueError("GSC tables are not available")
+        assert self._conn is not None
+        site_s = str(site).strip()
+        if not site_s:
+            raise ValueError("site is required")
+        start_s = self._validate_iso_date(start_date, field="start_date")
+        end_s = self._validate_iso_date(end_date, field="end_date")
+        if start_s > end_s:
+            raise ValueError("start_date must be <= end_date")
+        lim = self._validate_gsc_read_limit(limit)
+        cur = await self._conn.execute(
+            """
+            WITH query_page AS (
+                SELECT
+                    r.query AS query,
+                    r.page AS page,
+                    SUM(r.clicks) AS clicks,
+                    SUM(r.impressions) AS impressions
+                FROM gsc_search_analytics_rows r
+                JOIN analytics_providers p ON p.id = r.provider_id
+                WHERE p.provider = 'gsc'
+                  AND p.property_ref = ?
+                  AND r.data_date >= ?
+                  AND r.data_date <= ?
+                  AND TRIM(r.query) <> ''
+                GROUP BY r.query, r.page
+            ),
+            ranked AS (
+                SELECT
+                    query,
+                    page,
+                    clicks,
+                    impressions,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY query
+                        ORDER BY impressions DESC, clicks DESC, page ASC
+                    ) AS rn
+                FROM query_page
+            ),
+            totals AS (
+                SELECT
+                    query,
+                    SUM(impressions) AS total_impressions
+                FROM query_page
+                GROUP BY query
+            )
+            SELECT
+                t.query,
+                COALESCE(r.page, '') AS top_page,
+                t.total_impressions,
+                COALESCE(r.impressions, 0) AS top_page_impressions,
+                CASE
+                    WHEN t.total_impressions > 0 THEN COALESCE(r.impressions, 0) / t.total_impressions
+                    ELSE 0
+                END AS top_page_share
+            FROM totals t
+            LEFT JOIN ranked r
+              ON r.query = t.query AND r.rn = 1
+            WHERE t.total_impressions > 0
+              AND (
+                TRIM(COALESCE(r.page, '')) = ''
+                OR (CASE
+                    WHEN t.total_impressions > 0 THEN COALESCE(r.impressions, 0) / t.total_impressions
+                    ELSE 0
+                END) < 0.60
+              )
+            ORDER BY t.total_impressions DESC, top_page_share ASC, t.query ASC
+            LIMIT ?
+            """,
+            (site_s, start_s, end_s, lim),
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "query": str(r[0]),
+                "top_page": str(r[1] or ""),
+                "total_impressions": float(r[2] or 0.0),
+                "top_page_impressions": float(r[3] or 0.0),
+                "top_page_share": float(r[4] or 0.0),
+            }
+            for r in rows
+        ]
+
+    async def list_gsc_page_fixes(
+        self, *, site: str, start_date: str, end_date: str, limit: int
+    ) -> list[dict[str, Any]]:
+        if not await self._gsc_tables_present():
+            raise ValueError("GSC tables are not available")
+        assert self._conn is not None
+        site_s = str(site).strip()
+        if not site_s:
+            raise ValueError("site is required")
+        start_s = self._validate_iso_date(start_date, field="start_date")
+        end_s = self._validate_iso_date(end_date, field="end_date")
+        if start_s > end_s:
+            raise ValueError("start_date must be <= end_date")
+        lim = self._validate_gsc_read_limit(limit)
+        cur = await self._conn.execute(
+            """
+            SELECT
+                r.page,
+                SUM(r.clicks) AS clicks,
+                SUM(r.impressions) AS impressions,
+                CASE
+                    WHEN SUM(r.impressions) > 0 THEN SUM(r.clicks) / SUM(r.impressions)
+                    ELSE 0
+                END AS ctr,
+                CASE
+                    WHEN SUM(r.impressions) > 0 THEN SUM(r.position * r.impressions) / SUM(r.impressions)
+                    ELSE 0
+                END AS avg_position
+            FROM gsc_search_analytics_rows r
+            JOIN analytics_providers p ON p.id = r.provider_id
+            WHERE p.provider = 'gsc'
+              AND p.property_ref = ?
+              AND r.data_date >= ?
+              AND r.data_date <= ?
+              AND TRIM(r.page) <> ''
+            GROUP BY r.page
+            HAVING impressions > 0
+            ORDER BY impressions DESC, ctr ASC, avg_position ASC, r.page ASC
+            LIMIT ?
+            """,
+            (site_s, start_s, end_s, lim),
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "page": str(r[0]),
+                "clicks": float(r[1] or 0.0),
+                "impressions": float(r[2] or 0.0),
+                "ctr": float(r[3] or 0.0),
+                "avg_position": float(r[4] or 0.0),
+            }
+            for r in rows
+        ]
 
     async def get_task_plan_json(self, task_id: int) -> str:
         assert self._conn is not None
@@ -1617,7 +2278,7 @@ class PersistentState:
         base_url: str = "",
         config_json: str | dict[str, Any] | None = None,
     ) -> int:
-        if kind not in ("api", "rss", "web"):
+        if kind not in ("api", "rss", "web", "brand"):
             raise ValueError(f"invalid knowledge source kind: {kind!r}")
         assert self._conn is not None
         if isinstance(config_json, dict):
@@ -3408,6 +4069,35 @@ class PersistentState:
             UPDATE workflows SET status = ?, updated_at = datetime('now') WHERE id = ?
             """,
             (st, workflow_id),
+        )
+        await self._conn.commit()
+
+    async def merge_workflow_params_json(
+        self, workflow_id: int, patch: dict[str, Any]
+    ) -> None:
+        """Shallow-merge ``patch`` into ``workflows.params_json`` (resume-safe)."""
+        assert self._conn is not None
+        if not patch:
+            return
+        cur = await self._conn.execute(
+            "SELECT params_json FROM workflows WHERE id = ?",
+            (workflow_id,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            raise ValueError(f"no workflow with id={workflow_id}")
+        try:
+            base = json.loads(str(row[0] or "{}"))
+        except json.JSONDecodeError:
+            base = {}
+        if not isinstance(base, dict):
+            base = {}
+        merged = {**base, **patch}
+        await self._conn.execute(
+            """
+            UPDATE workflows SET params_json = ?, updated_at = datetime('now') WHERE id = ?
+            """,
+            (json.dumps(merged, ensure_ascii=False), workflow_id),
         )
         await self._conn.commit()
 

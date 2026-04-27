@@ -10,9 +10,13 @@ from ada.config import Settings, load_dotenv_if_present
 from ada.cli import run_chat, run_dream_cli, run_extract_graph_lite_cli
 from ada.goal_cli import async_main as goal_async_main
 from ada.ingest.gets import run_ingest_gets_cli
+from ada.ingest.brand import run_ingest_brand_cli
+from ada.ingest.gsc_cli import build_ingest_gsc_parser, run_ingest_gsc_cli
 from ada.ingest.keywords import run_ingest_keywords_cli
 from ada.ingest.rss import run_ingest_rss_cli, run_register_rss_source_cli
+from ada.keyword_select_cli import run_keyword_select_cli
 from ada.main import main_daemon
+from ada.approval_cli import build_approval_parser, run_approval_cli
 from ada.triage.run import run_triage_cli
 from ada.matrix_cli import run_matrix_scan_cli
 from ada.workflow_cli import run_workflow_enqueue_cli, run_workflow_status_cli
@@ -49,6 +53,37 @@ def main() -> None:
         "ingest-gets",
         help="Public GETS tender index (ADA_GETS_POLL_URL) → ingest_raw + knowledge_items",
     )
+    brand_p = sub.add_parser(
+        "ingest-brand",
+        help="Bounded site ingest for brand truth into knowledge_items",
+    )
+    brand_p.add_argument(
+        "--site-url",
+        default=None,
+        metavar="URL",
+        help="Brand site URL (fallback: ADA_BRAND_SITE_URL)",
+    )
+    brand_p.add_argument(
+        "--max-urls",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Bounded pages to ingest (default: ADA_BRAND_INGEST_MAX_URLS)",
+    )
+    brand_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Fetch and report without writing knowledge_items",
+    )
+    build_ingest_gsc_parser(sub)
+    ks_p = sub.add_parser(
+        "keyword-select",
+        help="Pick top GSC keyword cluster for publish targeting",
+    )
+    ks_p.add_argument("--entity-id", type=int, required=True, metavar="ID")
+    ks_p.add_argument("--site", required=True, metavar="SITE_URL")
+    ks_p.add_argument("--start-date", required=True, metavar="YYYY-MM-DD")
+    ks_p.add_argument("--end-date", required=True, metavar="YYYY-MM-DD")
     extract_graph_p = sub.add_parser(
         "extract-graph-lite",
         help="Run deterministic graph-lite extraction over recent knowledge_items",
@@ -153,7 +188,7 @@ def main() -> None:
         "--kind",
         required=True,
         metavar="KIND",
-        help="Template kind (e.g. rss_fetch_then_graph_then_synth)",
+        help="Template kind (e.g. rss_fetch_then_graph_then_synth, publish_entity_v1, publish_keyword_v1)",
     )
     wf_e.add_argument(
         "--goal",
@@ -188,6 +223,7 @@ def main() -> None:
         action="store_true",
         help="List candidates and intended enqueues without writing (may run without ADA_MATRIX_ENABLE)",
     )
+    build_approval_parser(sub)
 
     args = p.parse_args()
     if args.cmd == "chat":
@@ -204,6 +240,34 @@ def main() -> None:
     elif args.cmd == "ingest-gets":
         settings = Settings.load()
         raise SystemExit(asyncio.run(run_ingest_gets_cli(settings)))
+    elif args.cmd == "ingest-brand":
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_ingest_brand_cli(
+                    settings,
+                    site_url=args.site_url,
+                    max_urls=args.max_urls,
+                    dry_run=bool(args.dry_run),
+                )
+            )
+        )
+    elif args.cmd == "ingest-gsc":
+        settings = Settings.load()
+        raise SystemExit(asyncio.run(run_ingest_gsc_cli(settings, args)))
+    elif args.cmd == "keyword-select":
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_keyword_select_cli(
+                    settings,
+                    entity_id=args.entity_id,
+                    site=args.site,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                )
+            )
+        )
     elif args.cmd == "extract-graph-lite":
         settings = Settings.load()
         limit = (
@@ -313,6 +377,9 @@ def main() -> None:
                 )
             )
         )
+    elif args.cmd == "approval":
+        settings = Settings.load()
+        raise SystemExit(asyncio.run(run_approval_cli(settings, args)))
     else:
         p.print_help()
         sys.exit(2)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -12,14 +13,17 @@ from typing import Any
 from ada.config import Settings
 from ada.ingest.rss import ingest_rss_feeds
 from ada.orchestrator import orchestrate_turn
+from ada.analytics.keyword_select import select_keyword_cluster
 from ada.publish.draft import run_publish_draft
 from ada.publish.enrich import run_enrich_step
+from ada.publish.keyword_workflow import provision_keyword_stub_entity
 from ada.publish.facts import count_unique_local_facts
 from ada.workflow.enrich_sufficiency import (
     EnrichGraphSufficiency,
     evaluate_enrich_graph_sufficiency,
 )
 from ada.workflow.enrich_verify import enrich_postcondition_met
+from ada.workflow.templates import validate_target_keyword_cluster
 from ada.publish.page_schema_v1 import PageJsonV1
 from ada.publish.s3_publish import deploy_page_and_manifest
 from ada.query_engine import QueryEngine
@@ -40,6 +44,34 @@ _ENRICH_RETRY_SYSTEM_SUFFIX = (
     "values from EXISTING_SUBGRAPH; use record_entity only when no existing node fits. "
     "Non-hypothesis record_edge still requires distinct canonical https source_url per GATE rules."
 )
+
+
+async def _resolve_workflow_keyword_target(
+    qe: QueryEngine, merged_params: dict[str, Any]
+) -> tuple[str | None, dict[str, Any] | None, str | None]:
+    raw = merged_params.get("target_keyword_cluster")
+    if raw is not None:
+        return (
+            validate_target_keyword_cluster(raw),
+            merged_params.get("keyword_source")
+            if isinstance(merged_params.get("keyword_source"), dict)
+            else None,
+            None,
+        )
+    src = merged_params.get("keyword_source")
+    if not isinstance(src, dict):
+        return None, None, "keyword_missing"
+    if str(src.get("kind") or "").strip().lower() != "gsc":
+        return None, src, "keyword_missing"
+    site = str(src.get("site") or "").strip()
+    start = str(src.get("start_date") or "").strip()
+    end = str(src.get("end_date") or "").strip()
+    if not (site and start and end):
+        return None, src, "gsc_window_missing"
+    pick = await select_keyword_cluster(
+        qe, site=site, start_date=start, end_date=end, limit=20
+    )
+    return pick.keyword_cluster, pick.keyword_source, pick.fallback_reason
 
 
 def _enrich_live_web_eligible(settings: Settings) -> bool:
@@ -295,6 +327,15 @@ async def run_workflow_for_parent_task(
                 last_final = final
             elif stype == "ENRICH":
                 merged = {**params, **(st.get("input_json") or {})}
+                wf_kind = str(wf.get("kind") or "").strip()
+                if wf_kind == "publish_keyword_v1" and merged.get("entity_id") is None:
+                    eid_stub = await provision_keyword_stub_entity(qe, merged)
+                    await qe.merge_workflow_params_json(
+                        wf_id, {"entity_id": eid_stub, "keyword_stub": True}
+                    )
+                    params["entity_id"] = eid_stub
+                    params["keyword_stub"] = True
+                    merged = {**params, **(st.get("input_json") or {})}
                 eid = merged.get("entity_id")
                 if eid is None:
                     raise ValueError("ENRICH step requires entity_id in params_json")
@@ -551,23 +592,76 @@ async def run_workflow_for_parent_task(
                 prior_bits.append(f"GATE: {gout}")
             elif stype == "DRAFT":
                 merged = {**params, **(st.get("input_json") or {})}
+                keyword_cluster, keyword_source, fallback_reason = (
+                    await _resolve_workflow_keyword_target(qe, merged)
+                )
+                if keyword_cluster:
+                    merged["target_keyword_cluster"] = keyword_cluster
+                    if keyword_source is not None:
+                        merged["keyword_source"] = keyword_source
                 out = await run_publish_draft(
                     qe,
                     settings,
                     goal_text=str(wf.get("goal_text") or goal),
                     params=merged,
                 )
+                out["keyword_cluster_used"] = bool(keyword_cluster)
+                out["keyword_source"] = keyword_source
+                out["fallback_reason"] = fallback_reason
                 draft_page_dict = out.get("page")
                 if not isinstance(draft_page_dict, dict):
                     raise ValueError("DRAFT: missing page in output")
+                if settings.require_approval_for_publish:
+                    draft_hash = hashlib.sha256(
+                        json.dumps(draft_page_dict, sort_keys=True, ensure_ascii=False).encode("utf-8")
+                    ).hexdigest()[:24]
+                    out["publish_deploy_artifact_ref"] = f"workflow:{wf_id}:draft:{draft_hash}"
                 await qe.update_workflow_step_row(
                     sid, status="completed", output_json=out, error=""
+                )
+                await qe.append_action_log(
+                    "publish_keyword_targeting",
+                    {
+                        "workflow_id": wf_id,
+                        "step_id": sid,
+                        "keyword_cluster_used": bool(keyword_cluster),
+                        "target_keyword_cluster": keyword_cluster,
+                        "keyword_source": keyword_source,
+                        "fallback_reason": fallback_reason,
+                    },
+                    session_id=parent_task_id,
                 )
                 prior_bits.append("DRAFT: PageJsonV1 ok")
             elif stype == "DEPLOY":
                 merged = {**params, **(st.get("input_json") or {})}
                 if draft_page_dict is None:
                     raise ValueError("DEPLOY: no DRAFT page in memory (run DRAFT first)")
+                if settings.require_approval_for_publish:
+                    draft_hash = hashlib.sha256(
+                        json.dumps(draft_page_dict, sort_keys=True, ensure_ascii=False).encode("utf-8")
+                    ).hexdigest()[:24]
+                    artifact_ref = f"workflow:{wf_id}:draft:{draft_hash}"
+                    rec = await qe.get_approval_record(
+                        artifact_type="publish_deploy",
+                        artifact_ref=artifact_ref,
+                    )
+                    if rec is None or rec.get("status") != "approved":
+                        await qe.append_action_log(
+                            "publish_deploy_blocked_no_approval",
+                            {
+                                "workflow_id": wf_id,
+                                "artifact_type": "publish_deploy",
+                                "artifact_ref": artifact_ref,
+                                "target_keyword_cluster": merged.get(
+                                    "target_keyword_cluster"
+                                ),
+                                "keyword_source": merged.get("keyword_source"),
+                            },
+                            session_id=parent_task_id,
+                        )
+                        raise ValueError(
+                            "DEPLOY blocked: approval status=approved required for publish_deploy artifact"
+                        )
                 page = PageJsonV1.model_validate(draft_page_dict)
                 if not str(page.og_image or "").strip():
                     raise ValueError("DEPLOY: missing og_image on draft page")

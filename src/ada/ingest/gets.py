@@ -13,6 +13,7 @@ import httpx
 from ada.config import Settings
 from ada.ingest.common import assert_gov_api_url_allowed
 from ada.query_engine import QueryEngine
+from ada.profile_runtime import enforce_profile_identity
 
 log = logging.getLogger("ada.ingest.gets")
 
@@ -192,6 +193,7 @@ async def run_ingest_gets_cli(settings: Settings) -> int:
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         res = await ingest_gets_index(

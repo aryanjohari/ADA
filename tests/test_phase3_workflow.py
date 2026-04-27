@@ -125,6 +125,8 @@ def test_expand_publish_entity_v1_merges_params():
             "project_id": "proj",
             "campaign_id": "camp",
             "niche": "widgets",
+            "target_keyword_cluster": "widget installer auckland",
+            "keyword_source": {"kind": "gsc"},
         },
         max_steps=10,
     )
@@ -134,6 +136,50 @@ def test_expand_publish_entity_v1_merges_params():
         assert inp.get("entity_id") == 42
         assert inp.get("project_id") == "proj"
         assert inp.get("niche") == "widgets"
+        assert inp.get("target_keyword_cluster") == "widget installer auckland"
+
+
+def test_expand_publish_entity_v1_rejects_bad_keyword_cluster():
+    with pytest.raises(ValueError, match="unsupported characters"):
+        expand_workflow_template(
+            "publish_entity_v1",
+            {
+                "entity_id": 42,
+                "project_id": "proj",
+                "campaign_id": "camp",
+                "niche": "widgets",
+                "target_keyword_cluster": "widget<script>",
+            },
+            max_steps=10,
+        )
+
+
+def test_expand_publish_keyword_v1_steps_no_gate():
+    st = expand_workflow_template(
+        "publish_keyword_v1",
+        {
+            "target_keyword_cluster": "widget installer auckland",
+            "project_id": "proj",
+            "campaign_id": "camp",
+            "niche": "widgets",
+        },
+        max_steps=10,
+    )
+    assert [x["step_type"] for x in st] == ["ENRICH", "DRAFT", "DEPLOY"]
+    for step in st:
+        inp = step.get("input_json") or {}
+        assert inp.get("target_keyword_cluster") == "widget installer auckland"
+        assert inp.get("entity_id") is None
+        assert inp.get("workflow_kind") == "publish_keyword_v1"
+
+
+def test_expand_publish_keyword_v1_rejects_missing_target():
+    with pytest.raises(ValueError, match="target_keyword_cluster"):
+        expand_workflow_template(
+            "publish_keyword_v1",
+            {"project_id": "p", "campaign_id": "c", "niche": "n"},
+            max_steps=10,
+        )
 
 
 def test_validate_dependency_rejects_forward_ref():
@@ -177,3 +223,29 @@ async def test_executor_dispatch_allowlist_blocks_unknown():
 def test_workflow_kinds_contains_builtin():
     assert "rss_fetch_then_graph_then_synth" in WORKFLOW_KINDS
     assert "publish_entity_v1" in WORKFLOW_KINDS
+    assert "publish_keyword_v1" in WORKFLOW_KINDS
+
+
+@pytest.mark.asyncio
+async def test_merge_workflow_params_json_persists(tmp_path, schema_sql_path):
+    db = tmp_path / "merge_wf.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        tid = await qe.insert_task("g2", status="pending", task_kind=TASK_KIND_GOAL)
+        wf_id, _ = await qe.enqueue_workflow(
+            kind="publish_keyword_v1",
+            goal_text="kw",
+            params_json={"a": 1, "b": 2},
+            parent_task_id=tid,
+            idempotency_key="kw-merge",
+            steps=[{"step_index": 0, "step_type": "ENRICH", "input_json": {}}],
+        )
+        await qe.merge_workflow_params_json(wf_id, {"entity_id": 99, "c": 3})
+        w = await qe.get_workflow_by_id(wf_id)
+        pj = w.get("params_json") if isinstance(w.get("params_json"), dict) else {}
+        assert pj.get("a") == 1
+        assert pj.get("entity_id") == 99
+        assert pj.get("c") == 3
+    finally:
+        await qe.close()

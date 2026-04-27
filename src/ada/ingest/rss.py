@@ -19,6 +19,7 @@ from ada.config import Settings
 from ada.ingest.gate import score_feed_entry
 from ada.knowledge_urls import validate_knowledge_feed_url
 from ada.knowledge_embeddings import embed_document_text, float32_list_to_blob
+from ada.profile_runtime import enforce_profile_identity
 from ada.query_engine import QueryEngine
 
 log = logging.getLogger("ada.ingest.rss")
@@ -278,6 +279,7 @@ async def run_ingest_rss_cli(settings: Settings) -> int:
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         res = await ingest_rss_feeds(
             qe,
@@ -318,6 +320,7 @@ async def run_register_rss_source_cli(
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     try:
         rows = await qe.list_knowledge_sources(kind="rss")
         for r in rows:

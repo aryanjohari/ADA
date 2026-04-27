@@ -15,6 +15,7 @@ from google import genai
 from google.genai import types
 
 from ada.config import Settings
+from ada.profile_runtime import enforce_profile_identity
 from ada.query_engine import TASK_KIND_GOAL, QueryEngine
 from ada.triage.categories import parse_triage_response
 from ada.triage.enqueue import tier1_macro_eligible, tier2_lead_eligible
@@ -146,6 +147,7 @@ async def run_triage_cli(
         debounce_ms=settings.persist_debounce_ms,
     )
     await qe.connect()
+    await enforce_profile_identity(qe, settings)
     stats = TriageStats()
     try:
         if backfill_categories:

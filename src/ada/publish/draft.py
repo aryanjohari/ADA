@@ -15,6 +15,7 @@ from ada.config import Settings
 from ada.knowledge_embeddings import embed_query_text
 from ada.publish.page_schema_v1 import PageJsonV1
 from ada.query_engine import QueryEngine
+from ada.workflow.templates import validate_target_keyword_cluster
 
 log = logging.getLogger("ada.publish.draft")
 
@@ -370,12 +371,20 @@ def _build_draft_user_text(
     project_id = str(params.get("project_id") or "")
     campaign_id = str(params.get("campaign_id") or "")
     slug_hint = str(params.get("slug") or "").strip()
+    keyword_line = "Keyword intent target: (none)"
+    kw_raw = params.get("target_keyword_cluster")
+    if kw_raw is not None:
+        keyword_line = (
+            f"Keyword intent target: {validate_target_keyword_cluster(kw_raw)!r}"
+        )
     return "\n".join(
         [
             "[WORKFLOW_STEP:DRAFT — pSEO page.json]",
             f"Parent workflow goal: {goal_text}",
             f"Entity id={eid!s} name={entity.get('name')!r} type={entity.get('type')!r}.",
             f"Placements: project_id={project_id!r} campaign_id={campaign_id!r} niche={niche!r}.",
+            "Hard constraints: preserve brand truth and graph-grounded facts.",
+            keyword_line,
             f"Optional slug hint: {slug_hint or '(derive from name; URL-safe)'}",
             "Output must be a single JSON object only (no markdown).",
             "Field `content` is semantic HTML (headings, lists, tables) suitable for"
