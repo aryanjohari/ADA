@@ -338,3 +338,40 @@ async def test_draft_og_image_preserves_model_value(
         assert p2.get("og_image") == "https://from-model.example/hero.jpg"
     finally:
         await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_draft_defaults_form_action_url_when_empty(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_PUBLISH_DRAFT_KNOWLEDGE_RETRIEVAL", "0")
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    db = tmp_path / "d5.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        subj = await qe.upsert_entity(type="service", name="E5", payload_json={})
+        eid = int(subj["entity_id"])
+        fixture = Path(__file__).resolve().parent / "fixtures" / "pseo_page.json"
+        page_json = json.loads(fixture.read_text(encoding="utf-8"))
+        page_json["lead_gen"]["form_action_url"] = "   "
+
+        async def capture_gc(*args: object, **kwargs: object) -> object:
+            m = mock.MagicMock()
+            m.text = json.dumps(page_json)
+            return m
+
+        with mock.patch("ada.publish.draft.genai.Client") as client_cls:
+            inst = client_cls.return_value
+            inst.aio.models.generate_content = mock.AsyncMock(side_effect=capture_gc)
+            out = await run_publish_draft(
+                qe,
+                Settings.load(),
+                goal_text="g",
+                params={"entity_id": eid},
+            )
+        p = out.get("page") or {}
+        lg = p.get("lead_gen") or {}
+        assert lg.get("form_action_url") == "https://formspree.io/f/xaqagpgo"
+    finally:
+        await qe.close()

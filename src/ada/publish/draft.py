@@ -21,6 +21,7 @@ log = logging.getLogger("ada.publish.draft")
 
 # Cap graph-anchored RAG query length (embedding + FTS input).
 _DRAFT_GRAPH_ANCHORED_QUERY_MAX = 8000
+_DRAFT_LEAD_FORM_ACTION_URL_DEFAULT = "https://formspree.io/f/xaqagpgo"
 
 # Stable, hotlinkable Unsplash CDN images (source.unsplash.com is shut down; see Unsplash API changelog).
 # Format: 1200×630-friendly crop; deterministic pick via sha256 of niche + entity type (+ optional page_type).
@@ -522,4 +523,13 @@ async def run_publish_draft(
             "content": _inject_top_hero_image(page.content, og),
         }
     )
+    lead = page.lead_gen
+    if not str(lead.form_action_url or "").strip():
+        page = page.model_copy(
+            update={
+                "lead_gen": lead.model_copy(
+                    update={"form_action_url": _DRAFT_LEAD_FORM_ACTION_URL_DEFAULT}
+                )
+            }
+        )
     return {"page": page.model_dump(mode="json", exclude_none=True)}

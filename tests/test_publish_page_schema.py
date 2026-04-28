@@ -15,7 +15,7 @@ def test_pseo_golden_roundtrip():
     raw = p.read_text(encoding="utf-8")
     page = PageJsonV1.model_validate_json(raw)
     assert page.slug == "acme-corp-compliance"
-    assert page.lead_gen.form_action_url.startswith("https://")
+    assert page.lead_gen.form_action_url == "https://formspree.io/f/xaqagpgo"
     out = page.model_dump_json()
     again = PageJsonV1.model_validate_json(out)
     assert again.slug == page.slug
