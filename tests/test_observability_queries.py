@@ -10,6 +10,8 @@ import pytest
 from ada.observability.paths import resolve_data_dir, resolve_state_db_path
 from ada.observability.queries import (
     action_log_recent,
+    gate_failed_steps_recent,
+    gate_failure_buckets,
     open_readonly_connection,
     tasks_pending_failed,
     usage_rollup_by_utc_day,
@@ -138,6 +140,53 @@ def test_truncate_error() -> None:
     long = "x" * 500
     t = truncate_error(long, max_chars=100)
     assert len(t) <= 100
+
+
+def test_gate_failed_steps_no_goal_leak_and_buckets(tmp_path: Path) -> None:
+    db_path = tmp_path / "gate.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(_schema_sql())
+        conn.execute(
+            "INSERT INTO tasks (goal, status, task_kind) VALUES (?, 'pending', 'goal')",
+            ("secret-publish-goal",),
+        )
+        tid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO workflows (kind, goal_text, status, parent_task_id)
+            VALUES ('publish_entity_v1', 'another secret goal', 'failed', ?)
+            """,
+            (tid,),
+        )
+        wid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        err = (
+            "GATE: unique_local_facts 1 < minimum 3 (ADA_PUBLISH_MIN_UNIQUE_FACTS)"
+        )
+        conn.execute(
+            """
+            INSERT INTO workflow_steps (
+                workflow_id, step_index, step_type, status, error, input_json, output_json
+            ) VALUES (?, 1, 'GATE', 'failed', ?, '{}', '{}')
+            """,
+            (wid, err),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    ro = open_readonly_connection(db_path)
+    with ro:
+        steps = gate_failed_steps_recent(ro, limit=10, publish_entity_only=True)
+        buckets = gate_failure_buckets(ro, publish_entity_only=True)
+    assert len(steps) == 1
+    assert steps[0]["workflow_id"] == wid
+    assert steps[0]["step_index"] == 1
+    assert "secret" not in steps[0]["error_preview"]
+    assert "unique_local_facts" in steps[0]["error_preview"]
+    assert any(
+        b["bucket"] == "below_min_unique_facts" and b["count"] >= 1 for b in buckets
+    )
 
 
 def test_resolve_state_db_path_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

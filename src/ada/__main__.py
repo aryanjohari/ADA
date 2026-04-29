@@ -19,7 +19,12 @@ from ada.main import main_daemon
 from ada.approval_cli import build_approval_parser, run_approval_cli
 from ada.triage.run import run_triage_cli
 from ada.matrix_cli import run_matrix_scan_cli
-from ada.workflow_cli import run_workflow_enqueue_cli, run_workflow_status_cli
+from ada.observability.gate_failures_cli import run_gate_failures_cli
+from ada.workflow_cli import (
+    run_workflow_enqueue_cli,
+    run_workflow_retry_cli,
+    run_workflow_status_cli,
+)
 
 
 def main() -> None:
@@ -178,7 +183,10 @@ def main() -> None:
         ),
     )
 
-    wf_p = sub.add_parser("workflow", help="Phase 3 workflows (enqueue template, status)")
+    wf_p = sub.add_parser(
+        "workflow",
+        help="Phase 3 workflows (enqueue template, status, retry failed workflow)",
+    )
     wf_sub = wf_p.add_subparsers(dest="wf_cmd", required=True)
     wf_e = wf_sub.add_parser(
         "enqueue",
@@ -213,6 +221,50 @@ def main() -> None:
         help="Print workflow row and steps as JSON",
     )
     wf_s.add_argument("workflow_id", type=int, metavar="ID")
+
+    wf_r = wf_sub.add_parser(
+        "retry",
+        help=(
+            "Reset a failed workflow + parent goal task to pending so the daemon resumes "
+            "from the first non-completed step. Use --duplicate-run for a full re-enqueue "
+            "clone (respects ADA approval when enqueue requires it)."
+        ),
+    )
+    wf_r.add_argument("workflow_id", type=int, metavar="ID")
+    wf_r_mx = wf_r.add_mutually_exclusive_group(required=False)
+    wf_r_mx.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned resets without writing",
+    )
+    wf_r_mx.add_argument(
+        "--duplicate-run",
+        action="store_true",
+        help="Enqueue a new workflow with idempotency wf-retry-{id}-{utc_ts} (full re-run)",
+    )
+    wf_r.add_argument(
+        "--reason",
+        default="manual_retry",
+        metavar="TEXT",
+        help='Reason logged in action_log (default: "manual_retry")',
+    )
+
+    gf_p = sub.add_parser(
+        "gate-failures",
+        help="Read-only JSON: recent failed GATE steps + bucket counts (default: publish_entity_v1 only)",
+    )
+    gf_p.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        metavar="N",
+        help="Max failed GATE rows to list (default: 50, capped at 500)",
+    )
+    gf_p.add_argument(
+        "--all-kinds",
+        action="store_true",
+        help="Include failed GATE steps from workflows other than publish_entity_v1",
+    )
 
     mx_p = sub.add_parser(
         "matrix-scan",
@@ -366,7 +418,28 @@ def main() -> None:
                     )
                 )
             )
+        if args.wf_cmd == "retry":
+            raise SystemExit(
+                asyncio.run(
+                    run_workflow_retry_cli(
+                        settings,
+                        workflow_id=args.workflow_id,
+                        dry_run=bool(args.dry_run),
+                        reason=args.reason,
+                        duplicate_run=bool(args.duplicate_run),
+                    )
+                )
+            )
         raise SystemExit(2)
+    elif args.cmd == "gate-failures":
+        settings = Settings.load()
+        raise SystemExit(
+            run_gate_failures_cli(
+                settings,
+                limit=int(args.limit),
+                publish_entity_only=not bool(args.all_kinds),
+            )
+        )
     elif args.cmd == "matrix-scan":
         settings = Settings.load()
         raise SystemExit(

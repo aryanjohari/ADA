@@ -30,6 +30,37 @@ def test_content_hash_stability():
 
 
 @pytest.mark.asyncio
+async def test_list_subjects_includes_under_category_edge(tmp_path, schema_sql_path):
+    """graph-lite emits under_category → category; classified_as-only queries miss candidates."""
+    db = tmp_path / "under_cat.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        await qe.ensure_triage_category_entities()
+        cat = await qe.upsert_entity(
+            type="category", name="labour_workforce", payload_json={}
+        )
+        sub = await qe.upsert_entity(
+            type="organization", name="Dept", payload_json={}
+        )
+        await qe.insert_graph_edge(
+            src_entity_id=int(sub["entity_id"]),
+            dst_entity_id=int(cat["entity_id"]),
+            edge_type="under_category",
+            confidence=1.0,
+            source_url="https://example.test/c",
+        )
+        rows = await qe.list_subjects_with_classified_category(
+            entity_types=frozenset({"organization"}), limit=10
+        )
+        assert len(rows) >= 1
+        assert int(rows[0]["id"]) == int(sub["entity_id"])
+        assert rows[0]["category_code"] == "labour_workforce"
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
 async def test_matrix_dry_run_no_enqueue_subsystem(tmp_path, schema_sql_path, monkeypatch):
     monkeypatch.setenv("ADA_MATRIX_ENABLE", "0")
     db = tmp_path / "m.db"

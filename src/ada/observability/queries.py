@@ -270,6 +270,94 @@ def workflow_status_counts(conn: sqlite3.Connection) -> dict[str, int]:
     return {str(r["status"]): int(r["n"]) for r in cur.fetchall()}
 
 
+def gate_failed_steps_recent(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 50,
+    publish_entity_only: bool = True,
+) -> list[dict[str, Any]]:
+    """
+    Failed GATE steps (read-only). Error text is truncated; workflow goal text is not selected.
+    """
+    if not _table_exists(conn, "workflows") or not _table_exists(conn, "workflow_steps"):
+        return []
+    lim = max(1, min(500, int(limit)))
+    kind_clause = "AND w.kind = 'publish_entity_v1'" if publish_entity_only else ""
+    cur = conn.execute(
+        f"""
+        SELECT ws.id, ws.workflow_id, ws.step_index, w.kind AS workflow_kind,
+               ws.status, ws.updated_at, ws.error
+        FROM workflow_steps ws
+        JOIN workflows w ON w.id = ws.workflow_id
+        WHERE ws.step_type = 'GATE'
+          AND ws.status = 'failed'
+          {kind_clause}
+        ORDER BY ws.updated_at DESC
+        LIMIT ?
+        """,
+        (lim,),
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        err = r["error"] or ""
+        out.append(
+            {
+                "step_id": int(r["id"]),
+                "workflow_id": int(r["workflow_id"]),
+                "step_index": int(r["step_index"]),
+                "workflow_kind": str(r["workflow_kind"] or ""),
+                "updated_at": str(r["updated_at"] or ""),
+                "error_preview": truncate_error(err),
+            }
+        )
+    return out
+
+
+def gate_failure_buckets(
+    conn: sqlite3.Connection, *, publish_entity_only: bool = True
+) -> list[dict[str, Any]]:
+    """
+    Aggregate counts by normalized GATE failure bucket (derived from workflow_steps.error only).
+    """
+    if not _table_exists(conn, "workflows") or not _table_exists(conn, "workflow_steps"):
+        return []
+    kind_clause = "AND w.kind = 'publish_entity_v1'" if publish_entity_only else ""
+    cur = conn.execute(
+        f"""
+        SELECT sub.bucket AS bucket,
+               COUNT(*) AS count,
+               MAX(sub.updated_at) AS latest_updated_at
+        FROM (
+            SELECT ws.updated_at AS updated_at,
+                   CASE
+                     WHEN IFNULL(ws.error, '') LIKE 'GATE: unique_local_facts%%'
+                       THEN 'below_min_unique_facts'
+                     WHEN IFNULL(ws.error, '') LIKE '%%GATE:%%'
+                       THEN 'gate_other'
+                     ELSE 'unknown'
+                   END AS bucket
+            FROM workflow_steps ws
+            JOIN workflows w ON w.id = ws.workflow_id
+            WHERE ws.step_type = 'GATE'
+              AND ws.status = 'failed'
+              {kind_clause}
+        ) AS sub
+        GROUP BY sub.bucket
+        ORDER BY count DESC, sub.bucket ASC
+        """
+    )
+    rows: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        rows.append(
+            {
+                "bucket": str(r["bucket"] or ""),
+                "count": int(r["count"] or 0),
+                "latest_updated_at": str(r["latest_updated_at"] or ""),
+            }
+        )
+    return rows
+
+
 def task_status_counts(conn: sqlite3.Connection) -> dict[str, int]:
     cur = conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status")
     return {str(r["status"]): int(r["n"]) for r in cur.fetchall()}

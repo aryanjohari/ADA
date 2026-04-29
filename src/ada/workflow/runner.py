@@ -33,17 +33,21 @@ from ada.workflow.steps import KNOWLEDGE_TOOLS_ENRICH
 
 log = logging.getLogger("ada.workflow.runner")
 
-_ENRICH_RETRY_SYSTEM_SUFFIX = (
-    "\n\n[ENRICH graph-only retry]\n"
-    "The prior model turn did not produce verifiable graph progress for this subject. "
-    "Do not end with questions to the user; when ambiguous, pick sensible defaults "
-    "(map niche hints to category or policy-style edges using existing destination nodes). "
-    "Your final actions must include durable graph writes: record_edge and/or link_evidence, "
-    "using search_knowledge, get_entity_graph_context, and EXISTING_SUBGRAPH in the user message. "
-    "Web tools are disabled on this retry. Prefer anchoring new edges to existing dst_entity_id "
-    "values from EXISTING_SUBGRAPH; use record_entity only when no existing node fits. "
-    "Non-hypothesis record_edge still requires distinct canonical https source_url per GATE rules."
-)
+def _enrich_retry_system_suffix(min_unique_facts: int) -> str:
+    n = int(min_unique_facts)
+    return (
+        "\n\n[ENRICH graph-only retry]\n"
+        "The prior model turn did not produce verifiable graph progress for this subject. "
+        "Do not end with questions to the user; when ambiguous, pick sensible defaults "
+        "(map niche hints to category or policy-style edges using existing destination nodes). "
+        "Your final actions must include durable graph writes: record_edge and/or link_evidence, "
+        "using search_knowledge, get_entity_graph_context, and EXISTING_SUBGRAPH in the user message. "
+        "Web tools are disabled on this retry. Prefer anchoring new edges to existing dst_entity_id "
+        "values from EXISTING_SUBGRAPH; use record_entity only when no existing node fits. "
+        f"The next GATE checks that this subject has at least {n} distinct canonical https URLs on "
+        "non-hypothesis record_edge rows (counts DISTINCT source_url; repeating one URL adds nothing). "
+        "Introduce new edges with new canonical page URLs—not more tool chatter reusing one citation URL."
+    )
 
 
 async def _resolve_workflow_keyword_target(
@@ -100,6 +104,7 @@ def _build_enrich_user_text(
     entity_id: int,
     entity: dict[str, Any],
     merged_params: dict[str, Any],
+    min_unique_facts: int,
     subgraph_pack: dict[str, Any] | None = None,
 ) -> str:
     niche = str(merged_params.get("niche") or "").strip()
@@ -119,9 +124,11 @@ def _build_enrich_user_text(
         "Prefer record_edge to **existing** dst_entity_id nodes from EXISTING_SUBGRAPH when the "
         "relationship fits (same spirit as EXTRACT grounding); create record_entity only when necessary.",
         "5) Do not end your turn with questions to the user—commit defaults when uncertain.",
-        "6) Every non-hypothesis record_edge MUST include a distinct canonical https source_url "
-        "(the page the evidence came from). GATE requires distinct source_urls on active outgoing edges; "
-        "calls without a valid source_url will fail.",
+        f"6) Publishing GATE counts DISTINCT source_url on your non-hypothesis record_edge calls "
+        f"from this subject. You need **at least {int(min_unique_facts)} distinct** canonical "
+        "https URLs (different pages)—e.g. `https://example.org/a` and `https://example.org/b` count "
+        "as two; five edges citing the **same** URL still count as **one** for GATE. "
+        "Do not rely on duplicating one URL to pass. Invalid or missing https source_url on fact edges fails.",
     ]
     if subgraph_pack is not None:
         lines.extend(
@@ -141,6 +148,7 @@ def _build_enrich_graph_only_user_text(
     entity_id: int,
     entity: dict[str, Any],
     merged_params: dict[str, Any],
+    min_unique_facts: int,
     subgraph_pack: dict[str, Any] | None = None,
 ) -> str:
     """ENRICH without web_search / fetch_url_text (DB + prior knowledge only)."""
@@ -158,7 +166,9 @@ def _build_enrich_graph_only_user_text(
         "3) Use record_entity, record_edge, and link_evidence to persist. Prefer record_edge to "
         "existing dst_entity_id in EXISTING_SUBGRAPH when the relationship fits.",
         "4) Do not end with questions to the user—commit defaults when uncertain.",
-        "5) Non-hypothesis record_edge must include distinct canonical https source_url (GATE).",
+        f"5) Non-hypothesis record_edge requires a canonical https source_url each time; GATE needs "
+        f"**at least {int(min_unique_facts)} distinct** URLs across outgoing fact edges from this "
+        "subject (distinct pages—reusing one URL repeatedly does not increase the count).",
     ]
     if subgraph_pack is not None:
         lines.extend(
@@ -397,6 +407,7 @@ async def run_workflow_for_parent_task(
                                 entity_id=eid_int,
                                 entity=ent,
                                 merged_params=merged,
+                                min_unique_facts=settings.ada_publish_min_unique_facts,
                                 subgraph_pack=pack,
                             )
                             first_allow_web = False
@@ -406,6 +417,7 @@ async def run_workflow_for_parent_task(
                                 entity_id=eid_int,
                                 entity=ent,
                                 merged_params=merged,
+                                min_unique_facts=settings.ada_publish_min_unique_facts,
                                 subgraph_pack=pack,
                             )
                             first_allow_web = True
@@ -475,7 +487,9 @@ async def run_workflow_for_parent_task(
                                 session_id=parent_task_id,
                                 user_text=user_txt,
                                 system_instruction=system_instruction
-                                + _ENRICH_RETRY_SYSTEM_SUFFIX,
+                                + _enrich_retry_system_suffix(
+                                    settings.ada_publish_min_unique_facts
+                                ),
                                 api_key=settings.gemini_api_key,
                                 model=settings.gemini_model,
                                 shell_allowlist=frozenset(),

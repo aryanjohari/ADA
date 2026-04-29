@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from ada.persistent.store import GRAPH_EDGE_INVALID
 from ada.query_engine import QueryEngine
 from ada.publish.facts import count_unique_local_facts
 
@@ -46,5 +47,38 @@ async def test_count_distinct_source_urls_parametrize(tmp_path, schema_sql_path)
         )
         assert await count_unique_local_facts(qe, e1) == 3
         assert await qe.count_outgoing_active_edges(e1) == 4
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_count_unique_ignores_non_active_edges(tmp_path, schema_sql_path):
+    db = tmp_path / "inactive.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        a = await qe.upsert_entity(
+            type="service", name="Beta Corp", payload_json={}
+        )
+        b = await qe.upsert_entity(type="regulation", name="r2", payload_json={})
+        e1 = int(a["entity_id"])
+        b1 = int(b["entity_id"])
+        await qe.insert_graph_edge(
+            src_entity_id=e1,
+            dst_entity_id=b1,
+            edge_type="cites",
+            confidence=0.9,
+            status=GRAPH_EDGE_INVALID,
+            source_url="https://b.test/ignored",
+        )
+        assert await count_unique_local_facts(qe, e1) == 0
+        await qe.insert_graph_edge(
+            src_entity_id=e1,
+            dst_entity_id=b1,
+            edge_type="cites",
+            confidence=0.9,
+            source_url="https://b.test/counts",
+        )
+        assert await count_unique_local_facts(qe, e1) == 1
     finally:
         await qe.close()

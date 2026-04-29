@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import socket
 import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
@@ -3725,7 +3727,11 @@ class PersistentState:
         entity_types: frozenset[str],
         limit: int,
     ) -> list[dict[str, Any]]:
-        """Matrix router: subject entities (types) with a classified_as edge to a category node."""
+        """Matrix router: subject entities (types) linked to a taxonomy category.
+
+        Links may be ``classified_as`` or ``under_category`` (graph-lite emits the latter).
+        Destination must be an entity with ``type`` category.
+        """
         assert self._conn is not None
         if not entity_types:
             return []
@@ -3739,7 +3745,7 @@ class PersistentState:
             FROM entities e
             JOIN graph_edges ge
               ON ge.src_entity_id = e.id
-             AND lower(ge.edge_type) = 'classified_as'
+             AND lower(ge.edge_type) IN ('classified_as', 'under_category')
              AND ge.status = ?
             JOIN entities c ON c.id = ge.dst_entity_id AND lower(c.type) = 'category'
             WHERE lower(e.type) IN ({placeholders})
@@ -4136,6 +4142,127 @@ class PersistentState:
             args,
         )
         await self._conn.commit()
+
+    async def retry_failed_workflow(
+        self,
+        workflow_id: int,
+        *,
+        reason: str = "manual_retry",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Resume-safe reset: workflows.status pending, tail steps pending/error cleared,
+        parent goal task pending. Single transaction unless dry_run (read-only plan).
+        Eligible only when workflow.status == failed, parent_task_id set, steps exist,
+        and not every step completed.
+        """
+        assert self._conn is not None
+
+        wf = await self.get_workflow_by_id(workflow_id)
+        if wf is None:
+            return {"error": f"no workflow with id={workflow_id}"}
+        wf_status = str(wf["status"]).strip().lower()
+        if wf_status != "failed":
+            return {"error": f"workflow_retry requires workflows.status=='failed', got {wf_status!r}"}
+
+        parent_task_id = wf.get("parent_task_id")
+        if parent_task_id is None:
+            return {"error": "workflow_retry requires workflows.parent_task_id"}
+
+        pid = int(parent_task_id)
+        try:
+            task_before = await self.get_goal_task(pid)
+        except (LookupError, ValueError) as e:
+            return {"error": f"invalid parent task: {e}"}
+
+        steps = await self.list_workflow_steps(workflow_id)
+        if not steps:
+            return {"error": "workflow has no steps"}
+
+        if all(str(s["status"]).lower() == "completed" for s in steps):
+            return {"error": "ineligible: all steps completed"}
+
+        tail_start_idx: int | None = None
+        for i, s in enumerate(steps):
+            if str(s["status"]).lower() != "completed":
+                tail_start_idx = i
+                break
+        assert tail_start_idx is not None
+        tail = steps[tail_start_idx:]
+        step_ids_reset = [int(s["id"]) for s in tail]
+
+        reason_s = str(reason).strip() or "manual_retry"
+        payload_base: dict[str, Any] = {
+            "workflow_id": workflow_id,
+            "parent_task_id": pid,
+            "reason": reason_s,
+            "dry_run": dry_run,
+            "host": socket.gethostname(),
+            "operator": os.getenv("USER") or "unknown",
+        }
+
+        plan: dict[str, Any] = {
+            "workflow_id": workflow_id,
+            "workflow_status_before": wf["status"],
+            "workflow_status_after": "pending",
+            "parent_task_id": pid,
+            "task_status_before": task_before["status"],
+            "task_status_after": "pending",
+            "tail_start_step_index": int(steps[tail_start_idx]["step_index"]),
+            "step_row_ids_pending_reset": step_ids_reset,
+        }
+
+        if dry_run:
+            return {"ok": True, "dry_run": True, "plan": plan, "payload_preview": payload_base}
+
+        try:
+            await self._conn.execute("BEGIN IMMEDIATE")
+            await self._conn.execute(
+                """
+                UPDATE workflows SET status = ?, updated_at = datetime('now') WHERE id = ?
+                """,
+                ("pending", workflow_id),
+            )
+            for sid in step_ids_reset:
+                await self._conn.execute(
+                    """
+                    UPDATE workflow_steps SET status = 'pending', error = '',
+                    updated_at = datetime('now') WHERE id = ?
+                    """,
+                    (sid,),
+                )
+            await self._conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'pending', current_output = '', updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (pid,),
+            )
+            payload = {**payload_base, "dry_run": False}
+            await self._conn.execute(
+                """
+                INSERT INTO action_log (session_id, kind, payload_json)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    None,
+                    "workflow_retry_requested",
+                    json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            await self._conn.commit()
+        except Exception:
+            await self._conn.rollback()
+            raise
+
+        return {
+            "ok": True,
+            "dry_run": False,
+            "workflow_id": workflow_id,
+            "parent_task_id": pid,
+            "plan": plan,
+        }
 
     async def list_recent_knowledge_item_ids(self, *, limit: int) -> list[int]:
         """Most recently ingested knowledge_items ids (non-tombstoned)."""

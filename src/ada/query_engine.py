@@ -867,5 +867,16 @@ class QueryEngine:
             increment_attempt=increment_attempt,
         )
 
+    async def retry_failed_workflow(
+        self,
+        workflow_id: int,
+        *,
+        reason: str = "manual_retry",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        return await self._store.retry_failed_workflow(
+            workflow_id, reason=reason, dry_run=dry_run
+        )
+
     async def list_recent_knowledge_item_ids(self, *, limit: int) -> list[int]:
         return await self._store.list_recent_knowledge_item_ids(limit=limit)
