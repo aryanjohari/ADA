@@ -755,6 +755,13 @@ class QueryEngine:
             entity_types=entity_types, limit=limit
         )
 
+    async def list_subjects_with_classified_category_recent_for_planner(
+        self, *, entity_types: frozenset[str], limit: int
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_subjects_with_classified_category_recent_for_planner(
+            entity_types=entity_types, limit=limit
+        )
+
     async def insert_graph_edge(
         self,
         *,

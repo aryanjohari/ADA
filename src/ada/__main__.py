@@ -7,7 +7,12 @@ import asyncio
 import sys
 
 from ada.config import Settings, load_dotenv_if_present
-from ada.cli import run_chat, run_dream_cli, run_extract_graph_lite_cli
+from ada.cli import (
+    run_chat,
+    run_dream_cli,
+    run_enrich_graph_cli,
+    run_extract_graph_lite_cli,
+)
 from ada.goal_cli import async_main as goal_async_main
 from ada.ingest.gets import run_ingest_gets_cli
 from ada.ingest.brand import run_ingest_brand_cli
@@ -113,6 +118,27 @@ def main() -> None:
         default=None,
         metavar="ID",
         help="Optional knowledge_sources.id filter",
+    )
+
+    enrich_graph_p = sub.add_parser(
+        "enrich-graph",
+        help="Batch ENRICH for matrix subject entities (intent + policy system context)",
+    )
+    enrich_graph_p.add_argument(
+        "--entity-id",
+        type=int,
+        action="append",
+        default=None,
+        metavar="ID",
+        dest="entity_ids",
+        help="Subject entity id (repeatable); union with matrix pool, capped by --limit / policy",
+    )
+    enrich_graph_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max entities this run (default: policy batch_enrich_max_entities)",
     )
 
     add_feed_p = sub.add_parser(
@@ -339,6 +365,17 @@ def main() -> None:
                     limit=limit,
                     token_cap=token_cap,
                     source_id=args.source_id,
+                )
+            )
+        )
+    elif args.cmd == "enrich-graph":
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_enrich_graph_cli(
+                    settings,
+                    entity_ids=args.entity_ids,
+                    limit=args.limit,
                 )
             )
         )

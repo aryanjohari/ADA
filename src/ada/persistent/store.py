@@ -3755,6 +3755,45 @@ class PersistentState:
             (GRAPH_EDGE_ACTIVE, *types_lower, lim),
         )
         rows = await cur.fetchall()
+        return self._subject_rows_category_join(rows)
+
+    async def list_subjects_with_classified_category_recent_for_planner(
+        self,
+        *,
+        entity_types: frozenset[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Same subject join as legacy matrix-scan; **recent** ordering for prioritized planner."""
+
+        assert self._conn is not None
+        if not entity_types:
+            return []
+        lim = max(1, min(int(limit), 10_000))
+        placeholders = ",".join("?" * len(entity_types))
+        types_lower = [str(t).strip().lower() for t in entity_types]
+        cur = await self._conn.execute(
+            f"""
+            SELECT DISTINCT e.id, e.type, e.name, e.normalized_name, e.payload_json,
+                   e.last_enriched_at, c.name AS category_name
+            FROM entities e
+            JOIN graph_edges ge
+              ON ge.src_entity_id = e.id
+             AND lower(ge.edge_type) IN ('classified_as', 'under_category')
+             AND ge.status = ?
+            JOIN entities c ON c.id = ge.dst_entity_id AND lower(c.type) = 'category'
+            WHERE lower(e.type) IN ({placeholders})
+            ORDER BY (e.last_enriched_at IS NULL) ASC,
+                     e.last_enriched_at DESC,
+                     e.id DESC,
+                     category_name ASC
+            LIMIT ?
+            """,
+            (GRAPH_EDGE_ACTIVE, *types_lower, lim),
+        )
+        rows = await cur.fetchall()
+        return self._subject_rows_category_join(rows)
+
+    def _subject_rows_category_join(self, rows: list[Any]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for row in rows:
             raw = str(row[4] or "{}")

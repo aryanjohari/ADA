@@ -6,6 +6,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from ada.config import Settings
+from ada.llm_context import build_llm_context
+from ada.policy.load import PolicyConfig, load_intent_md
 from ada.query_engine import QueryEngine
 
 log = logging.getLogger("ada.extract.graph_lite")
@@ -30,6 +33,58 @@ _ENTITY_TYPE_ALIASES: dict[str, str] = {
     "region": "location",
     "agency": "government_body",
 }
+
+GRAPH_LITE_BASE = (
+    "Extract a small knowledge graph from the input documents. "
+    "Output is JSON consumed by the server for storage (not markdown)."
+)
+
+GRAPH_LITE_INVARIANTS_TEMPLATE = """Return JSON only with top-level keys `entities`, `edges`, and optional `schema_rationale` (one short debug line; ignored by storage).
+
+Entity types (use one per entity): organization, government_body, person, sector, instrument, policy_instrument, event, location, category.
+Category nodes represent the fixed triage taxonomy (e.g. type category, name policy_regulation).
+Entity schema: {{key, type, name, aliases?, external_ids?, payload?}}.
+
+Edge types (lowercase snake_case): announces, funds, regulates, reports_on, affects_sector, part_of, located_in, competes_with, supplies_to, under_category, classified_as.
+Link non-category entities to a category parent with under_category when the text supports it; every edge must cite evidence_item_ids from the provided knowledge_id values only.
+Edge schema: {{src_key, dst_key, edge_type, confidence, evidence_item_ids}}.
+
+Rules: confidence in [0,1]; skip uncertain claims; avoid duplicate entities; prefer NZ-relevant facts.
+
+Hard exclusions — do not extract entities or edges for: routine weather forecasts; routine traffic accidents / road closures unless the piece clearly ties to major infrastructure, freight, or material economic impact; entertainment, cartoons, sport, celebrity, or pure human-interest with no business/policy/economic hook.
+Do not use under_category (or other edges) to file those topics into category nodes.
+If the document is only excluded content above, return {{"entities": [], "edges": []}} and optional schema_rationale explaining e.g. skipped: excluded content.
+
+Server-enforced job bounds for this run: at most {effective_limit} knowledge rows may appear in the user bundle; input sizing uses token_cap={effective_token_cap} as the server-side excerpt budget proxy (characters scale with this cap)."""
+
+
+def graph_lite_invariants_text(*, effective_limit: int, effective_token_cap: int) -> str:
+    return GRAPH_LITE_INVARIANTS_TEMPLATE.format(
+        effective_limit=int(effective_limit),
+        effective_token_cap=int(effective_token_cap),
+    )
+
+
+def resolve_graph_lite_system_instruction(
+    settings: Settings,
+    policy: PolicyConfig,
+    *,
+    effective_limit: int,
+    effective_token_cap: int,
+) -> str:
+    """Compose graph-lite Gemini system instruction: base + invariants + intent + numeric policy."""
+    intent_txt = load_intent_md(settings.memory_dir, max_bytes=policy.intent_max_bytes)
+    inv = graph_lite_invariants_text(
+        effective_limit=effective_limit,
+        effective_token_cap=effective_token_cap,
+    )
+    return build_llm_context(
+        "data_plane_graph_lite",
+        base=GRAPH_LITE_BASE,
+        invariants=inv,
+        intent_text=intent_txt,
+        policy=policy,
+    )
 
 
 @dataclass
@@ -92,36 +147,18 @@ def build_llm_graph_extractor(
     api_key: str,
     model: str,
     token_cap: int,
+    system_instruction: str,
 ):
     from google import genai
     from google.genai import types
 
-    system = (
-        "Extract a small knowledge graph from the documents. Return JSON only with keys "
-        "`entities`, `edges`, and optional `schema_rationale` (one short debug line; ignored by storage).\n"
-        "Entity types (use one per entity): organization, government_body, person, sector, "
-        "instrument, policy_instrument, event, location, category. "
-        "Category nodes represent the fixed triage taxonomy (e.g. type category, name policy_regulation).\n"
-        "Entity schema: {key, type, name, aliases?, external_ids?, payload?}.\n"
-        "Edge types (lowercase snake_case): announces, funds, regulates, reports_on, affects_sector, "
-        "part_of, located_in, competes_with, supplies_to, under_category, classified_as.\n"
-        "Link non-category entities to a category parent with under_category when the text supports it; "
-        "every edge must cite evidence_item_ids from the provided knowledge_id values only.\n"
-        "Edge schema: {src_key, dst_key, edge_type, confidence, evidence_item_ids}.\n"
-        "Rules: confidence in [0,1]; skip uncertain claims; avoid duplicate entities; prefer NZ-relevant facts.\n"
-        "Hard exclusions — do not extract entities or edges for: routine weather forecasts; "
-        "routine traffic accidents / road closures unless the piece clearly ties to major infrastructure, "
-        "freight, or material economic impact; entertainment, cartoons, sport, celebrity, or pure "
-        "human-interest with no business/policy/economic hook. "
-        "Do not use under_category (or other edges) to file those topics into category nodes. "
-        "If the document is only excluded content above, return "
-        '{"entities": [], "edges": []} '
-        "and optional schema_rationale explaining e.g. skipped: excluded content."
-    )
     client = genai.Client(api_key=api_key)
     # `token_cap` bounds the *input* excerpt budget in `run_graph_lite_extraction`; reusing
     # it for max_output_tokens makes small --token-cap values truncate JSON (invalid JSON).
     max_out = min(8192, max(4096, token_cap))
+    system = (system_instruction or "").strip()
+    if not system:
+        raise ValueError("build_llm_graph_extractor requires non-empty system_instruction")
 
     async def _extract(items: list[dict[str, Any]]) -> dict[str, Any]:
         if not items:

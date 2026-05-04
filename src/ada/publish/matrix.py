@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,8 +42,6 @@ class PageProfileRegistry:
         )
 
 
-# Code-only routing: (entity_type lower, category triage code) → placement + kind.
-# Extend as product grows; v1: single default profile for known pairs.
 def profile_for(
     entity_type: str, category_code: str, *, project_id: str, campaign_id: str
 ) -> PageProfile:
@@ -80,6 +79,104 @@ def _content_hash_for_entity_row(row: dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
 
+async def enqueue_publish_entity_for_row(
+    qe: QueryEngine,
+    settings: Settings,
+    row: dict[str, Any],
+    *,
+    registry: PageProfileRegistry,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    et = str(row.get("type") or "").lower()
+    code = str(row.get("category_code") or "").lower()
+    eid = int(row["id"])
+    prof = registry.resolve(et, code)
+    slug = _slug_hint(str(row.get("name") or f"entity-{eid}"))
+    h = _content_hash_for_entity_row(row)
+    idem = f"publish:{eid}:{h}"
+    params: dict[str, Any] = {
+        "entity_id": eid,
+        "project_id": prof.project_id,
+        "campaign_id": prof.campaign_id,
+        "niche": prof.niche,
+        "slug": slug,
+    }
+    if dry_run:
+        line = (
+            f"would enqueue {prof.workflow_kind} {idem!r} params={params!r}"
+        )
+        return {"dry_run": True, "log_line": line, "error": ""}
+    r = await enqueue_workflow_via_tool(
+        qe,
+        kind=prof.workflow_kind,
+        goal_text=f"Publish entity {eid} ({row.get('name')}) to pSEO",
+        params_json=json.dumps(params, ensure_ascii=False),
+        idempotency_key=idem,
+        max_steps=settings.ada_max_task_steps,
+        require_approval=settings.require_approval_for_enqueue,
+    )
+    out: dict[str, Any] = {"dry_run": False, "enqueue": r}
+    if r.get("error"):
+        out["error"] = r["error"]
+    else:
+        out["error"] = ""
+    return out
+
+
+async def run_matrix_legacy_scan(
+    qe: QueryEngine,
+    settings: Settings,
+    *,
+    project_id: str,
+    campaign_id: str,
+    dry_run: bool,
+    use_recent_order: bool,
+) -> dict[str, Any]:
+    """Enumerate candidates (deterministic ordering) → enqueue."""
+
+    registry = PageProfileRegistry(project_id=project_id, campaign_id=campaign_id)
+    types_f = settings.ada_matrix_entity_types
+    limit = int(settings.ada_matrix_max_enqueues)
+    if use_recent_order:
+        rows = await qe.list_subjects_with_classified_category_recent_for_planner(
+            entity_types=types_f, limit=limit
+        )
+    else:
+        rows = await qe.list_subjects_with_classified_category(
+            entity_types=types_f, limit=limit
+        )
+    log_lines: list[str] = []
+    enq = 0
+    for row in rows:
+        r = await enqueue_publish_entity_for_row(
+            qe,
+            settings,
+            row,
+            registry=registry,
+            dry_run=dry_run,
+        )
+        if dry_run:
+            ln = str(r.get("log_line") or "")
+            eid = int(row["id"])
+            log_lines.append(ln or f"[legacy] dry scan row entity_id={eid}")
+            enq += 1
+            continue
+        if r.get("error"):
+            log.warning("matrix enqueue error: %s", r)
+        else:
+            enq += 1
+
+    return {
+        "enqueued": enq,
+        "candidates": len(rows),
+        "dry_run": dry_run,
+        "mode": "matrix_legacy_scan",
+        "order": ("recent_last_enriched" if use_recent_order else "stable_entity_id"),
+        "log": log_lines[:50],
+        "planned_ids": [],
+    }
+
+
 async def run_matrix_scan(
     qe: QueryEngine,
     settings: Settings,
@@ -88,54 +185,68 @@ async def run_matrix_scan(
 ) -> dict[str, Any]:
     if not settings.ada_matrix_enable and not dry_run:
         return {"enqueued": 0, "skipped": "ADA_MATRIX_ENABLE=0"}
-    import os
 
-    types_f = settings.ada_matrix_entity_types
-    limit = int(settings.ada_matrix_max_enqueues)
     project_id = os.environ.get("ADA_PROJECT_ID", "default").strip() or "default"
     campaign_id = os.environ.get("ADA_CAMPAIGN_ID", "main").strip() or "main"
-    registry = PageProfileRegistry(project_id=project_id, campaign_id=campaign_id)
 
-    rows = await qe.list_subjects_with_classified_category(
-        entity_types=types_f, limit=limit
-    )
-    enq = 0
-    log_lines: list[str] = []
-    for row in rows:
-        et = str(row.get("type") or "").lower()
-        code = str(row.get("category_code") or "").lower()
-        eid = int(row["id"])
-        prof = registry.resolve(et, code)
-        slug = _slug_hint(str(row.get("name") or f"entity-{eid}"))
-        h = _content_hash_for_entity_row(row)
-        idem = f"publish:{eid}:{h}"
-        params: dict[str, Any] = {
-            "entity_id": eid,
-            "project_id": prof.project_id,
-            "campaign_id": prof.campaign_id,
-            "niche": prof.niche,
-            "slug": slug,
-        }
-        if dry_run:
-            log_lines.append(f"would enqueue {prof.workflow_kind} {idem!r} params={params!r}")
-            enq += 1
-            continue
-        r = await enqueue_workflow_via_tool(
-            qe,
-            kind=prof.workflow_kind,
-            goal_text=f"Publish entity {eid} ({row.get('name')}) to pSEO",
-            params_json=json.dumps(params, ensure_ascii=False),
-            idempotency_key=idem,
-            max_steps=settings.ada_max_task_steps,
-            require_approval=settings.require_approval_for_enqueue,
-        )
-        if r.get("error"):
-            log.warning("matrix enqueue error: %s", r)
+    if dry_run:
+        registry = PageProfileRegistry(project_id=project_id, campaign_id=campaign_id)
+        rows = []
+        meta = ""
+        types_f = settings.ada_matrix_entity_types
+        limit = int(settings.ada_matrix_max_enqueues)
+        if settings.ada_matrix_planner:
+            rows = await qe.list_subjects_with_classified_category_recent_for_planner(
+                entity_types=types_f, limit=limit
+            )
+            meta = "planner_candidate_pool_recent"
         else:
-            enq += 1
-    return {
-        "enqueued": enq,
-        "candidates": len(rows),
-        "dry_run": dry_run,
-        "log": log_lines[:50],
-    }
+            rows = await qe.list_subjects_with_classified_category(
+                entity_types=types_f, limit=limit
+            )
+            meta = "legacy_stable_id_order"
+
+        log_lines = []
+        for row in rows:
+            eid = int(row["id"])
+            slug = _slug_hint(str(row.get("name") or f"entity-{eid}"))
+            prof = registry.resolve(str(row.get("type") or ""), str(row.get("category_code") or ""))
+            h = _content_hash_for_entity_row(row)
+            idem = f"publish:{eid}:{h}"
+            params: dict[str, Any] = {
+                "entity_id": eid,
+                "project_id": prof.project_id,
+                "campaign_id": prof.campaign_id,
+                "niche": prof.niche,
+                "slug": slug,
+            }
+            log_lines.append(
+                f"[{meta}] dry_run would enqueue {prof.workflow_kind} {idem!r} params={params!r}"
+            )
+        return {
+            "dry_run": True,
+            "enqueued": len(rows),
+            "candidates": len(rows),
+            "skipped": "",
+            "log": log_lines[:50],
+            "mode": ("matrix_planner" if settings.ada_matrix_planner else "matrix_legacy"),
+        }
+
+    if settings.ada_matrix_planner:
+        from ada.publish.matrix_planner import run_matrix_plan_and_enqueue
+
+        return await run_matrix_plan_and_enqueue(
+            qe,
+            settings,
+            project_id=project_id,
+            campaign_id=campaign_id,
+        )
+
+    return await run_matrix_legacy_scan(
+        qe,
+        settings,
+        project_id=project_id,
+        campaign_id=campaign_id,
+        dry_run=False,
+        use_recent_order=False,
+    )

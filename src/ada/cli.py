@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
 from ada.config import Settings
 from ada.dream.run import run_dream_job
-from ada.extract.graph_lite import build_llm_graph_extractor, run_graph_lite_extraction
+from ada.extract.graph_lite import (
+    build_llm_graph_extractor,
+    resolve_graph_lite_system_instruction,
+    run_graph_lite_extraction,
+)
+from ada.policy.load import clamp_graph_lite_job_limits, load_merged_policy_for
+from ada.publish.batch_enrich_context import resolve_batch_enrich_system_instruction
+from ada.workflow.publish_enrich_step import run_publish_entity_enrich
 from ada.orchestrator import (
     SessionTokenLimitExceeded,
     file_guard_audit_hook,
@@ -305,6 +313,14 @@ async def run_extract_graph_lite_cli(
     source_id: int | None = None,
 ) -> int:
     settings.ensure_data_dir()
+    policy = load_merged_policy_for(settings)
+    eff_limit, eff_token_cap = clamp_graph_lite_job_limits(limit, token_cap, policy)
+    sys_instr = resolve_graph_lite_system_instruction(
+        settings,
+        policy,
+        effective_limit=eff_limit,
+        effective_token_cap=eff_token_cap,
+    )
     schema_path = Path(__file__).resolve().parent / "db" / "schema.sql"
     qe = QueryEngine(
         settings.state_db_path,
@@ -319,12 +335,13 @@ async def run_extract_graph_lite_cli(
             extractor = build_llm_graph_extractor(
                 api_key=settings.gemini_api_key,
                 model=settings.graph_lite_extract_model,
-                token_cap=token_cap,
+                token_cap=eff_token_cap,
+                system_instruction=sys_instr,
             )
         stats = await run_graph_lite_extraction(
             qe,
-            limit=limit,
-            token_cap=token_cap,
+            limit=eff_limit,
+            token_cap=eff_token_cap,
             source_id=source_id,
             extractor=extractor,
         )
@@ -337,5 +354,146 @@ async def run_extract_graph_lite_cli(
             f" rejected={stats.rejected}"
         )
         return 0
+    finally:
+        await qe.close()
+
+
+log_enrich_graph = logging.getLogger("ada.cli.enrich_graph")
+
+
+async def run_enrich_graph_cli(
+    settings: Settings,
+    *,
+    entity_ids: list[int] | None,
+    limit: int | None,
+) -> int:
+    """Bounded batch ENRICH using intent + merged policy system instruction (not chat harness)."""
+    policy = load_merged_policy_for(settings)
+    entity_cap = limit if limit is not None else policy.batch_enrich_max_entities
+    entity_cap = max(1, min(int(entity_cap), policy.batch_enrich_max_entities))
+
+    settings.ensure_data_dir()
+    schema_path = Path(__file__).resolve().parent / "db" / "schema.sql"
+    qe = QueryEngine(
+        settings.state_db_path,
+        schema_path,
+        debounce_ms=settings.persist_debounce_ms,
+    )
+    await qe.connect()
+    await enforce_profile_identity(qe, settings)
+
+    sys_instr = resolve_batch_enrich_system_instruction(settings, policy)
+    goal_base = "[batch_enrich_graph] background widen for publish DRAFT inputs"
+
+    explicit = list(entity_ids) if entity_ids else []
+    seen: set[int] = set()
+    ordered: list[int] = []
+
+    try:
+        for eid in explicit:
+            if len(ordered) >= entity_cap:
+                break
+            ent = await qe.get_entity_by_id(int(eid))
+            if ent is None:
+                log_enrich_graph.warning("enrich-graph: skip unknown entity_id=%s", eid)
+                continue
+            eid_i = int(eid)
+            if eid_i in seen:
+                continue
+            seen.add(eid_i)
+            ordered.append(eid_i)
+
+        pool_lim = max(entity_cap * 4, int(settings.ada_matrix_max_enqueues))
+        rows = await qe.list_subjects_with_classified_category_recent_for_planner(
+            entity_types=settings.ada_matrix_entity_types,
+            limit=pool_lim,
+        )
+        for r in rows:
+            if len(ordered) >= entity_cap:
+                break
+            eid_i = int(r["id"])
+            if eid_i in seen:
+                continue
+            seen.add(eid_i)
+            ordered.append(eid_i)
+
+        if not ordered:
+            print("enrich-graph: no eligible entity ids (check --entity-id or matrix subject pool)")
+            return 1
+
+        any_ok = False
+        for eid_i in ordered:
+            tid = await qe.insert_task(
+                f"{goal_base} entity_id={eid_i}",
+                status="executing",
+            )
+            ent = await qe.get_entity_by_id(eid_i)
+            assert ent is not None
+            merged = {"entity_id": eid_i}
+            try:
+                out = await run_publish_entity_enrich(
+                    qe,
+                    settings,
+                    entity_id=eid_i,
+                    entity=ent,
+                    merged_params=merged,
+                    goal_text=f"{goal_base} entity_id={eid_i}",
+                    system_instruction=sys_instr,
+                    session_id=tid,
+                    max_tool_rounds=settings.max_tool_rounds,
+                    shell_max_output_bytes=settings.shell_max_output_bytes,
+                    shell_timeout_sec=settings.shell_timeout_sec,
+                    stream_chunk_idle_timeout_sec=settings.stream_chunk_idle_timeout_sec,
+                    stream_leg_max_wall_sec=settings.stream_leg_max_wall_sec,
+                    rewire_after_tombstone=settings.rewire_after_tombstone,
+                    max_session_tokens=settings.max_session_tokens,
+                    debug_stream=settings.debug_stream,
+                    knowledge_feed_host_allowlist=settings.knowledge_feed_host_allowlist,
+                    knowledge_embeddings_enabled=settings.enable_knowledge_embeddings,
+                    knowledge_embedding_model=settings.knowledge_embedding_model,
+                    knowledge_embedding_dim=settings.knowledge_embedding_dim,
+                    knowledge_embedding_min_cosine=settings.knowledge_embedding_min_cosine,
+                    knowledge_tool_max_results=settings.knowledge_tool_max_results,
+                    knowledge_tool_excerpt_chars=settings.knowledge_tool_excerpt_chars,
+                    enrich_tool_rounds_cap=policy.batch_enrich_max_tool_rounds,
+                )
+                await qe.append_action_log(
+                    "batch_graph_enrich",
+                    {
+                        "entity_id": eid_i,
+                        "session_task_id": tid,
+                        "path": out.get("path"),
+                        "last_enriched_at": out.get("last_enriched_at"),
+                        "ok": True,
+                    },
+                    session_id=tid,
+                )
+                await qe.update_task(
+                    tid,
+                    status="completed",
+                    current_output=str(out.get("path") or "ok")[:2000],
+                )
+                any_ok = True
+                print(f"enrich-graph: entity_id={eid_i} path={out.get('path')!r} ok=1")
+            except Exception as exc:
+                log_enrich_graph.exception("enrich-graph: entity_id=%s failed", eid_i)
+                await qe.append_action_log(
+                    "batch_graph_enrich",
+                    {
+                        "entity_id": eid_i,
+                        "session_task_id": tid,
+                        "ok": False,
+                        "error": str(exc)[:800],
+                    },
+                    session_id=tid,
+                )
+                await qe.update_task(
+                    tid,
+                    status="failed",
+                    current_output=str(exc)[:2000],
+                )
+                print(f"enrich-graph: entity_id={eid_i} ok=0 err={exc!s}")
+
+        return 0 if any_ok else 1
     finally:
         await qe.close()

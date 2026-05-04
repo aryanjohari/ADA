@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
-import hashlib
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +23,14 @@ def _find_project_root() -> Path:
         if (parent / "pyproject.toml").exists():
             return parent
     return Path.cwd()
+
+
+def _resolve_env_path(raw: str, *, project_root: Path) -> Path:
+    """Expand user; non-absolute paths are resolved under project_root."""
+    p = Path(raw).expanduser()
+    if not p.is_absolute():
+        p = (project_root / p).resolve()
+    return p.resolve()
 
 
 def _unique_resolved_paths(*paths: Path) -> tuple[Path, ...]:
@@ -180,6 +189,9 @@ class Settings:
     ada_matrix_enable: bool
     ada_matrix_max_enqueues: int
     ada_matrix_entity_types: frozenset[str]
+    ada_matrix_planner: bool
+    ada_matrix_planner_fallback_legacy: bool
+    ada_matrix_planner_model: str
     # Profile isolation
     ada_require_profile_isolation: bool
     ada_profile: str
@@ -188,6 +200,8 @@ class Settings:
     profile_artifacts_dir: Path
     profile_audit_dir: Path
     profile_fingerprint: str
+    # Directory containing policies/default.yaml (merge plane); see ADA_POLICY_ROOT.
+    policy_root: Path
     # Analytics / GSC
     enable_gsc_ingest: bool
     gsc_site_url: str
@@ -260,7 +274,59 @@ class Settings:
         profile_audit_dir = profile_data_dir / "audit"
         fp_seed = f"{ada_profile}|{profile_data_dir}|{root.resolve()}"
         profile_fingerprint = hashlib.sha256(fp_seed.encode("utf-8")).hexdigest()[:24]
-        memory_dir = root / "memory"
+
+        root_resolved = root.resolve()
+        repo_memory = root_resolved / "memory"
+        repo_policies = root_resolved / "policies"
+
+        memory_env = os.environ.get("ADA_MEMORY_DIR", "").strip()
+        if memory_env:
+            memory_dir = _resolve_env_path(memory_env, project_root=root_resolved)
+        elif profile_raw:
+            memory_dir = (profile_data_dir / "memory").resolve()
+        else:
+            memory_dir = repo_memory
+
+        policy_env = os.environ.get("ADA_POLICY_ROOT", "").strip()
+        if policy_env:
+            policy_root = _resolve_env_path(policy_env, project_root=root_resolved)
+        elif profile_raw:
+            profile_default_yaml = (profile_data_dir / "policies" / "default.yaml").resolve()
+            if profile_default_yaml.is_file():
+                policy_root = (profile_data_dir / "policies").resolve()
+            else:
+                policy_root = repo_policies
+                print(
+                    "ada: policy_root_fallback "
+                    f"profile={profile_raw!r} policy_root={policy_root}",
+                    file=sys.stderr,
+                )
+        else:
+            policy_root = repo_policies
+
+        # TODO(strict-fail-closed): optional fail-fast when profile mode uses repo policy fallback
+        # (policy_root under project_root) for operators who require full policy isolation.
+
+        if require_profile_isolation:
+            try:
+                mem_rel = memory_dir.is_relative_to(root_resolved)
+            except (OSError, ValueError):
+                mem_rel = False
+            try:
+                pol_rel = policy_root.is_relative_to(root_resolved)
+            except (OSError, ValueError):
+                pol_rel = False
+            if mem_rel:
+                raise ValueError(
+                    "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_MEMORY_DIR outside "
+                    f"the project tree; got {memory_dir} under {root_resolved}"
+                )
+            if pol_rel:
+                raise ValueError(
+                    "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_POLICY_ROOT outside "
+                    f"the project tree; got {policy_root} under {root_resolved}"
+                )
+
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
         max_rounds = int(os.environ.get("ADA_MAX_TOOL_ROUNDS", "12"))
@@ -626,6 +692,25 @@ class Settings:
             ada_matrix_types = frozenset(
                 {"service", "regulation", "organization", "jurisdiction"}
             )
+        ada_matrix_planner = os.environ.get("ADA_MATRIX_PLANNER", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        ada_matrix_planner_fallback_legacy = os.environ.get(
+            "ADA_MATRIX_PLANNER_LEGACY_FALLBACK",
+            "",
+        ).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        ada_matrix_planner_model = (
+            os.environ.get("ADA_MATRIX_PLANNER_MODEL", "").strip() or ""
+        )
+
         enable_gsc_ingest = os.environ.get("ADA_ENABLE_GSC_INGEST", "0").strip().lower() in (
             "1",
             "true",
@@ -786,6 +871,9 @@ class Settings:
             ada_matrix_enable=ada_matrix_enable,
             ada_matrix_max_enqueues=ada_matrix_max,
             ada_matrix_entity_types=ada_matrix_types,
+            ada_matrix_planner=ada_matrix_planner,
+            ada_matrix_planner_fallback_legacy=ada_matrix_planner_fallback_legacy,
+            ada_matrix_planner_model=ada_matrix_planner_model,
             ada_require_profile_isolation=require_profile_isolation,
             ada_profile=ada_profile,
             ada_profile_data_root=ada_profile_data_root,
@@ -793,6 +881,7 @@ class Settings:
             profile_artifacts_dir=profile_artifacts_dir,
             profile_audit_dir=profile_audit_dir,
             profile_fingerprint=profile_fingerprint,
+            policy_root=policy_root,
             enable_gsc_ingest=enable_gsc_ingest,
             gsc_site_url=gsc_site_url,
             gsc_auth_mode=gsc_auth_mode,
@@ -820,6 +909,9 @@ class Settings:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.profile_artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.profile_audit_dir.mkdir(parents=True, exist_ok=True)
+        repo_memory = (self.project_root / "memory").resolve()
+        if self.memory_dir.resolve() != repo_memory:
+            self.memory_dir.mkdir(parents=True, exist_ok=True)
 
 
 def load_dotenv_if_present() -> None:

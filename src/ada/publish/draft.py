@@ -492,15 +492,13 @@ async def run_publish_draft(
             config=cfg,
         )
     except Exception as e:
-        log.warning("DRAFT with response_json_schema failed (%s); retrying JSON only", e)
-        cfg2 = types.GenerateContentConfig(
-            system_instruction=sys,
-            response_mime_type="application/json",
-            temperature=0.2,
+        log.warning(
+            "DRAFT generate_content failed (%s); retrying once with same structured output config",
+            e,
         )
         resp = await client.aio.models.generate_content(
             **common_kwargs,
-            config=cfg2,
+            config=cfg,
         )
     raw = (getattr(resp, "text", None) or "").strip()
     if not raw:

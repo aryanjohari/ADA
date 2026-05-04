@@ -15,6 +15,8 @@ from google import genai
 from google.genai import types
 
 from ada.config import Settings
+from ada.llm_context import build_llm_context
+from ada.policy.load import load_intent_md, load_merged_policy_for
 from ada.profile_runtime import enforce_profile_identity
 from ada.query_engine import TASK_KIND_GOAL, QueryEngine
 from ada.triage.categories import parse_triage_response
@@ -24,7 +26,7 @@ log = logging.getLogger("ada.triage")
 
 _MAX_EXCERPT_CHARS = 12_000
 
-_TRIAGE_SYSTEM = """You classify a short news or article snippet for someone following
+_TRIAGE_LEGACY_BASE = """You classify a short news or article snippet for someone following
 New Zealand’s economy, policy, markets, and business — not only sharp price moves.
 
 Use only the title, link line, and excerpt — do not invent facts.
@@ -69,6 +71,18 @@ Example:
 {"impact_score": 6, "primary_category": "data_surveys_stats", "secondary_categories": ["markets_macro"]}
 
 No markdown, no other keys, no explanation."""
+
+def resolve_triage_system_instruction(settings: Settings) -> str:
+    policy = load_merged_policy_for(settings)
+    intent_txt = load_intent_md(settings.memory_dir, max_bytes=policy.intent_max_bytes)
+    return build_llm_context(
+        "data_plane_triage",
+        base=_TRIAGE_LEGACY_BASE,
+        invariants="",
+        intent_text=intent_txt,
+        policy=policy,
+    )
+
 
 _TIER1_MACRO_GOAL = """[tier:macro] Perform deep-dive synthesis on high-impact knowledge item ID: {kid}
 
@@ -158,6 +172,7 @@ async def run_triage_cli(
         if not rows:
             return stats, 0
 
+        triage_system = resolve_triage_system_instruction(settings)
         client = client_cls(api_key=settings.gemini_api_key)
         model = settings.triage_model
         lead_cap = max(0, int(settings.triage_lead_daily_cap))
@@ -182,7 +197,7 @@ async def run_triage_cli(
                         )
                     ],
                     config=types.GenerateContentConfig(
-                        system_instruction=_TRIAGE_SYSTEM,
+                        system_instruction=triage_system,
                         response_mime_type="application/json",
                         temperature=0.2,
                     ),

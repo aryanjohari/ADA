@@ -16,6 +16,7 @@ from ada.publish.draft import (
     load_draft_knowledge_for_prompt,
     run_publish_draft,
 )
+from ada.publish.page_schema_v1 import PageJsonV1
 
 
 def test_draft_graph_anchored_query_includes_edges():
@@ -200,6 +201,52 @@ async def test_draft_rejects_invalid_keyword_cluster(tmp_path, schema_sql_path, 
                     "target_keyword_cluster": "roof<script>",
                 },
             )
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_draft_gemini_retry_preserves_response_json_schema(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    """Retry after generate_content failure must not drop response_json_schema."""
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    monkeypatch.setenv("ADA_PUBLISH_DRAFT_KNOWLEDGE_RETRIEVAL", "0")
+    db = tmp_path / "draft-retry-schema.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        subj = await qe.upsert_entity(type="service", name="RetryEnt", payload_json={})
+        eid = int(subj["entity_id"])
+        fixture = Path(__file__).resolve().parent / "fixtures" / "pseo_page.json"
+        page_json = json.loads(fixture.read_text(encoding="utf-8"))
+        expected_schema = PageJsonV1.model_json_schema()
+        configs: list[object] = []
+
+        async def generate_with_fail_then_ok(*args: object, **kwargs: object) -> object:
+            configs.append(kwargs.get("config"))
+            if len(configs) == 1:
+                raise RuntimeError("simulated primary failure")
+            m = mock.MagicMock()
+            m.text = json.dumps(page_json)
+            return m
+
+        with mock.patch("ada.publish.draft.genai.Client") as client_cls:
+            inst = client_cls.return_value
+            inst.aio.models.generate_content = mock.AsyncMock(
+                side_effect=generate_with_fail_then_ok
+            )
+            out = await run_publish_draft(
+                qe,
+                Settings.load(),
+                goal_text="g",
+                params={"entity_id": eid},
+            )
+        assert len(configs) == 2
+        for cfg in configs:
+            assert getattr(cfg, "response_json_schema", None) == expected_schema
+            assert getattr(cfg, "response_mime_type", None) == "application/json"
+        assert (out.get("page") or {}).get("slug") == page_json["slug"]
     finally:
         await qe.close()
 
