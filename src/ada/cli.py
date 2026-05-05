@@ -311,6 +311,7 @@ async def run_extract_graph_lite_cli(
     limit: int,
     token_cap: int,
     source_id: int | None = None,
+    mission_slug: str | None = None,
 ) -> int:
     settings.ensure_data_dir()
     policy = load_merged_policy_for(settings)
@@ -329,6 +330,16 @@ async def run_extract_graph_lite_cli(
     )
     await qe.connect()
     await enforce_profile_identity(qe, settings)
+    mission_id: int | None = None
+    if mission_slug is not None and str(mission_slug).strip():
+        m = await qe.get_mission_by_slug(str(mission_slug).strip())
+        if m is None:
+            print(
+                f"extract-graph-lite: unknown mission slug {str(mission_slug).strip()!r}",
+                file=sys.stderr,
+            )
+            return 2
+        mission_id = int(m["id"])
     try:
         extractor = None
         if settings.gemini_api_key.strip():
@@ -344,6 +355,7 @@ async def run_extract_graph_lite_cli(
             token_cap=eff_token_cap,
             source_id=source_id,
             extractor=extractor,
+            mission_id=mission_id,
         )
         print(
             "extract-graph-lite:"

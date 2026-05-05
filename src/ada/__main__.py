@@ -14,6 +14,7 @@ from ada.cli import (
     run_extract_graph_lite_cli,
 )
 from ada.goal_cli import async_main as goal_async_main
+from ada.mission_cli import async_main as mission_async_main
 from ada.ingest.gets import run_ingest_gets_cli
 from ada.ingest.brand import run_ingest_brand_cli
 from ada.ingest.gsc_cli import build_ingest_gsc_parser, run_ingest_gsc_cli
@@ -49,9 +50,19 @@ def main() -> None:
 
     sub.add_parser("daemon", help="Poll pending tasks in SQLite")
 
-    sub.add_parser(
+    _mission_help = (
+        "Mission slug; ingest/list uses global sources plus that mission "
+        "(omit for legacy unscoped ingest where all sources are considered)."
+    )
+    ingest_rss_p = sub.add_parser(
         "ingest-rss",
         help="Fetch RSS/Atom feeds listed in knowledge_sources (kind=rss) into knowledge_items",
+    )
+    ingest_rss_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help=_mission_help,
     )
 
     sub.add_parser(
@@ -59,9 +70,15 @@ def main() -> None:
         help="Batch keyword volume via DataForSEO → ingest_raw (set ADA_KEYWORD_TERMS, DATAFORSEO_*)",
     )
 
-    sub.add_parser(
+    ingest_gets_p = sub.add_parser(
         "ingest-gets",
         help="Public GETS tender index (ADA_GETS_POLL_URL) → ingest_raw + knowledge_items",
+    )
+    ingest_gets_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help=_mission_help,
     )
     brand_p = sub.add_parser(
         "ingest-brand",
@@ -84,6 +101,12 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="Fetch and report without writing knowledge_items",
+    )
+    brand_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help=_mission_help,
     )
     build_ingest_gsc_parser(sub)
     ks_p = sub.add_parser(
@@ -118,6 +141,12 @@ def main() -> None:
         default=None,
         metavar="ID",
         help="Optional knowledge_sources.id filter",
+    )
+    extract_graph_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help=_mission_help + " Scopes item pick + entity upserts.",
     )
 
     enrich_graph_p = sub.add_parser(
@@ -155,10 +184,24 @@ def main() -> None:
         metavar="TEXT",
         help="Optional label stored with the source",
     )
+    add_feed_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help=_mission_help + " Registers the feed against that mission.",
+    )
 
     goal_p = sub.add_parser("goal", help="Enqueue and inspect background goal tasks")
     goal_p.add_argument(
         "goal_argv",
+        nargs=argparse.REMAINDER,
+        default=[],
+        help=argparse.SUPPRESS,
+    )
+
+    mission_p = sub.add_parser("mission", help="Create and list missions")
+    mission_p.add_argument(
+        "mission_argv",
         nargs=argparse.REMAINDER,
         default=[],
         help=argparse.SUPPRESS,
@@ -208,6 +251,12 @@ def main() -> None:
             "(preserves existing impact_score; fills categories from the model)"
         ),
     )
+    triage_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help=_mission_help,
+    )
 
     wf_p = sub.add_parser(
         "workflow",
@@ -216,13 +265,27 @@ def main() -> None:
     wf_sub = wf_p.add_subparsers(dest="wf_cmd", required=True)
     wf_e = wf_sub.add_parser(
         "enqueue",
-        help="Create a pending goal task plus workflow steps from a template kind",
+        help="Create a pending goal task plus workflow steps (playbook registry + template)",
     )
-    wf_e.add_argument(
+    wf_e_mx = wf_e.add_mutually_exclusive_group(required=True)
+    wf_e_mx.add_argument(
         "--kind",
-        required=True,
+        default=None,
         metavar="KIND",
         help="Template kind (e.g. rss_fetch_then_graph_then_synth, publish_entity_v1, publish_keyword_v1)",
+    )
+    wf_e_mx.add_argument(
+        "--playbook",
+        default=None,
+        dest="workflow_playbook",
+        metavar="ID",
+        help="Playbook id from playbooks/registry.yaml (alternative to --kind)",
+    )
+    wf_e.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help="Mission slug; merges missions.defaults_json before --params-json",
     )
     wf_e.add_argument(
         "--goal",
@@ -240,7 +303,7 @@ def main() -> None:
         "--idempotency-key",
         default=None,
         metavar="KEY",
-        help="Optional; duplicate (kind, key) returns existing workflow without new task",
+        help="Optional; duplicate (workflow kind, key) returns existing workflow without new task",
     )
     wf_s = wf_sub.add_parser(
         "status",
@@ -297,6 +360,17 @@ def main() -> None:
         help="Scan publishable entities + category edges, enqueue publish_entity_v1 (see ADA_MATRIX_*)",
     )
     mx_p.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Skip the LLM matrix planner; use stable legacy scan only (recommended for ada mission tick)",
+    )
+    mx_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help="Mission slug for workflow enqueue + optional defaults_json project_id/campaign_id",
+    )
+    mx_p.add_argument(
         "--dry-run",
         action="store_true",
         help="List candidates and intended enqueues without writing (may run without ADA_MATRIX_ENABLE)",
@@ -311,13 +385,19 @@ def main() -> None:
         main_daemon()
     elif args.cmd == "ingest-rss":
         settings = Settings.load()
-        raise SystemExit(asyncio.run(run_ingest_rss_cli(settings)))
+        raise SystemExit(
+            asyncio.run(
+                run_ingest_rss_cli(settings, mission_slug=args.mission)
+            )
+        )
     elif args.cmd == "ingest-keywords":
         settings = Settings.load()
         raise SystemExit(asyncio.run(run_ingest_keywords_cli(settings)))
     elif args.cmd == "ingest-gets":
         settings = Settings.load()
-        raise SystemExit(asyncio.run(run_ingest_gets_cli(settings)))
+        raise SystemExit(
+            asyncio.run(run_ingest_gets_cli(settings, mission_slug=args.mission))
+        )
     elif args.cmd == "ingest-brand":
         settings = Settings.load()
         raise SystemExit(
@@ -327,6 +407,7 @@ def main() -> None:
                     site_url=args.site_url,
                     max_urls=args.max_urls,
                     dry_run=bool(args.dry_run),
+                    mission_slug=args.mission,
                 )
             )
         )
@@ -365,6 +446,7 @@ def main() -> None:
                     limit=limit,
                     token_cap=token_cap,
                     source_id=args.source_id,
+                    mission_slug=args.mission,
                 )
             )
         )
@@ -387,6 +469,7 @@ def main() -> None:
                     settings,
                     url=args.url,
                     label=args.label,
+                    mission_slug=args.mission,
                 )
             )
         )
@@ -395,6 +478,11 @@ def main() -> None:
         while rest and rest[0] == "--":
             rest.pop(0)
         raise SystemExit(asyncio.run(goal_async_main(rest)))
+    elif args.cmd == "mission":
+        rest = list(args.mission_argv)
+        while rest and rest[0] == "--":
+            rest.pop(0)
+        raise SystemExit(asyncio.run(mission_async_main(rest)))
     elif args.cmd == "dream":
         settings = Settings.load()
         max_m = (
@@ -422,6 +510,7 @@ def main() -> None:
                 settings,
                 limit=limit,
                 backfill_categories=bool(args.backfill_categories),
+                mission_slug=args.mission,
             )
         )
         print(
@@ -439,7 +528,9 @@ def main() -> None:
                 asyncio.run(
                     run_workflow_enqueue_cli(
                         settings,
-                        kind=args.kind,
+                        kind=args.kind or "",
+                        playbook_id=args.workflow_playbook,
+                        mission_slug=args.mission,
                         goal=args.goal,
                         params_json=args.params_json,
                         idempotency_key=args.idempotency_key,
@@ -484,6 +575,8 @@ def main() -> None:
                 run_matrix_scan_cli(
                     settings,
                     dry_run=bool(getattr(args, "dry_run", False)),
+                    deterministic=bool(getattr(args, "deterministic", False)),
+                    mission_slug=getattr(args, "mission", None),
                 )
             )
         )

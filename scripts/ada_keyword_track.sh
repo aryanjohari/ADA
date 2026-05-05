@@ -6,6 +6,7 @@
 #   - ADA_KEYWORD_ENTITY_ID, ADA_KEYWORD_SITE, ADA_KEYWORD_START_DATE, ADA_KEYWORD_END_DATE
 #   - ADA_PROJECT_ID, ADA_CAMPAIGN_ID, ADA_KEYWORD_NICHE (niche string for publish params)
 # Optional: ADA_KEYWORD_IDEMPOTENCY_KEY for safe reruns (passed to --idempotency-key)
+# Optional: ADA_MISSION_SLUG or MISSION_SLUG — passed through to ada workflow enqueue --mission (scopes workflows/tasks).
 # Note: publish_keyword_v1 has NO graph GATE; ADA_REQUIRE_APPROVAL_FOR_PUBLISH still gates DEPLOY when set.
 set -euo pipefail
 
@@ -63,8 +64,15 @@ if [[ -n "${ADA_KEYWORD_IDEMPOTENCY_KEY:-}" ]]; then
   IDEM_ARGS=(--idempotency-key "${ADA_KEYWORD_IDEMPOTENCY_KEY}")
 fi
 
+MS_ARGS=()
+MS="${ADA_MISSION_SLUG:-${MISSION_SLUG:-}}"
+if [[ -n "${MS}" ]]; then
+  MS_ARGS=(--mission "${MS}")
+fi
+
 ada workflow enqueue \
   --kind publish_keyword_v1 \
   --goal "Publish keyword-led page: $(jq -r '.target_keyword_cluster' <<<"${PARAMS_JSON}")" \
   --params-json "${PARAMS_JSON}" \
+  "${MS_ARGS[@]}" \
   "${IDEM_ARGS[@]}"

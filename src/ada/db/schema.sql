@@ -1,8 +1,22 @@
--- ADA schema: tasks, messages (transcript), state (KV), usage_ledger,
+-- ADA schema: missions, tasks, messages (transcript), state (KV), usage_ledger,
 -- web_sources, knowledge_sources / knowledge_items / knowledge_synthesis,
 -- market_metrics / synthesis_edges (Business Kernel triage)
 
 PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS missions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    niche TEXT,
+    topic TEXT,
+    defaults_json TEXT NOT NULL DEFAULT '{}',
+    brief_md TEXT NOT NULL DEFAULT '',
+    brief_md_path TEXT,
+    schedule_hint_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11,9 +25,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     current_output TEXT NOT NULL DEFAULT '',
     plan_json TEXT NOT NULL DEFAULT '{}',
     task_kind TEXT NOT NULL DEFAULT 'goal',
+    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- idx_tasks_mission_id: created in PersistentState._ensure_missions_schema (legacy DBs lack column until ALTER).
 
 CREATE TABLE IF NOT EXISTS messages (
     uuid TEXT PRIMARY KEY,
@@ -86,8 +103,11 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
     label TEXT,
     base_url TEXT NOT NULL DEFAULT '',
     config_json TEXT NOT NULL DEFAULT '{}',
+    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- idx_knowledge_sources_mission: created in PersistentState._ensure_knowledge_sources_mission_id
 
 -- Phase 1 ingest audit (roadmap §12.1)
 CREATE TABLE IF NOT EXISTS ingest_jobs (
@@ -285,12 +305,14 @@ CREATE TABLE IF NOT EXISTS entities (
     normalized_name TEXT NOT NULL,
     payload_json TEXT NOT NULL DEFAULT '{}',
     last_enriched_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (type, normalized_name)
+    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_entities_normalized
     ON entities(normalized_name);
+
+-- Partial uniques (mission-scoped): PersistentState._ensure_entities_mission_scope
 
 CREATE TABLE IF NOT EXISTS graph_edges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -379,12 +401,15 @@ CREATE TABLE IF NOT EXISTS workflows (
     idempotency_key TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed')),
     parent_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (kind, idempotency_key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflows_parent ON workflows(parent_task_id);
+-- idx_workflows_mission_id: created in PersistentState._ensure_missions_schema so legacy DBs
+-- migrate before the index runs (executescript order would fail on pre-mission workflows rows).
 
 CREATE TABLE IF NOT EXISTS workflow_steps (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -63,9 +63,16 @@ async def test_gate_fails_closes_draft_not_called(
             ],
         )
         s = Settings.load()
-        with mock.patch("ada.workflow.runner.run_enrich_step", new=mock.AsyncMock(
-            return_value={"knowledge_item_ids": [], "graph_edge_ids": [], "last_enriched_at": "x"},
-        )):
+        with mock.patch(
+            "ada.workflow.publish_enrich_step.run_enrich_step",
+            new=mock.AsyncMock(
+                return_value={
+                    "knowledge_item_ids": [],
+                    "graph_edge_ids": [],
+                    "last_enriched_at": "x",
+                },
+            ),
+        ):
             with mock.patch("ada.workflow.runner.run_publish_draft", new=mock.AsyncMock(
                 side_effect=AssertionError("DRAFT must not run when GATE fails")
             )):
@@ -260,7 +267,7 @@ async def test_publish_keyword_v1_provisions_entity_and_draft_gets_id(
             }
         )
         with mock.patch(
-            "ada.workflow.runner.run_enrich_step",
+            "ada.workflow.publish_enrich_step.run_enrich_step",
             new=mock.AsyncMock(
                 return_value={
                     "knowledge_item_ids": [],

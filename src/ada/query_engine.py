@@ -28,9 +28,10 @@ from ada.transcript_format import (
 
 # Backward-compatible re-exports for tests / adapters
 __all__ = [
-    "QueryEngine",
     "KnowledgeItemInsertResult",
     "KnowledgeKind",
+    "PendingGoalTask",
+    "QueryEngine",
     "ROLE_ASSISTANT",
     "ROLE_SYSTEM",
     "ROLE_TOOL",
@@ -42,6 +43,16 @@ __all__ = [
     "GRAPH_EDGE_SUPERSEDED",
     "GRAPH_EDGE_INVALID",
 ]
+
+
+@dataclass(frozen=True)
+class PendingGoalTask:
+    """Next pending goal row as seen by the daemon (ordered by id ascending)."""
+
+    task_id: int
+    goal: str
+    mission_id: int | None
+    mission_slug: str | None
 
 
 @dataclass
@@ -243,11 +254,20 @@ class QueryEngine:
         status: str = "pending",
         *,
         task_kind: TaskKind = TASK_KIND_GOAL,
+        mission_id: int | None = None,
     ) -> int:
-        return await self._store.insert_task(goal, status, task_kind=task_kind)
+        return await self._store.insert_task(
+            goal, status, task_kind=task_kind, mission_id=mission_id
+        )
 
-    async def fetch_pending_task(self) -> tuple[int, str] | None:
-        return await self._store.fetch_pending_task()
+    async def fetch_pending_task(self) -> PendingGoalTask | None:
+        raw = await self._store.fetch_pending_task()
+        if raw is None:
+            return None
+        tid, g, mid, slug = raw
+        return PendingGoalTask(
+            task_id=tid, goal=g, mission_id=mid, mission_slug=slug
+        )
 
     async def latest_cli_session_task_id(self) -> int | None:
         return await self._store.latest_cli_session_task_id()
@@ -257,11 +277,54 @@ class QueryEngine:
         *,
         limit: int = 50,
         status: str | None = None,
+        mission_slug: str | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._store.list_goal_tasks(limit=limit, status=status)
+        return await self._store.list_goal_tasks(
+            limit=limit, status=status, mission_slug=mission_slug
+        )
 
     async def get_goal_task(self, task_id: int) -> dict[str, Any]:
         return await self._store.get_goal_task(task_id)
+
+    async def create_mission(
+        self,
+        slug: str,
+        title: str,
+        *,
+        niche: str | None = None,
+        topic: str | None = None,
+        defaults_json: str | dict[str, Any] | None = None,
+        brief_md: str = "",
+        brief_md_path: str | None = None,
+        schedule_hint_json: str | dict[str, Any] | None = None,
+    ) -> int:
+        return await self._store.create_mission(
+            slug,
+            title,
+            niche=niche,
+            topic=topic,
+            defaults_json=defaults_json,
+            brief_md=brief_md,
+            brief_md_path=brief_md_path,
+            schedule_hint_json=schedule_hint_json,
+        )
+
+    async def get_mission_by_slug(self, slug: str) -> dict[str, Any] | None:
+        return await self._store.get_mission_by_slug(slug)
+
+    async def update_mission_defaults_json(
+        self,
+        slug: str,
+        patch: dict[str, Any],
+        *,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        return await self._store.update_mission_defaults_json(
+            slug, patch, force=force
+        )
+
+    async def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return await self._store.list_missions(limit=limit)
 
     async def get_goal_task_view_for_tool(self, task_id: int) -> dict[str, Any]:
         """Read-only goal row fields for the read_goal_task_view tool (raises like get_goal_task)."""
@@ -274,6 +337,8 @@ class QueryEngine:
             "plan_json": r["plan_json"],
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
+            "mission_id": r.get("mission_id"),
+            "mission_slug": r.get("mission_slug"),
         }
 
     async def append_action_log(
@@ -434,6 +499,9 @@ class QueryEngine:
     async def load_usage_ledger_lines(self, limit: int) -> list[str]:
         return await self._store.load_usage_ledger_lines(limit)
 
+    async def get_task_mission_id(self, task_id: int) -> int | None:
+        return await self._store.get_task_mission_id(task_id)
+
     async def insert_knowledge_source(
         self,
         kind: KnowledgeKind,
@@ -441,9 +509,14 @@ class QueryEngine:
         label: str | None = None,
         base_url: str = "",
         config_json: str | dict[str, Any] | None = None,
+        mission_id: int | None = None,
     ) -> int:
         return await self._store.insert_knowledge_source(
-            kind, label=label, base_url=base_url, config_json=config_json
+            kind,
+            label=label,
+            base_url=base_url,
+            config_json=config_json,
+            mission_id=mission_id,
         )
 
     async def ensure_knowledge_source(
@@ -453,9 +526,14 @@ class QueryEngine:
         label: str,
         base_url: str = "",
         config_json: dict[str, Any] | None = None,
+        mission_id: int | None = None,
     ) -> int:
         return await self._store.ensure_knowledge_source(
-            kind, label=label, base_url=base_url, config_json=config_json
+            kind,
+            label=label,
+            base_url=base_url,
+            config_json=config_json,
+            mission_id=mission_id,
         )
 
     async def create_ingest_job(
@@ -504,9 +582,14 @@ class QueryEngine:
         )
 
     async def list_knowledge_sources(
-        self, *, kind: str | None = None
+        self,
+        *,
+        kind: str | None = None,
+        ingest_mission_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._store.list_knowledge_sources(kind=kind)
+        return await self._store.list_knowledge_sources(
+            kind=kind, ingest_mission_id=ingest_mission_id
+        )
 
     async def insert_knowledge_item(
         self,
@@ -546,13 +629,18 @@ class QueryEngine:
             body, ref_item_ids, task_id=task_id
         )
 
-    async def get_knowledge_item(self, item_id: int) -> dict[str, Any]:
-        return await self._store.get_knowledge_item(item_id)
+    async def get_knowledge_item(
+        self, item_id: int, *, mission_scope: int | None = None
+    ) -> dict[str, Any]:
+        return await self._store.get_knowledge_item(
+            item_id, mission_scope=mission_scope
+        )
 
     async def list_knowledge_items(
         self,
         *,
         source_id: int | None = None,
+        mission_scope: int | None = None,
         limit: int = 100,
         ingested_after: str | None = None,
         ingested_before: str | None = None,
@@ -561,6 +649,7 @@ class QueryEngine:
     ) -> list[dict[str, Any]]:
         return await self._store.list_knowledge_items(
             source_id=source_id,
+            mission_scope=mission_scope,
             limit=limit,
             ingested_after=ingested_after,
             ingested_before=ingested_before,
@@ -584,6 +673,7 @@ class QueryEngine:
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
         primary_triage_category: str | None = None,
+        mission_scope: int | None = None,
     ) -> list[dict[str, Any]]:
         return await self._store.search_knowledge_items(
             query,
@@ -599,6 +689,7 @@ class QueryEngine:
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
             primary_triage_category=primary_triage_category,
+            mission_scope=mission_scope,
         )
 
     async def upsert_knowledge_item_embedding(
@@ -626,8 +717,12 @@ class QueryEngine:
     async def delete_knowledge_source(self, source_id: int) -> None:
         await self._store.delete_knowledge_source(source_id)
 
-    async def list_unscored_knowledge(self, limit: int = 20) -> list[dict[str, Any]]:
-        return await self._store.list_unscored_knowledge(limit)
+    async def list_unscored_knowledge(
+        self, limit: int = 20, *, mission_scope: int | None = None
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_unscored_knowledge(
+            limit, mission_scope=mission_scope
+        )
 
     async def update_impact_score(self, knowledge_id: int, score: int) -> None:
         await self._store.update_impact_score(knowledge_id, score)
@@ -648,9 +743,11 @@ class QueryEngine:
         )
 
     async def list_backfill_triage_categories(
-        self, limit: int = 20
+        self, limit: int = 20, *, mission_scope: int | None = None
     ) -> list[dict[str, Any]]:
-        return await self._store.list_backfill_triage_categories(limit)
+        return await self._store.list_backfill_triage_categories(
+            limit, mission_scope=mission_scope
+        )
 
     async def ensure_triage_category_entities(self) -> int:
         return await self._store.ensure_triage_category_entities()
@@ -693,6 +790,7 @@ class QueryEngine:
         external_ids: dict[str, str] | None = None,
         payload_json: dict[str, Any] | None = None,
         last_enriched_at: str | None = None,
+        mission_id: int | None = None,
     ) -> dict[str, Any]:
         return await self._store.upsert_entity(
             type=type,
@@ -701,6 +799,7 @@ class QueryEngine:
             external_ids=external_ids,
             payload_json=payload_json,
             last_enriched_at=last_enriched_at,
+            mission_id=mission_id,
         )
 
     async def get_entity_by_id(self, entity_id: int) -> dict[str, Any] | None:
@@ -834,6 +933,7 @@ class QueryEngine:
         parent_task_id: int,
         idempotency_key: str | None,
         steps: list[dict[str, Any]],
+        mission_id: int | None = None,
     ) -> tuple[int, bool]:
         return await self._store.enqueue_workflow(
             kind=kind,
@@ -842,6 +942,7 @@ class QueryEngine:
             parent_task_id=parent_task_id,
             idempotency_key=idempotency_key,
             steps=steps,
+            mission_id=mission_id,
         )
 
     async def update_workflow_row(
@@ -885,5 +986,9 @@ class QueryEngine:
             workflow_id, reason=reason, dry_run=dry_run
         )
 
-    async def list_recent_knowledge_item_ids(self, *, limit: int) -> list[int]:
-        return await self._store.list_recent_knowledge_item_ids(limit=limit)
+    async def list_recent_knowledge_item_ids(
+        self, *, limit: int, mission_scope: int | None = None
+    ) -> list[int]:
+        return await self._store.list_recent_knowledge_item_ids(
+            limit=limit, mission_scope=mission_scope
+        )

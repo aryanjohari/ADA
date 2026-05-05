@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,19 @@ DEFAULT_GRAPH_LITE_MAX_ITEMS_PER_JOB = 200
 DEFAULT_GRAPH_LITE_TOKEN_CAP_PER_JOB = 8000
 DEFAULT_BATCH_ENRICH_MAX_ENTITIES = 10
 DEFAULT_BATCH_ENRICH_MAX_TOOL_ROUNDS = 48
+
+# Allowed top-level keys in ``default.yaml`` after merge (numeric rails only).
+POLICY_DEFAULT_YAML_ALLOWED_TOP_LEVEL: frozenset[str] = frozenset(
+    {
+        "version",
+        "intent_max_bytes",
+        "matrix_planner_top_k",
+        "graph_lite_max_items_per_job",
+        "graph_lite_token_cap_per_job",
+        "batch_enrich_max_entities",
+        "batch_enrich_max_tool_rounds",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -152,6 +166,19 @@ def load_merged_policy(
 
     if not data:
         return _policy_defaults()
+
+    unknown = sorted(
+        k
+        for k in data
+        if isinstance(k, str) and k not in POLICY_DEFAULT_YAML_ALLOWED_TOP_LEVEL
+    )
+    if unknown:
+        print(
+            "ada: policy default.yaml unknown top-level key(s) "
+            f"{unknown!r} under {pr}; use missions.defaults_json or playbook bindings "
+            "for programme knobs (see docs/operator-onboarding.md).",
+            file=sys.stderr,
+        )
 
     version = data.get("version")
     try:

@@ -95,6 +95,7 @@ async def ingest_rss_feeds(
     timeout_sec: float = 45.0,
     max_feeds: int | None = None,
     fetch_text: Callable[[str], Awaitable[str]] | None = None,
+    ingest_mission_id: int | None = None,
 ) -> IngestRssResult:
     """
     For each knowledge_sources row with kind=rss and non-empty base_url, GET the feed,
@@ -104,7 +105,9 @@ async def ingest_rss_feeds(
     raw XML/string body (for tests without network).
     """
     result = IngestRssResult()
-    rows = await qe.list_knowledge_sources(kind="rss")
+    rows = await qe.list_knowledge_sources(
+        kind="rss", ingest_mission_id=ingest_mission_id
+    )
     candidates = [r for r in rows if str(r.get("base_url") or "").strip()]
     feed_cap = max_feeds
     if feed_cap is None and settings is not None:
@@ -269,7 +272,9 @@ async def ingest_rss_feeds(
     return result
 
 
-async def run_ingest_rss_cli(settings: Settings) -> int:
+async def run_ingest_rss_cli(
+    settings: Settings, *, mission_slug: str | None = None
+) -> int:
     """CLI entry: connect DB, ingest all rss knowledge_sources, print summary. Returns exit code."""
     settings.ensure_data_dir()
     schema_path = Path(ada.__path__[0]) / "db" / "schema.sql"
@@ -280,6 +285,16 @@ async def run_ingest_rss_cli(settings: Settings) -> int:
     )
     await qe.connect()
     await enforce_profile_identity(qe, settings)
+    ingest_mid: int | None = None
+    if mission_slug is not None and str(mission_slug).strip():
+        row = await qe.get_mission_by_slug(str(mission_slug).strip())
+        if row is None:
+            print(
+                f"ingest-rss: unknown mission slug {str(mission_slug).strip()!r}",
+                file=sys.stderr,
+            )
+            return 2
+        ingest_mid = int(row["id"])
     try:
         res = await ingest_rss_feeds(
             qe,
@@ -287,6 +302,7 @@ async def run_ingest_rss_cli(settings: Settings) -> int:
             max_items_per_feed=settings.ingest_rss_max_items,
             max_response_bytes=settings.ingest_rss_max_response_bytes,
             timeout_sec=settings.ingest_rss_timeout_sec,
+            ingest_mission_id=ingest_mid,
         )
         print(
             f"ingest-rss: feeds_attempted={res.feeds_attempted} feeds_ok={res.feeds_ok} "
@@ -306,6 +322,7 @@ async def run_register_rss_source_cli(
     *,
     url: str,
     label: str | None = None,
+    mission_slug: str | None = None,
 ) -> int:
     """Register one RSS feed URL in knowledge_sources if not already present."""
     u = url.strip()
@@ -321,13 +338,27 @@ async def run_register_rss_source_cli(
     )
     await qe.connect()
     await enforce_profile_identity(qe, settings)
+    mission_id: int | None = None
+    if mission_slug is not None and str(mission_slug).strip():
+        m = await qe.get_mission_by_slug(str(mission_slug).strip())
+        if m is None:
+            print(
+                f"add-rss-source: unknown mission slug {str(mission_slug).strip()!r}",
+                file=sys.stderr,
+            )
+            return 2
+        mission_id = int(m["id"])
     try:
-        rows = await qe.list_knowledge_sources(kind="rss")
+        rows = await qe.list_knowledge_sources(
+            kind="rss", ingest_mission_id=mission_id
+        )
         for r in rows:
             if str(r.get("base_url") or "").strip() == u:
                 print(f"add-rss-source: already registered id={r['id']} url={u!r}")
                 return 0
-        sid = await qe.insert_knowledge_source("rss", label=label, base_url=u)
+        sid = await qe.insert_knowledge_source(
+            "rss", label=label, base_url=u, mission_id=mission_id
+        )
         print(f"add-rss-source: registered id={sid} url={u!r}")
         return 0
     finally:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -70,6 +71,7 @@ async def ingest_gets_index(
     *,
     idempotency_key: str | None = None,
     fetch_text: Any | None = None,
+    mission_id: int | None = None,
 ) -> IngestGetsResult:
     """
     Fetch public index HTML, store raw snapshot, insert one knowledge_item per RFx id.
@@ -91,6 +93,7 @@ async def ingest_gets_index(
             "trust_tier": "procurement",
             "source": "gets_public_index",
         },
+        mission_id=mission_id,
     )
 
     job_id = 0
@@ -179,7 +182,9 @@ async def ingest_gets_index(
         return result
 
 
-async def run_ingest_gets_cli(settings: Settings) -> int:
+async def run_ingest_gets_cli(
+    settings: Settings, *, mission_slug: str | None = None
+) -> int:
     from pathlib import Path
     from datetime import datetime, timezone
 
@@ -194,10 +199,23 @@ async def run_ingest_gets_cli(settings: Settings) -> int:
     )
     await qe.connect()
     await enforce_profile_identity(qe, settings)
+    mid: int | None = None
+    if mission_slug is not None and str(mission_slug).strip():
+        m = await qe.get_mission_by_slug(str(mission_slug).strip())
+        if m is None:
+            print(
+                f"ingest-gets: unknown mission slug {str(mission_slug).strip()!r}",
+                file=sys.stderr,
+            )
+            return 2
+        mid = int(m["id"])
     try:
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         res = await ingest_gets_index(
-            qe, settings, idempotency_key=f"gets-{day}"
+            qe,
+            settings,
+            idempotency_key=f"gets-{day}",
+            mission_id=mid,
         )
         if res.error and not res.raw_row_id:
             print(f"ingest-gets: error: {res.error}", flush=True)

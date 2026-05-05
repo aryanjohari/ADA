@@ -96,6 +96,8 @@ async def test_get_goal_task_view_for_tool(tmp_path, schema_sql_path):
         assert v["status"] == "completed"
         assert v["current_output"] == "out"
         assert v["plan_json"] == "{}"
+        assert v["mission_id"] is None
+        assert v["mission_slug"] is None
     finally:
         await qe.close()
 

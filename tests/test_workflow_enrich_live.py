@@ -63,14 +63,15 @@ async def test_enrich_live_calls_orchestrate_with_strict_web(
         )
         settings = Settings.load()
         with mock.patch(
-            "ada.workflow.runner.enrich_postcondition_met", return_value=True
+            "ada.workflow.publish_enrich_step.enrich_postcondition_met",
+            return_value=True,
         ):
             with mock.patch(
-                "ada.workflow.runner.orchestrate_turn",
+                "ada.workflow.publish_enrich_step.orchestrate_turn",
                 new=mock.AsyncMock(return_value="model final"),
             ) as ot:
                 with mock.patch(
-                    "ada.workflow.runner.run_enrich_step",
+                    "ada.workflow.publish_enrich_step.run_enrich_step",
                     new=mock.AsyncMock(
                         side_effect=AssertionError("reference enrich must not run")
                     ),
@@ -118,13 +119,17 @@ async def test_enrich_live_retries_graph_only_then_fails(tmp_path, schema_sql_pa
         )
         settings = Settings.load()
         with mock.patch(
-            "ada.workflow.runner.enrich_postcondition_met", return_value=False
+            "ada.workflow.publish_enrich_step.enrich_postcondition_met",
+            return_value=False,
         ):
             with mock.patch(
-                "ada.workflow.runner.orchestrate_turn",
+                "ada.workflow.publish_enrich_step.orchestrate_turn",
                 new=mock.AsyncMock(return_value="x"),
             ) as ot:
-                with mock.patch("ada.workflow.runner.run_enrich_step", new=mock.AsyncMock()):
+                with mock.patch(
+                    "ada.workflow.publish_enrich_step.run_enrich_step",
+                    new=mock.AsyncMock(),
+                ):
                     with pytest.raises(ValueError, match="ENRICH live"):
                         await run_workflow_for_parent_task(
                             qe, parent_task_id=tid, goal="enrich live", **_wf_kwargs(settings)
@@ -269,12 +274,17 @@ async def test_enrich_graph_sufficient_skips_orchestrate_and_serper(
         settings = Settings.load()
         with mock.patch("ada.tools.web_runtime.serper_search", new=mock.AsyncMock(side_effect=_no_serper)):
             with mock.patch(
-                "ada.workflow.runner.orchestrate_turn",
+                "ada.workflow.publish_enrich_step.orchestrate_turn",
                 new=mock.AsyncMock(
-                    side_effect=AssertionError("orchestrate must not run when graph sufficient")
+                    side_effect=AssertionError(
+                        "orchestrate must not run when graph sufficient"
+                    )
                 ),
             ) as ot:
-                with mock.patch("ada.workflow.runner.run_enrich_step", new=mock.AsyncMock()):
+                with mock.patch(
+                    "ada.workflow.publish_enrich_step.run_enrich_step",
+                    new=mock.AsyncMock(),
+                ):
                     await run_workflow_for_parent_task(
                         qe, parent_task_id=tid, goal="suff", **_wf_kwargs(settings)
                     )

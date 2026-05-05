@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -113,6 +114,7 @@ async def ingest_brand_site(
     max_urls: int,
     dry_run: bool = False,
     fetch_text: Any | None = None,
+    mission_id: int | None = None,
 ) -> IngestBrandResult:
     site = _validate_site_url(site_url)
     cap = max(1, min(max_urls, settings.brand_ingest_max_urls))
@@ -144,6 +146,7 @@ async def ingest_brand_site(
             "maps_to": "knowledge_items.brand",
             "crawl_mode": "bounded",
         },
+        mission_id=mission_id,
     )
     result.source_id = source_id
     fetched_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -189,6 +192,7 @@ async def run_ingest_brand_cli(
     site_url: str | None,
     max_urls: int | None,
     dry_run: bool,
+    mission_slug: str | None = None,
 ) -> int:
     url = (site_url or settings.brand_site_url or "").strip()
     if not url:
@@ -202,6 +206,16 @@ async def run_ingest_brand_cli(
     )
     await qe.connect()
     await enforce_profile_identity(qe, settings)
+    mid: int | None = None
+    if mission_slug is not None and str(mission_slug).strip():
+        m = await qe.get_mission_by_slug(str(mission_slug).strip())
+        if m is None:
+            print(
+                f"ingest-brand: unknown mission slug {str(mission_slug).strip()!r}",
+                file=sys.stderr,
+            )
+            return 2
+        mid = int(m["id"])
     try:
         try:
             res = await ingest_brand_site(
@@ -210,6 +224,7 @@ async def run_ingest_brand_cli(
                 site_url=url,
                 max_urls=max_urls or settings.brand_ingest_max_urls,
                 dry_run=dry_run,
+                mission_id=mid,
             )
         except BrandIngestError as e:
             print(f"ingest-brand: error code={e.code} message={e}")

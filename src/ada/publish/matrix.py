@@ -18,6 +18,29 @@ log = logging.getLogger("ada.publish.matrix")
 DEFAULT_KIND = "publish_entity_v1"
 
 
+async def resolve_matrix_isr_ids(
+    qe: QueryEngine, mission_slug: str | None
+) -> tuple[str, str]:
+    """Prefer mission.defaults_json keys over env ISR IDs."""
+    pid = os.environ.get("ADA_PROJECT_ID", "default").strip() or "default"
+    cid = os.environ.get("ADA_CAMPAIGN_ID", "main").strip() or "main"
+    ms = str(mission_slug).strip() if mission_slug else ""
+    if not ms:
+        return pid, cid
+    row = await qe.get_mission_by_slug(ms)
+    if row is None:
+        return pid, cid
+    raw = row.get("defaults_json")
+    d = dict(raw) if isinstance(raw, dict) else {}
+    pj = str(d.get("project_id") or "").strip()
+    cj = str(d.get("campaign_id") or "").strip()
+    if pj:
+        pid = pj
+    if cj:
+        cid = cj
+    return pid, cid
+
+
 @dataclass(frozen=True)
 class PageProfile:
     workflow_kind: str
@@ -86,6 +109,7 @@ async def enqueue_publish_entity_for_row(
     *,
     registry: PageProfileRegistry,
     dry_run: bool = False,
+    mission_slug: str | None = None,
 ) -> dict[str, Any]:
     et = str(row.get("type") or "").lower()
     code = str(row.get("category_code") or "").lower()
@@ -106,6 +130,7 @@ async def enqueue_publish_entity_for_row(
             f"would enqueue {prof.workflow_kind} {idem!r} params={params!r}"
         )
         return {"dry_run": True, "log_line": line, "error": ""}
+    slug_trim = str(mission_slug).strip() if mission_slug else ""
     r = await enqueue_workflow_via_tool(
         qe,
         kind=prof.workflow_kind,
@@ -114,6 +139,7 @@ async def enqueue_publish_entity_for_row(
         idempotency_key=idem,
         max_steps=settings.ada_max_task_steps,
         require_approval=settings.require_approval_for_enqueue,
+        mission_slug=slug_trim if slug_trim else None,
     )
     out: dict[str, Any] = {"dry_run": False, "enqueue": r}
     if r.get("error"):
@@ -131,6 +157,7 @@ async def run_matrix_legacy_scan(
     campaign_id: str,
     dry_run: bool,
     use_recent_order: bool,
+    mission_slug: str | None = None,
 ) -> dict[str, Any]:
     """Enumerate candidates (deterministic ordering) → enqueue."""
 
@@ -154,6 +181,7 @@ async def run_matrix_legacy_scan(
             row,
             registry=registry,
             dry_run=dry_run,
+            mission_slug=mission_slug,
         )
         if dry_run:
             ln = str(r.get("log_line") or "")
@@ -182,12 +210,18 @@ async def run_matrix_scan(
     settings: Settings,
     *,
     dry_run: bool = False,
+    deterministic: bool = False,
+    mission_slug: str | None = None,
 ) -> dict[str, Any]:
     if not settings.ada_matrix_enable and not dry_run:
         return {"enqueued": 0, "skipped": "ADA_MATRIX_ENABLE=0"}
 
-    project_id = os.environ.get("ADA_PROJECT_ID", "default").strip() or "default"
-    campaign_id = os.environ.get("ADA_CAMPAIGN_ID", "main").strip() or "main"
+    ms = str(mission_slug).strip() if mission_slug else ""
+    if ms and await qe.get_mission_by_slug(ms) is None:
+        return {"enqueued": 0, "skipped": f"unknown_mission_slug:{ms}"}
+
+    project_id, campaign_id = await resolve_matrix_isr_ids(qe, mission_slug)
+    planner_mode = settings.ada_matrix_planner and not deterministic
 
     if dry_run:
         registry = PageProfileRegistry(project_id=project_id, campaign_id=campaign_id)
@@ -195,7 +229,7 @@ async def run_matrix_scan(
         meta = ""
         types_f = settings.ada_matrix_entity_types
         limit = int(settings.ada_matrix_max_enqueues)
-        if settings.ada_matrix_planner:
+        if planner_mode:
             rows = await qe.list_subjects_with_classified_category_recent_for_planner(
                 entity_types=types_f, limit=limit
             )
@@ -229,10 +263,10 @@ async def run_matrix_scan(
             "candidates": len(rows),
             "skipped": "",
             "log": log_lines[:50],
-            "mode": ("matrix_planner" if settings.ada_matrix_planner else "matrix_legacy"),
+            "mode": ("matrix_planner" if planner_mode else "matrix_legacy"),
         }
 
-    if settings.ada_matrix_planner:
+    if planner_mode:
         from ada.publish.matrix_planner import run_matrix_plan_and_enqueue
 
         return await run_matrix_plan_and_enqueue(
@@ -240,6 +274,7 @@ async def run_matrix_scan(
             settings,
             project_id=project_id,
             campaign_id=campaign_id,
+            mission_slug=mission_slug,
         )
 
     return await run_matrix_legacy_scan(
@@ -249,4 +284,5 @@ async def run_matrix_scan(
         campaign_id=campaign_id,
         dry_run=False,
         use_recent_order=False,
+        mission_slug=mission_slug,
     )

@@ -25,8 +25,10 @@ async def test_fetch_pending_skips_pending_chat_tasks(tmp_path, schema_sql_path)
         )
         p = await qe.fetch_pending_task()
         assert p is not None
-        assert p[0] == gid
-        assert p[1] == "background work"
+        assert p.task_id == gid
+        assert p.goal == "background work"
+        assert p.mission_id is None
+        assert p.mission_slug is None
     finally:
         await qe.close()
 

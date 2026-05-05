@@ -23,7 +23,7 @@ from ada.prompt import (
     read_soul_text,
     read_text_file,
 )
-from ada.query_engine import QueryEngine
+from ada.query_engine import PendingGoalTask, QueryEngine
 from ada.profile_runtime import enforce_profile_identity
 from ada.tool_executor import (
     FileToolConfig,
@@ -155,11 +155,12 @@ async def run_daemon_loop(settings: Settings) -> None:
         log.error("GEMINI_API_KEY not set; daemon idle")
     try:
         while True:
-            pending = await qe.fetch_pending_task()
+            pending: PendingGoalTask | None = await qe.fetch_pending_task()
             if not pending:
                 await asyncio.sleep(POLL_INTERVAL_SEC)
                 continue
-            task_id, goal = pending
+            task_id = pending.task_id
+            goal = pending.goal
             if not settings.gemini_api_key:
                 await asyncio.sleep(POLL_INTERVAL_SEC)
                 continue
@@ -180,6 +181,16 @@ async def run_daemon_loop(settings: Settings) -> None:
                 )
                 await asyncio.sleep(POLL_INTERVAL_SEC)
                 continue
+            payload: dict[str, object] = {"task_id": task_id}
+            if pending.mission_id is not None:
+                payload["mission_id"] = pending.mission_id
+            if pending.mission_slug:
+                payload["mission_slug"] = pending.mission_slug
+            await qe.append_action_log(
+                "daemon_goal_dequeued",
+                payload,
+                session_id=task_id,
+            )
             await qe.update_task(task_id, status="executing")
             try:
                 await _maybe_generate_gsc_plan_for_goal(

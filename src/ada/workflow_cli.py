@@ -16,7 +16,9 @@ from ada.workflow.enqueue import enqueue_workflow_via_tool, get_workflow_status_
 async def run_workflow_enqueue_cli(
     settings: Settings,
     *,
-    kind: str,
+    kind: str = "",
+    playbook_id: str | None = None,
+    mission_slug: str | None = None,
     goal: str,
     params_json: str | None,
     idempotency_key: str | None,
@@ -39,6 +41,8 @@ async def run_workflow_enqueue_cli(
             idempotency_key=idempotency_key,
             max_steps=settings.ada_max_task_steps,
             require_approval=settings.require_approval_for_enqueue,
+            playbook_id=playbook_id,
+            mission_slug=mission_slug,
         )
         if out.get("error"):
             print(out["error"], file=sys.stderr)
@@ -105,6 +109,7 @@ async def run_workflow_retry_cli(
             )
             ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
             idem = f"wf-retry-{workflow_id}-{ts}"
+            tag_mid = wf.get("mission_id")
             out = await enqueue_workflow_via_tool(
                 qe,
                 kind=str(wf.get("kind") or ""),
@@ -113,6 +118,7 @@ async def run_workflow_retry_cli(
                 idempotency_key=idem,
                 max_steps=settings.ada_max_task_steps,
                 require_approval=settings.require_approval_for_enqueue,
+                mission_tag_id=int(tag_mid) if tag_mid is not None else None,
             )
             if out.get("error"):
                 print(out["error"], file=sys.stderr)

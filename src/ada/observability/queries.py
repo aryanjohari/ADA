@@ -32,64 +32,114 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return cur.fetchone() is not None
 
 
-def tasks_pending_failed(conn: sqlite3.Connection, *, limit: int = 200) -> list[dict[str, Any]]:
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    cur = conn.execute(f"PRAGMA table_info({table})")
+    for row in cur.fetchall():
+        if str(row[1]) == column:
+            return True
+    return False
+
+
+def tasks_pending_failed(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 200,
+    mission_id: int | None = None,
+) -> list[dict[str, Any]]:
+    has_tm = _column_exists(conn, "tasks", "mission_id")
+    cols = (
+        "id, status, task_kind, created_at, updated_at, goal, current_output, plan_json"
+    )
+    if has_tm:
+        cols += ", mission_id"
+    where = "status IN ('pending', 'failed')"
+    args: list[Any] = []
+    if mission_id is not None and has_tm:
+        where += " AND mission_id = ?"
+        args.append(mission_id)
+    elif mission_id is not None and not has_tm:
+        return []
+    args.append(limit)
     cur = conn.execute(
-        """
-        SELECT id, status, task_kind, created_at, updated_at, goal, current_output, plan_json
+        f"""
+        SELECT {cols}
         FROM tasks
-        WHERE status IN ('pending', 'failed')
+        WHERE {where}
         ORDER BY updated_at DESC
         LIMIT ?
         """,
-        (limit,),
+        tuple(args),
     )
     rows: list[dict[str, Any]] = []
     for r in cur.fetchall():
         g = r["goal"] or ""
         co = r["current_output"] or ""
         pj = r["plan_json"] or ""
-        rows.append(
-            {
-                "id": r["id"],
-                "status": r["status"],
-                "task_kind": r["task_kind"],
-                "created_at": r["created_at"],
-                "updated_at": r["updated_at"],
-                "goal_digest": field_digest(g),
-                "current_output_digest": field_digest(co),
-                "plan_json_digest": field_digest(pj),
-            }
-        )
+        item: dict[str, Any] = {
+            "id": r["id"],
+            "status": r["status"],
+            "task_kind": r["task_kind"],
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+            "goal_digest": field_digest(g),
+            "current_output_digest": field_digest(co),
+            "plan_json_digest": field_digest(pj),
+        }
+        if has_tm:
+            mid = r["mission_id"]
+            item["mission_id"] = int(mid) if mid is not None else None
+        rows.append(item)
     return rows
 
 
-def workflows_recent(conn: sqlite3.Connection, *, limit: int = 80) -> list[dict[str, Any]]:
+def workflows_recent(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 80,
+    mission_id: int | None = None,
+) -> list[dict[str, Any]]:
     if not _table_exists(conn, "workflows"):
         return []
+    has_wm = _column_exists(conn, "workflows", "mission_id")
+    cols = (
+        "id, kind, status, parent_task_id, created_at, updated_at, idempotency_key, goal_text"
+    )
+    if has_wm:
+        cols += ", mission_id"
+    where_sql = ""
+    args: list[Any] = [limit]
+    if mission_id is not None and has_wm:
+        where_sql = " WHERE mission_id = ?"
+        args = [mission_id, limit]
+    elif mission_id is not None and not has_wm:
+        return []
     cur = conn.execute(
-        """
-        SELECT id, kind, status, parent_task_id, created_at, updated_at, idempotency_key, goal_text
+        f"""
+        SELECT {cols}
         FROM workflows
+        {where_sql}
         ORDER BY updated_at DESC
         LIMIT ?
         """,
-        (limit,),
+        tuple(args),
     )
     out: list[dict[str, Any]] = []
     for r in cur.fetchall():
         gt = r["goal_text"] or ""
-        out.append(
-            {
-                "id": r["id"],
-                "kind": r["kind"],
-                "status": r["status"],
-                "parent_task_id": r["parent_task_id"],
-                "created_at": r["created_at"],
-                "updated_at": r["updated_at"],
-                "idempotency_key": r["idempotency_key"],
-                "goal_text_digest": field_digest(gt),
-            }
-        )
+        item: dict[str, Any] = {
+            "id": r["id"],
+            "kind": r["kind"],
+            "status": r["status"],
+            "parent_task_id": r["parent_task_id"],
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+            "idempotency_key": r["idempotency_key"],
+            "goal_text_digest": field_digest(gt),
+        }
+        if has_wm:
+            wid = r["mission_id"]
+            item["mission_id"] = int(wid) if wid is not None else None
+        out.append(item)
     return out
 
 
@@ -261,12 +311,21 @@ def web_source_counts_by_week(conn: sqlite3.Connection, *, weeks: int = 8) -> li
     return [dict(r) for r in cur.fetchall()]
 
 
-def workflow_status_counts(conn: sqlite3.Connection) -> dict[str, int]:
+def workflow_status_counts(
+    conn: sqlite3.Connection, *, mission_id: int | None = None
+) -> dict[str, int]:
     if not _table_exists(conn, "workflows"):
         return {}
-    cur = conn.execute(
-        "SELECT status, COUNT(*) AS n FROM workflows GROUP BY status"
-    )
+    has_wm = _column_exists(conn, "workflows", "mission_id")
+    if mission_id is not None and not has_wm:
+        return {}
+    if mission_id is not None and has_wm:
+        cur = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM workflows WHERE mission_id = ? GROUP BY status",
+            (mission_id,),
+        )
+    else:
+        cur = conn.execute("SELECT status, COUNT(*) AS n FROM workflows GROUP BY status")
     return {str(r["status"]): int(r["n"]) for r in cur.fetchall()}
 
 
@@ -358,6 +417,127 @@ def gate_failure_buckets(
     return rows
 
 
-def task_status_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    cur = conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status")
+def task_status_counts(
+    conn: sqlite3.Connection, *, mission_id: int | None = None
+) -> dict[str, int]:
+    has_tm = _column_exists(conn, "tasks", "mission_id")
+    if mission_id is not None and not has_tm:
+        return {}
+    if mission_id is not None and has_tm:
+        cur = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM tasks WHERE mission_id = ? GROUP BY status",
+            (mission_id,),
+        )
+    else:
+        cur = conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status")
     return {str(r["status"]): int(r["n"]) for r in cur.fetchall()}
+
+
+def task_status_counts_by_mission(
+    conn: sqlite3.Connection,
+) -> list[dict[str, Any]]:
+    """Group task counts by mission_id (NULL = unassigned). Requires tasks.mission_id."""
+    if not _column_exists(conn, "tasks", "mission_id"):
+        return []
+    cur = conn.execute(
+        """
+        SELECT mission_id, status, COUNT(*) AS n
+        FROM tasks
+        GROUP BY mission_id, status
+        ORDER BY (mission_id IS NULL), mission_id, status
+        """
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        mid = r["mission_id"]
+        out.append(
+            {
+                "mission_id": int(mid) if mid is not None else None,
+                "status": str(r["status"] or ""),
+                "n": int(r["n"] or 0),
+            }
+        )
+    return out
+
+
+def workflow_status_counts_by_mission(
+    conn: sqlite3.Connection,
+) -> list[dict[str, Any]]:
+    """Group workflow counts by mission_id (NULL = unassigned)."""
+    if not _table_exists(conn, "workflows") or not _column_exists(
+        conn, "workflows", "mission_id"
+    ):
+        return []
+    cur = conn.execute(
+        """
+        SELECT mission_id, status, COUNT(*) AS n
+        FROM workflows
+        GROUP BY mission_id, status
+        ORDER BY (mission_id IS NULL), mission_id, status
+        """
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        mid = r["mission_id"]
+        out.append(
+            {
+                "mission_id": int(mid) if mid is not None else None,
+                "status": str(r["status"] or ""),
+                "n": int(r["n"] or 0),
+            }
+        )
+    return out
+
+
+def pending_task_counts_by_mission(
+    conn: sqlite3.Connection,
+) -> list[dict[str, Any]]:
+    if not _column_exists(conn, "tasks", "mission_id"):
+        return []
+    cur = conn.execute(
+        """
+        SELECT mission_id, COUNT(*) AS n
+        FROM tasks
+        WHERE status = 'pending'
+        GROUP BY mission_id
+        ORDER BY (mission_id IS NULL), mission_id
+        """
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        mid = r["mission_id"]
+        out.append(
+            {
+                "mission_id": int(mid) if mid is not None else None,
+                "n": int(r["n"] or 0),
+            }
+        )
+    return out
+
+
+def pending_workflow_counts_by_mission(
+    conn: sqlite3.Connection,
+) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "workflows") or not _column_exists(
+        conn, "workflows", "mission_id"
+    ):
+        return []
+    cur = conn.execute(
+        """
+        SELECT mission_id, COUNT(*) AS n
+        FROM workflows
+        WHERE status = 'pending'
+        GROUP BY mission_id
+        ORDER BY (mission_id IS NULL), mission_id
+        """
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        mid = r["mission_id"]
+        out.append(
+            {
+                "mission_id": int(mid) if mid is not None else None,
+                "n": int(r["n"] or 0),
+            }
+        )
+    return out

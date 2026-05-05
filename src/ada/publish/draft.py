@@ -220,6 +220,8 @@ async def load_draft_knowledge_for_prompt(
         settings.publish_draft_knowledge_top_k * 3,
         settings.publish_draft_knowledge_top_k + 4,
     )
+    ms_raw = entity.get("mission_id")
+    mission_scope = int(ms_raw) if ms_raw is not None else None
     hits = await qe.search_knowledge_items(
         q,
         limit=overfetch,
@@ -228,6 +230,7 @@ async def load_draft_knowledge_for_prompt(
         embedding_model=settings.knowledge_embedding_model,
         embedding_min_cosine=settings.publish_draft_knowledge_min_cosine,
         prefer_fts=True,
+        mission_scope=mission_scope,
     )
     pick: list[dict[str, Any]] = []
     seen_text: set[str] = set()

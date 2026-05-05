@@ -138,7 +138,8 @@ async def test_retry_failed_workflow_dry_run_no_write(tmp_path, schema_sql_path)
 
         assert wf_after == wf_before
         assert task_after == task_before
-        for a, b in zip(steps_after, steps_before, strict=True):
+        assert len(steps_after) == len(steps_before)
+        for a, b in zip(steps_after, steps_before):
             assert a["status"] == b["status"] and a["error"] == b["error"]
     finally:
         await qe.close()

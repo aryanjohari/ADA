@@ -123,6 +123,8 @@ async def run_workflow_for_parent_task(
     await qe.update_workflow_row(wf_id, status="running")
     steps = await qe.list_workflow_steps(wf_id)
     params = wf.get("params_json") if isinstance(wf.get("params_json"), dict) else {}
+    wf_mid = wf.get("mission_id")
+    wf_mission_scope = int(wf_mid) if wf_mid is not None else None
     prior_bits: list[str] = []
     last_final = ""
     draft_page_dict: dict[str, Any] | None = None
@@ -141,7 +143,9 @@ async def run_workflow_for_parent_task(
         await qe.update_workflow_step_row(sid, status="running", increment_attempt=True)
         try:
             if stype == "FETCH":
-                res = await ingest_rss_feeds(qe, settings=settings)
+                res = await ingest_rss_feeds(
+                    qe, settings=settings, ingest_mission_id=wf_mission_scope
+                )
                 out = {
                     "feeds_attempted": res.feeds_attempted,
                     "feeds_ok": res.feeds_ok,
@@ -156,7 +160,9 @@ async def run_workflow_for_parent_task(
             elif stype == "EXTRACT":
                 inp = st.get("input_json") or {}
                 lim = int(inp.get("recent_item_limit") or 40)
-                item_ids = await qe.list_recent_knowledge_item_ids(limit=lim)
+                item_ids = await qe.list_recent_knowledge_item_ids(
+                    limit=lim, mission_scope=wf_mission_scope
+                )
                 user_txt = _build_extract_user_text(
                     goal_text=str(wf.get("goal_text") or goal),
                     item_ids=item_ids,

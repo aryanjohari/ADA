@@ -15,6 +15,8 @@ async def run_matrix_scan_cli(
     settings: Settings,
     *,
     dry_run: bool,
+    deterministic: bool = False,
+    mission_slug: str | None = None,
 ) -> int:
     schema_path = Path(__file__).resolve().parent / "db" / "schema.sql"
     qe = QueryEngine(
@@ -25,7 +27,13 @@ async def run_matrix_scan_cli(
     await qe.connect()
     await enforce_profile_identity(qe, settings)
     try:
-        out = await run_matrix_scan(qe, settings, dry_run=dry_run)
+        out = await run_matrix_scan(
+            qe,
+            settings,
+            dry_run=dry_run,
+            deterministic=deterministic,
+            mission_slug=mission_slug,
+        )
     finally:
         await qe.close()
     print(out)

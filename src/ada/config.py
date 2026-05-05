@@ -9,6 +9,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from ada.config_deprecation import _warn_deprecated_envs
 from ada.tools.file_sandbox import load_denylist_paths_from_file, parse_sandbox_roots
 
 # Default Gemini model: 2.5 Flash-Lite (verify against https://ai.google.dev/gemini-api/docs/models ).
@@ -757,6 +758,7 @@ class Settings:
             "ADA_REQUIRE_APPROVAL_FOR_PUBLISH", "0"
         ).strip().lower() in ("1", "true", "yes", "on")
 
+        _warn_deprecated_envs()
         return cls(
             project_root=root,
             data_dir=data_dir,

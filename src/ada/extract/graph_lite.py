@@ -197,12 +197,18 @@ async def run_graph_lite_extraction(
     source_id: int | None = None,
     extractor: Any | None = None,
     seed_triage_categories: bool = True,
+    mission_id: int | None = None,
 ) -> GraphLiteExtractStats:
     stats = GraphLiteExtractStats()
     lim = max(1, min(limit, 200))
     if seed_triage_categories:
         await qe.ensure_triage_category_entities()
-    docs = await qe.list_knowledge_items(source_id=source_id, limit=lim, valid_at_now=True)
+    docs = await qe.list_knowledge_items(
+        source_id=source_id,
+        mission_scope=mission_id,
+        limit=lim,
+        valid_at_now=True,
+    )
     stats.processed_docs = len(docs)
     if not docs:
         return stats
@@ -252,6 +258,7 @@ async def run_graph_lite_extraction(
             aliases=row.get("aliases") if isinstance(row.get("aliases"), list) else None,
             external_ids=row.get("external_ids") if isinstance(row.get("external_ids"), dict) else None,
             payload_json=row.get("payload") if isinstance(row.get("payload"), dict) else None,
+            mission_id=mission_id,
         )
         entity_id = int(rec["entity_id"])
         norm = qe.normalize_entity_name(name)

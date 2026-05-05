@@ -265,6 +265,175 @@ class PersistentState:
         await self._ensure_publisher_graph_columns()
         await self._ensure_phase3_workflows()
         await self._ensure_publisher_workflow_step_types()
+        await self._ensure_missions_schema()
+        await self._ensure_knowledge_sources_mission_id()
+        await self._ensure_entities_mission_scope()
+
+    async def _ensure_knowledge_sources_mission_id(self) -> None:
+        """Mission-scoped knowledge sources (nullable = legacy global pool)."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_sources'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(knowledge_sources)")
+        ks_cols = {str(row[1]) for row in await cur.fetchall()}
+        if "mission_id" not in ks_cols:
+            await self._conn.execute(
+                """
+                ALTER TABLE knowledge_sources ADD COLUMN mission_id INTEGER
+                    REFERENCES missions(id) ON DELETE SET NULL
+                """
+            )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_sources_mission "
+            "ON knowledge_sources(mission_id)"
+        )
+        await self._conn.commit()
+
+    async def _ensure_entities_mission_scope(self) -> None:
+        """Replace global UNIQUE(type,normalized_name) with mission-scoped partial uniques."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='entities'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type='index' AND name='idx_entities_global_type_norm'
+            """
+        )
+        if await cur.fetchone() is not None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(entities)")
+        ecols = {str(row[1]) for row in await cur.fetchall()}
+        has_lei = "last_enriched_at" in ecols
+        try:
+            await self._conn.execute("PRAGMA foreign_keys = OFF")
+            await self._conn.execute("DROP TABLE IF EXISTS entities__mission_scoped")
+            await self._conn.execute(
+                """
+                CREATE TABLE entities__mission_scoped (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    last_enriched_at TEXT,
+                    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            if has_lei:
+                await self._conn.execute(
+                    """
+                    INSERT INTO entities__mission_scoped (
+                        id, type, name, normalized_name,
+                        payload_json, last_enriched_at, mission_id, created_at
+                    )
+                    SELECT id, type, name, normalized_name, payload_json,
+                           last_enriched_at, NULL, created_at
+                    FROM entities
+                    """
+                )
+            else:
+                await self._conn.execute(
+                    """
+                    INSERT INTO entities__mission_scoped (
+                        id, type, name, normalized_name,
+                        payload_json, last_enriched_at, mission_id, created_at
+                    )
+                    SELECT id, type, name, normalized_name, payload_json,
+                           NULL, NULL, created_at
+                    FROM entities
+                    """
+                )
+            await self._conn.execute("DROP TABLE entities")
+            await self._conn.execute(
+                "ALTER TABLE entities__mission_scoped RENAME TO entities"
+            )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_normalized "
+                "ON entities(normalized_name)"
+            )
+            await self._conn.execute(
+                """
+                CREATE UNIQUE INDEX idx_entities_global_type_norm
+                    ON entities(type, normalized_name)
+                    WHERE mission_id IS NULL
+                """
+            )
+            await self._conn.execute(
+                """
+                CREATE UNIQUE INDEX idx_entities_mission_type_norm
+                    ON entities(mission_id, type, normalized_name)
+                    WHERE mission_id IS NOT NULL
+                """
+            )
+            await self._conn.commit()
+        except Exception:
+            await self._conn.rollback()
+            raise
+        finally:
+            await self._conn.execute("PRAGMA foreign_keys = ON")
+
+    async def _ensure_missions_schema(self) -> None:
+        """missions table + optional tasks.mission_id FK (ON DELETE SET NULL)."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='missions'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE missions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    slug TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    niche TEXT,
+                    topic TEXT,
+                    defaults_json TEXT NOT NULL DEFAULT '{}',
+                    brief_md TEXT NOT NULL DEFAULT '',
+                    brief_md_path TEXT,
+                    schedule_hint_json TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+        cur = await self._conn.execute("PRAGMA table_info(tasks)")
+        tcols = {str(row[1]) for row in await cur.fetchall()}
+        if "mission_id" not in tcols:
+            await self._conn.execute(
+                """
+                ALTER TABLE tasks ADD COLUMN mission_id INTEGER
+                    REFERENCES missions(id) ON DELETE SET NULL
+                """
+            )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_mission_id ON tasks(mission_id)"
+        )
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'"
+        )
+        if await cur.fetchone() is not None:
+            cur = await self._conn.execute("PRAGMA table_info(workflows)")
+            wfcols = {str(row[1]) for row in await cur.fetchall()}
+            if "mission_id" not in wfcols:
+                await self._conn.execute(
+                    """
+                    ALTER TABLE workflows ADD COLUMN mission_id INTEGER
+                        REFERENCES missions(id) ON DELETE SET NULL
+                    """
+                )
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflows_mission_id ON workflows(mission_id)"
+            )
+        await self._conn.commit()
 
     async def _ensure_phase3_workflows(self) -> None:
         """workflows + workflow_steps (Phase 3 workflow engine)."""
@@ -2054,27 +2223,179 @@ class PersistentState:
         status: str = "pending",
         *,
         task_kind: TaskKind = TASK_KIND_GOAL,
+        mission_id: int | None = None,
     ) -> int:
         if task_kind not in ("chat", "goal"):
             raise ValueError(f"invalid task_kind: {task_kind!r}")
         assert self._conn is not None
         cur = await self._conn.execute(
             """
-            INSERT INTO tasks (goal, status, current_output, task_kind)
-            VALUES (?, ?, '', ?)
+            INSERT INTO tasks (goal, status, current_output, task_kind, mission_id)
+            VALUES (?, ?, '', ?, ?)
             """,
-            (goal, status, task_kind),
+            (goal, status, task_kind, mission_id),
         )
         await self._conn.commit()
         return int(cur.lastrowid)
 
-    async def fetch_pending_task(self) -> tuple[int, str] | None:
+    async def create_mission(
+        self,
+        slug: str,
+        title: str,
+        *,
+        niche: str | None = None,
+        topic: str | None = None,
+        defaults_json: str | dict[str, Any] | None = None,
+        brief_md: str = "",
+        brief_md_path: str | None = None,
+        schedule_hint_json: str | dict[str, Any] | None = None,
+    ) -> int:
+        assert self._conn is not None
+        if defaults_json is None:
+            defaults_s = "{}"
+        elif isinstance(defaults_json, dict):
+            defaults_s = json.dumps(defaults_json, ensure_ascii=False)
+        else:
+            defaults_s = defaults_json
+        if schedule_hint_json is None:
+            schedule_s: str | None = None
+        elif isinstance(schedule_hint_json, dict):
+            schedule_s = json.dumps(schedule_hint_json, ensure_ascii=False)
+        else:
+            schedule_s = schedule_hint_json
+        cur = await self._conn.execute(
+            """
+            INSERT INTO missions (
+                slug, title, niche, topic, defaults_json, brief_md,
+                brief_md_path, schedule_hint_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                slug,
+                title,
+                niche,
+                topic,
+                defaults_s,
+                brief_md,
+                brief_md_path,
+                schedule_s,
+            ),
+        )
+        await self._conn.commit()
+        return int(cur.lastrowid)
+
+    async def get_mission_by_slug(self, slug: str) -> dict[str, Any] | None:
         assert self._conn is not None
         cur = await self._conn.execute(
             """
-            SELECT id, goal FROM tasks
-            WHERE status = 'pending' AND task_kind = ?
-            ORDER BY id ASC
+            SELECT id, slug, title, niche, topic, defaults_json, brief_md,
+                   brief_md_path, schedule_hint_json, created_at, updated_at
+            FROM missions WHERE slug = ? LIMIT 1
+            """,
+            (slug,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": int(row[0]),
+            "slug": str(row[1]),
+            "title": str(row[2]),
+            "niche": row[3],
+            "topic": row[4],
+            "defaults_json": json.loads(str(row[5] or "{}")),
+            "brief_md": str(row[6] or ""),
+            "brief_md_path": row[7],
+            "schedule_hint_json": json.loads(row[8])
+            if row[8] not in (None, "")
+            else None,
+            "created_at": str(row[9]),
+            "updated_at": str(row[10]),
+        }
+
+    async def update_mission_defaults_json(
+        self,
+        slug: str,
+        patch: dict[str, Any],
+        *,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Merge ``patch`` into ``missions.defaults_json``; skip existing keys unless ``force``."""
+        assert self._conn is not None
+        row = await self.get_mission_by_slug(slug)
+        if row is None:
+            raise LookupError(f"no mission with slug {slug!r}")
+        raw = row.get("defaults_json")
+        current: dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
+        merged = dict(current)
+        for k, v in patch.items():
+            if k in merged and not force:
+                continue
+            merged[k] = v
+        await self._conn.execute(
+            """
+            UPDATE missions
+            SET defaults_json = ?, updated_at = datetime('now')
+            WHERE slug = ?
+            """,
+            (json.dumps(merged, ensure_ascii=False), slug),
+        )
+        await self._conn.commit()
+        return merged
+
+    async def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        limit = max(1, min(int(limit), 500))
+        cur = await self._conn.execute(
+            """
+            SELECT id, slug, title, niche, topic, created_at, updated_at
+            FROM missions
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "id": int(row[0]),
+                    "slug": str(row[1]),
+                    "title": str(row[2]),
+                    "niche": row[3],
+                    "topic": row[4],
+                    "created_at": str(row[5]),
+                    "updated_at": str(row[6]),
+                }
+            )
+        return out
+
+    async def attach_task_to_mission(
+        self, task_id: int, mission_id: int | None
+    ) -> None:
+        assert self._conn is not None
+        await self._conn.execute(
+            """
+            UPDATE tasks SET mission_id = ?, updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (mission_id, task_id),
+        )
+        await self._conn.commit()
+
+    async def fetch_pending_task(
+        self,
+    ) -> tuple[int, str, int | None, str | None] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT t.id, t.goal, t.mission_id, m.slug
+            FROM tasks t
+            LEFT JOIN missions m ON m.id = t.mission_id
+            WHERE t.status = 'pending' AND t.task_kind = ?
+            ORDER BY t.id ASC
             LIMIT 1
             """,
             (TASK_KIND_GOAL,),
@@ -2082,7 +2403,14 @@ class PersistentState:
         row = await cur.fetchone()
         if not row:
             return None
-        return int(row[0]), str(row[1])
+        mid = row[2]
+        slug = row[3]
+        return (
+            int(row[0]),
+            str(row[1]),
+            int(mid) if mid is not None else None,
+            str(slug) if slug is not None else None,
+        )
 
     async def latest_cli_session_task_id(self) -> int | None:
         assert self._conn is not None
@@ -2103,16 +2431,47 @@ class PersistentState:
         *,
         limit: int = 50,
         status: str | None = None,
+        mission_slug: str | None = None,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         limit = max(1, min(limit, 500))
-        if status is not None:
+        if mission_slug is not None:
+            slug = mission_slug.strip()
+            if status is not None:
+                cur = await self._conn.execute(
+                    """
+                    SELECT t.id, t.goal, t.status, t.plan_json, t.created_at, t.updated_at,
+                           t.mission_id, m.slug
+                    FROM tasks t
+                    INNER JOIN missions m ON m.id = t.mission_id AND m.slug = ?
+                    WHERE t.task_kind = ? AND t.status = ?
+                    ORDER BY t.id DESC
+                    LIMIT ?
+                    """,
+                    (slug, TASK_KIND_GOAL, status, limit),
+                )
+            else:
+                cur = await self._conn.execute(
+                    """
+                    SELECT t.id, t.goal, t.status, t.plan_json, t.created_at, t.updated_at,
+                           t.mission_id, m.slug
+                    FROM tasks t
+                    INNER JOIN missions m ON m.id = t.mission_id AND m.slug = ?
+                    WHERE t.task_kind = ?
+                    ORDER BY t.id DESC
+                    LIMIT ?
+                    """,
+                    (slug, TASK_KIND_GOAL, limit),
+                )
+        elif status is not None:
             cur = await self._conn.execute(
                 """
-                SELECT id, goal, status, plan_json, created_at, updated_at
-                FROM tasks
-                WHERE task_kind = ? AND status = ?
-                ORDER BY id DESC
+                SELECT t.id, t.goal, t.status, t.plan_json, t.created_at, t.updated_at,
+                       t.mission_id, m.slug
+                FROM tasks t
+                LEFT JOIN missions m ON m.id = t.mission_id
+                WHERE t.task_kind = ? AND t.status = ?
+                ORDER BY t.id DESC
                 LIMIT ?
                 """,
                 (TASK_KIND_GOAL, status, limit),
@@ -2120,17 +2479,27 @@ class PersistentState:
         else:
             cur = await self._conn.execute(
                 """
-                SELECT id, goal, status, plan_json, created_at, updated_at
-                FROM tasks
-                WHERE task_kind = ?
-                ORDER BY id DESC
+                SELECT t.id, t.goal, t.status, t.plan_json, t.created_at, t.updated_at,
+                       t.mission_id, m.slug
+                FROM tasks t
+                LEFT JOIN missions m ON m.id = t.mission_id
+                WHERE t.task_kind = ?
+                ORDER BY t.id DESC
                 LIMIT ?
                 """,
                 (TASK_KIND_GOAL, limit),
             )
         rows = await cur.fetchall()
+        return self._goal_task_rows_to_dicts(rows)
+
+    @staticmethod
+    def _goal_task_rows_to_dicts(
+        rows: list[Any],
+    ) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for row in rows:
+            mid = row[6]
+            slug = row[7]
             out.append(
                 {
                     "id": int(row[0]),
@@ -2139,6 +2508,8 @@ class PersistentState:
                     "plan_json": str(row[3]),
                     "created_at": str(row[4]),
                     "updated_at": str(row[5]),
+                    "mission_id": int(mid) if mid is not None else None,
+                    "mission_slug": str(slug) if slug is not None else None,
                 }
             )
         return out
@@ -2147,8 +2518,11 @@ class PersistentState:
         assert self._conn is not None
         cur = await self._conn.execute(
             """
-            SELECT id, goal, status, plan_json, current_output, task_kind, created_at, updated_at
-            FROM tasks WHERE id = ?
+            SELECT t.id, t.goal, t.status, t.plan_json, t.current_output, t.task_kind,
+                   t.created_at, t.updated_at, t.mission_id, m.slug
+            FROM tasks t
+            LEFT JOIN missions m ON m.id = t.mission_id
+            WHERE t.id = ?
             """,
             (task_id,),
         )
@@ -2157,6 +2531,8 @@ class PersistentState:
             raise LookupError(f"no task with id={task_id}")
         if str(row[5]) != TASK_KIND_GOAL:
             raise ValueError(f"task {task_id} is not a goal task (task_kind={row[5]!r})")
+        mid = row[8]
+        slug = row[9]
         return {
             "id": int(row[0]),
             "goal": str(row[1]),
@@ -2166,6 +2542,8 @@ class PersistentState:
             "task_kind": str(row[5]),
             "created_at": str(row[6]),
             "updated_at": str(row[7]),
+            "mission_id": int(mid) if mid is not None else None,
+            "mission_slug": str(slug) if slug is not None else None,
         }
 
     async def append_action_log(
@@ -2272,6 +2650,31 @@ class PersistentState:
             raise ValueError("ref_item_ids_json must be a JSON array of integers")
         return v
 
+    @staticmethod
+    def _knowledge_mission_source_join_clause(
+        mission_scope: int | None, *, ki_alias: str = "ki", ks_alias: str = "ks"
+    ) -> tuple[str, list[Any]]:
+        """Join knowledge_items to sources; scoped = global rows + owned mission."""
+        if mission_scope is None:
+            return "", []
+        join = (
+            f" INNER JOIN knowledge_sources {ks_alias} ON {ks_alias}.id = {ki_alias}.source_id "
+            f"AND ({ks_alias}.mission_id IS NULL OR {ks_alias}.mission_id = ?)"
+        )
+        return join, [mission_scope]
+
+    async def get_task_mission_id(self, task_id: int) -> int | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT mission_id FROM tasks WHERE id = ?",
+            (int(task_id),),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        raw = row[0]
+        return int(raw) if raw is not None else None
+
     async def insert_knowledge_source(
         self,
         kind: KnowledgeKind,
@@ -2279,6 +2682,7 @@ class PersistentState:
         label: str | None = None,
         base_url: str = "",
         config_json: str | dict[str, Any] | None = None,
+        mission_id: int | None = None,
     ) -> int:
         if kind not in ("api", "rss", "web", "brand"):
             raise ValueError(f"invalid knowledge source kind: {kind!r}")
@@ -2291,36 +2695,39 @@ class PersistentState:
             cfg = str(config_json)
         cur = await self._conn.execute(
             """
-            INSERT INTO knowledge_sources (kind, label, base_url, config_json)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO knowledge_sources (kind, label, base_url, config_json, mission_id)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (kind, label, base_url, cfg),
+            (kind, label, base_url, cfg, mission_id),
         )
         await self._conn.commit()
         return int(cur.lastrowid)
 
     async def list_knowledge_sources(
-        self, *, kind: str | None = None
+        self,
+        *,
+        kind: str | None = None,
+        ingest_mission_id: int | None = None,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
+        conds: list[str] = []
+        args: list[Any] = []
         if kind is not None:
-            cur = await self._conn.execute(
-                """
-                SELECT id, kind, label, base_url, config_json, created_at
-                FROM knowledge_sources
-                WHERE kind = ?
-                ORDER BY id ASC
-                """,
-                (kind,),
-            )
-        else:
-            cur = await self._conn.execute(
-                """
-                SELECT id, kind, label, base_url, config_json, created_at
-                FROM knowledge_sources
-                ORDER BY id ASC
-                """
-            )
+            conds.append("kind = ?")
+            args.append(kind)
+        if ingest_mission_id is not None:
+            conds.append("(mission_id IS NULL OR mission_id = ?)")
+            args.append(int(ingest_mission_id))
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        cur = await self._conn.execute(
+            f"""
+            SELECT id, kind, label, base_url, config_json, mission_id, created_at
+            FROM knowledge_sources
+            {where}
+            ORDER BY id ASC
+            """,
+            args,
+        )
         rows = await cur.fetchall()
         out: list[dict[str, Any]] = []
         for row in rows:
@@ -2329,6 +2736,7 @@ class PersistentState:
                 cfg_parsed: Any = json.loads(str(cfg_raw)) if cfg_raw else {}
             except json.JSONDecodeError:
                 cfg_parsed = {}
+            mid_raw = row[5]
             out.append(
                 {
                     "id": int(row[0]),
@@ -2336,7 +2744,8 @@ class PersistentState:
                     "label": row[2],
                     "base_url": str(row[3]),
                     "config_json": cfg_parsed,
-                    "created_at": str(row[5]),
+                    "mission_id": int(mid_raw) if mid_raw is not None else None,
+                    "created_at": str(row[6]),
                 }
             )
         return out
@@ -2348,16 +2757,18 @@ class PersistentState:
         label: str,
         base_url: str = "",
         config_json: dict[str, Any] | None = None,
+        mission_id: int | None = None,
     ) -> int:
-        """Return existing knowledge_sources.id matching kind+label, else insert."""
+        """Return existing knowledge_sources.id matching kind+label+mission, else insert."""
         assert self._conn is not None
         cur = await self._conn.execute(
             """
             SELECT id FROM knowledge_sources
             WHERE kind = ? AND COALESCE(label, '') = ?
+              AND mission_id IS NOT DISTINCT FROM ?
             LIMIT 1
             """,
-            (kind, label),
+            (kind, label, mission_id),
         )
         row = await cur.fetchone()
         if row is not None:
@@ -2367,6 +2778,7 @@ class PersistentState:
             label=label,
             base_url=base_url,
             config_json=config_json or {},
+            mission_id=mission_id,
         )
 
     async def create_ingest_job(
@@ -2462,6 +2874,21 @@ class PersistentState:
         tombstoned: int = 0,
     ) -> KnowledgeItemInsertResult:
         assert self._conn is not None
+        cur_sm = await self._conn.execute(
+            "SELECT mission_id FROM knowledge_sources WHERE id = ?",
+            (int(source_id),),
+        )
+        src_row = await cur_sm.fetchone()
+        if src_row is None:
+            raise LookupError(f"no knowledge source with id={source_id}")
+        raw_m = src_row[0]
+        source_mission: int | None = int(raw_m) if raw_m is not None else None
+        if source_mission is None:
+            link_pool_sql = "ks.mission_id IS NULL"
+            link_pool_args: list[Any] = []
+        else:
+            link_pool_sql = "(ks.mission_id IS NULL OR ks.mission_id = ?)"
+            link_pool_args = [source_mission]
         if external_id is not None:
             cur = await self._conn.execute(
                 """
@@ -2495,13 +2922,15 @@ class PersistentState:
                     ph = ",".join("?" * len(match_vals))
                     cur = await self._conn.execute(
                         f"""
-                        SELECT id FROM knowledge_items
-                        WHERE payload_json IS NOT NULL
-                          AND json_extract(payload_json, '$.link') IS NOT NULL
-                          AND lower(trim(json_extract(payload_json, '$.link'))) IN ({ph})
+                        SELECT ki.id FROM knowledge_items ki
+                        INNER JOIN knowledge_sources ks ON ks.id = ki.source_id
+                        WHERE ki.payload_json IS NOT NULL
+                          AND json_extract(ki.payload_json, '$.link') IS NOT NULL
+                          AND lower(trim(json_extract(ki.payload_json, '$.link'))) IN ({ph})
+                          AND {link_pool_sql}
                         LIMIT 1
                         """,
-                        match_vals,
+                        (*link_pool_args, *match_vals),
                     )
                     row = await cur.fetchone()
                     if row is not None:
@@ -2623,7 +3052,12 @@ class PersistentState:
             "tombstoned": int(tombstoned),
         }
 
-    async def get_knowledge_item(self, item_id: int) -> dict[str, Any]:
+    async def get_knowledge_item(
+        self,
+        item_id: int,
+        *,
+        mission_scope: int | None = None,
+    ) -> dict[str, Any]:
         assert self._conn is not None
         cur = await self._conn.execute(
             """
@@ -2639,12 +3073,26 @@ class PersistentState:
         row = await cur.fetchone()
         if not row:
             raise LookupError(f"no knowledge item with id={item_id}")
+        if mission_scope is not None:
+            cur2 = await self._conn.execute(
+                """
+                SELECT 1 FROM knowledge_items ki
+                INNER JOIN knowledge_sources ks ON ks.id = ki.source_id
+                WHERE ki.id = ?
+                  AND (ks.mission_id IS NULL OR ks.mission_id = ?)
+                LIMIT 1
+                """,
+                (int(item_id), int(mission_scope)),
+            )
+            if await cur2.fetchone() is None:
+                raise LookupError(f"no knowledge item with id={item_id}")
         return self._row_to_knowledge_item(row)
 
     async def list_knowledge_items(
         self,
         *,
         source_id: int | None = None,
+        mission_scope: int | None = None,
         limit: int = 100,
         ingested_after: str | None = None,
         ingested_before: str | None = None,
@@ -2653,19 +3101,22 @@ class PersistentState:
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         lim = max(1, min(limit, 500))
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         conds: list[str] = []
-        args: list[Any] = []
+        args: list[Any] = list(mj_args)
         if source_id is not None:
-            conds.append("source_id = ?")
+            conds.append("ki.source_id = ?")
             args.append(source_id)
         if ingested_after is not None:
-            conds.append("datetime(ingested_at) >= datetime(?)")
+            conds.append("datetime(ki.ingested_at) >= datetime(?)")
             args.append(ingested_after)
         if ingested_before is not None:
-            conds.append("datetime(ingested_at) <= datetime(?)")
+            conds.append("datetime(ki.ingested_at) <= datetime(?)")
             args.append(ingested_before)
         vf_parts, vf_args = self._knowledge_filter_parts(
-            table_alias="",
+            table_alias="ki",
             tag=None,
             ingested_after=None,
             ingested_before=None,
@@ -2678,14 +3129,14 @@ class PersistentState:
         args.append(lim)
         cur = await self._conn.execute(
             f"""
-            SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score,
-                   triage_primary_category, triage_secondary_categories_json,
-                   expires_at, tombstoned
-            FROM knowledge_items
+            SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
+                   ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash,
+                   ki.relevance_score, ki.impact_score,
+                   ki.triage_primary_category, ki.triage_secondary_categories_json,
+                   ki.expires_at, ki.tombstoned
+            FROM knowledge_items ki{mj_join}
             {where}
-            ORDER BY datetime(ingested_at) DESC
+            ORDER BY datetime(ki.ingested_at) DESC
             LIMIT ?
             """,
             args,
@@ -2798,10 +3249,14 @@ class PersistentState:
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
         primary_triage_category: str | None = None,
+        mission_scope: int | None = None,
     ) -> list[dict[str, Any]]:
         mq = build_fts_match_query(query)
         lim = max(1, min(limit, 500))
         assert self._conn is not None
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         extra_fts, args_fts = self._knowledge_filter_sql(
             table_alias="ki",
             tag=tag,
@@ -2821,6 +3276,7 @@ class PersistentState:
                 min_relevance_score=min_relevance_score,
                 valid_at_now=valid_at_now,
                 primary_triage_category=primary_triage_category,
+                mission_scope=mission_scope,
             )
         if prefer_fts and await self._knowledge_fts_table_exists():
             try:
@@ -2830,13 +3286,13 @@ class PersistentState:
                            ki.relevance_score, ki.impact_score,
                            ki.triage_primary_category, ki.triage_secondary_categories_json,
                            ki.expires_at, ki.tombstoned
-                    FROM knowledge_items ki
+                    FROM knowledge_items ki{mj_join}
                     INNER JOIN knowledge_items_fts ON ki.id = knowledge_items_fts.rowid
                     WHERE knowledge_items_fts MATCH ?{extra_fts}
                     ORDER BY bm25(knowledge_items_fts) ASC, datetime(ki.ingested_at) DESC
                     LIMIT ?
                     """
-                params: list[Any] = [mq, *args_fts, lim]
+                params: list[Any] = [*mj_args, mq, *args_fts, lim]
                 cur = await self._conn.execute(sql, params)
                 rows = await cur.fetchall()
                 return [self._row_to_knowledge_item(r) for r in rows]
@@ -2851,6 +3307,7 @@ class PersistentState:
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
             primary_triage_category=primary_triage_category,
+            mission_scope=mission_scope,
         )
 
     async def _search_knowledge_items_semantic(
@@ -2866,8 +3323,12 @@ class PersistentState:
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
         primary_triage_category: str | None = None,
+        mission_scope: int | None = None,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         extra, args_extra = self._knowledge_filter_sql(
             table_alias="ki",
             tag=tag,
@@ -2880,10 +3341,10 @@ class PersistentState:
         sql = f"""
             SELECT e.item_id, e.embedding, e.dim
             FROM knowledge_item_embeddings e
-            INNER JOIN knowledge_items ki ON ki.id = e.item_id
+            INNER JOIN knowledge_items ki ON ki.id = e.item_id{mj_join}
             WHERE e.model = ?{extra}
             """
-        params: list[Any] = [embedding_model, *args_extra]
+        params: list[Any] = [*mj_args, embedding_model, *args_extra]
         cur = await self._conn.execute(sql, params)
         raw_rows = await cur.fetchall()
         scored: list[tuple[int, float]] = []
@@ -2899,25 +3360,34 @@ class PersistentState:
                 scored.append((int(iid), sim))
         scored.sort(key=lambda x: x[1], reverse=True)
         ids = [i for i, _ in scored[: max(1, min(limit, 500))]]
-        return await self._knowledge_items_by_ids_ordered(ids)
+        return await self._knowledge_items_by_ids_ordered(
+            ids, mission_scope=mission_scope
+        )
 
     async def _knowledge_items_by_ids_ordered(
-        self, ids: list[int]
+        self,
+        ids: list[int],
+        *,
+        mission_scope: int | None = None,
     ) -> list[dict[str, Any]]:
         if not ids:
             return []
         assert self._conn is not None
         ph = ",".join("?" * len(ids))
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         cur = await self._conn.execute(
             f"""
-            SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score,
-                   triage_primary_category, triage_secondary_categories_json,
-                   expires_at, tombstoned
-            FROM knowledge_items WHERE id IN ({ph})
+            SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
+                   ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash,
+                   ki.relevance_score, ki.impact_score,
+                   ki.triage_primary_category, ki.triage_secondary_categories_json,
+                   ki.expires_at, ki.tombstoned
+            FROM knowledge_items ki{mj_join}
+            WHERE ki.id IN ({ph})
             """,
-            ids,
+            [*mj_args, *ids],
         )
         rows = await cur.fetchall()
         by_id: dict[int, dict[str, Any]] = {}
@@ -2942,6 +3412,7 @@ class PersistentState:
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
         primary_triage_category: str | None = None,
+        mission_scope: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Lexical (FTS/LIKE), semantic (cosine on stored embeddings), or hybrid (RRF).
@@ -2969,6 +3440,7 @@ class PersistentState:
                     min_relevance_score=min_relevance_score,
                     valid_at_now=valid_at_now,
                     primary_triage_category=primary_triage_category,
+                    mission_scope=mission_scope,
                 )
             return await self._search_knowledge_items_lexical(
                 query,
@@ -2980,6 +3452,7 @@ class PersistentState:
                 min_relevance_score=min_relevance_score,
                 valid_at_now=valid_at_now,
                 primary_triage_category=primary_triage_category,
+                mission_scope=mission_scope,
             )
 
         if sm == "hybrid":
@@ -2998,6 +3471,7 @@ class PersistentState:
                     min_relevance_score=min_relevance_score,
                     valid_at_now=valid_at_now,
                     primary_triage_category=primary_triage_category,
+                    mission_scope=mission_scope,
                 )
                 sem = await self._search_knowledge_items_semantic(
                     query_embedding,
@@ -3010,12 +3484,15 @@ class PersistentState:
                     min_relevance_score=min_relevance_score,
                     valid_at_now=valid_at_now,
                     primary_triage_category=primary_triage_category,
+                    mission_scope=mission_scope,
                 )
                 lex_ids = [x["id"] for x in lex]
                 sem_ids = [x["id"] for x in sem]
                 fused = reciprocal_rank_fusion([lex_ids, sem_ids], k=60)
                 pick = fused[:lim]
-                return await self._knowledge_items_by_ids_ordered(pick)
+                return await self._knowledge_items_by_ids_ordered(
+                    pick, mission_scope=mission_scope
+                )
             return await self._search_knowledge_items_lexical(
                 query,
                 limit=lim,
@@ -3026,6 +3503,7 @@ class PersistentState:
                 min_relevance_score=min_relevance_score,
                 valid_at_now=valid_at_now,
                 primary_triage_category=primary_triage_category,
+                mission_scope=mission_scope,
             )
 
         return await self._search_knowledge_items_lexical(
@@ -3038,6 +3516,7 @@ class PersistentState:
             min_relevance_score=min_relevance_score,
             valid_at_now=valid_at_now,
             primary_triage_category=primary_triage_category,
+            mission_scope=mission_scope,
         )
 
     async def _search_knowledge_items_like(
@@ -3051,6 +3530,7 @@ class PersistentState:
         min_relevance_score: float | None = None,
         valid_at_now: bool = True,
         primary_triage_category: str | None = None,
+        mission_scope: int | None = None,
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
         token = query.strip()
@@ -3058,8 +3538,11 @@ class PersistentState:
             return []
         esc = token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{esc}%"
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         extra, args_extra = self._knowledge_filter_sql(
-            table_alias="",
+            table_alias="ki",
             tag=tag,
             ingested_after=ingested_after,
             ingested_before=ingested_before,
@@ -3068,18 +3551,18 @@ class PersistentState:
             primary_triage_category=primary_triage_category,
         )
         sql = f"""
-            SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score,
-                   triage_primary_category, triage_secondary_categories_json,
-                   expires_at, tombstoned
-            FROM knowledge_items
-            WHERE (content_excerpt LIKE ? ESCAPE '\\' OR tags_json LIKE ? ESCAPE '\\')
+            SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
+                   ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash,
+                   ki.relevance_score, ki.impact_score,
+                   ki.triage_primary_category, ki.triage_secondary_categories_json,
+                   ki.expires_at, ki.tombstoned
+            FROM knowledge_items ki{mj_join}
+            WHERE (ki.content_excerpt LIKE ? ESCAPE '\\' OR ki.tags_json LIKE ? ESCAPE '\\')
             {extra}
-            ORDER BY datetime(ingested_at) DESC
+            ORDER BY datetime(ki.ingested_at) DESC
             LIMIT ?
             """
-        params = [pattern, pattern, *args_extra, limit]
+        params = [*mj_args, pattern, pattern, *args_extra, limit]
         cur = await self._conn.execute(sql, params)
         rows = await cur.fetchall()
         return [self._row_to_knowledge_item(r) for r in rows]
@@ -3112,7 +3595,9 @@ class PersistentState:
             )
         return out
 
-    async def list_unscored_knowledge(self, limit: int = 20) -> list[dict[str, Any]]:
+    async def list_unscored_knowledge(
+        self, limit: int = 20, *, mission_scope: int | None = None
+    ) -> list[dict[str, Any]]:
         """Return active knowledge rows with ``impact_score IS NULL`` (newest first).
 
         Excludes tombstoned rows and rows past ``expires_at`` — same validity rules as
@@ -3120,21 +3605,24 @@ class PersistentState:
         """
         assert self._conn is not None
         lim = max(1, min(limit, 500))
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         cur = await self._conn.execute(
-            """
-            SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score,
-                   triage_primary_category, triage_secondary_categories_json,
-                   expires_at, tombstoned
-            FROM knowledge_items
-            WHERE impact_score IS NULL
-              AND tombstoned = 0
-              AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
-            ORDER BY datetime(ingested_at) DESC
+            f"""
+            SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
+                   ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash,
+                   ki.relevance_score, ki.impact_score,
+                   ki.triage_primary_category, ki.triage_secondary_categories_json,
+                   ki.expires_at, ki.tombstoned
+            FROM knowledge_items ki{mj_join}
+            WHERE ki.impact_score IS NULL
+              AND ki.tombstoned = 0
+              AND (ki.expires_at IS NULL OR datetime(ki.expires_at) > datetime('now'))
+            ORDER BY datetime(ki.ingested_at) DESC
             LIMIT ?
             """,
-            (lim,),
+            (*mj_args, lim),
         )
         rows = await cur.fetchall()
         return [self._row_to_knowledge_item(r) for r in rows]
@@ -3179,26 +3667,31 @@ class PersistentState:
             raise LookupError(f"no knowledge item with id={knowledge_id}")
         await self._conn.commit()
 
-    async def list_backfill_triage_categories(self, limit: int = 20) -> list[dict[str, Any]]:
+    async def list_backfill_triage_categories(
+        self, limit: int = 20, *, mission_scope: int | None = None
+    ) -> list[dict[str, Any]]:
         """Rows scored but missing triage primary category (newest first)."""
         assert self._conn is not None
         lim = max(1, min(limit, 500))
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         cur = await self._conn.execute(
-            """
-            SELECT id, source_id, external_id, published_at, ingested_at,
-                   tags_json, content_excerpt, payload_json, content_hash,
-                   relevance_score, impact_score,
-                   triage_primary_category, triage_secondary_categories_json,
-                   expires_at, tombstoned
-            FROM knowledge_items
-            WHERE impact_score IS NOT NULL
-              AND triage_primary_category IS NULL
-              AND tombstoned = 0
-              AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
-            ORDER BY datetime(ingested_at) DESC
+            f"""
+            SELECT ki.id, ki.source_id, ki.external_id, ki.published_at, ki.ingested_at,
+                   ki.tags_json, ki.content_excerpt, ki.payload_json, ki.content_hash,
+                   ki.relevance_score, ki.impact_score,
+                   ki.triage_primary_category, ki.triage_secondary_categories_json,
+                   ki.expires_at, ki.tombstoned
+            FROM knowledge_items ki{mj_join}
+            WHERE ki.impact_score IS NOT NULL
+              AND ki.triage_primary_category IS NULL
+              AND ki.tombstoned = 0
+              AND (ki.expires_at IS NULL OR datetime(ki.expires_at) > datetime('now'))
+            ORDER BY datetime(ki.ingested_at) DESC
             LIMIT ?
             """,
-            (lim,),
+            (*mj_args, lim),
         )
         rows = await cur.fetchall()
         return [self._row_to_knowledge_item(r) for r in rows]
@@ -3261,6 +3754,7 @@ class PersistentState:
         external_ids: dict[str, str] | None = None,
         payload_json: dict[str, Any] | None = None,
         last_enriched_at: str | None = None,
+        mission_id: int | None = None,
     ) -> dict[str, Any]:
         assert self._conn is not None
         etype = str(type).strip().lower()
@@ -3284,9 +3778,10 @@ class PersistentState:
             """
             SELECT id, name, payload_json FROM entities
             WHERE type = ? AND normalized_name = ?
+              AND mission_id IS NOT DISTINCT FROM ?
             LIMIT 1
             """,
-            (etype, normalized_name),
+            (etype, normalized_name, mission_id),
         )
         row = await cur.fetchone()
         if row is not None:
@@ -3339,10 +3834,12 @@ class PersistentState:
         le = str(last_enriched_at).strip() if last_enriched_at is not None else None
         cur = await self._conn.execute(
             """
-            INSERT INTO entities (type, name, normalized_name, payload_json, last_enriched_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO entities (
+                type, name, normalized_name, payload_json, last_enriched_at, mission_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (etype, ename, normalized_name, payload_str, le),
+            (etype, ename, normalized_name, payload_str, le, mission_id),
         )
         await self._conn.commit()
         return {
@@ -3358,6 +3855,7 @@ class PersistentState:
             await self.upsert_entity(
                 type="category",
                 name=code,
+                mission_id=None,
                 payload_json={"triage_code": code, "role": "triage_taxonomy_parent"},
             )
             n += 1
@@ -3406,7 +3904,8 @@ class PersistentState:
         eid = int(entity_id)
         cur = await self._conn.execute(
             """
-            SELECT id, type, name, normalized_name, payload_json, last_enriched_at, created_at
+            SELECT id, type, name, normalized_name, payload_json, last_enriched_at,
+                   mission_id, created_at
             FROM entities WHERE id = ?
             """,
             (eid,),
@@ -3420,6 +3919,7 @@ class PersistentState:
         except json.JSONDecodeError:
             payload = {}
         le = row[5]
+        mid_raw = row[6]
         return {
             "id": int(row[0]),
             "type": str(row[1]),
@@ -3427,7 +3927,8 @@ class PersistentState:
             "normalized_name": str(row[3]),
             "payload_json": payload,
             "last_enriched_at": le if le is not None else None,
-            "created_at": str(row[6]),
+            "mission_id": int(mid_raw) if mid_raw is not None else None,
+            "created_at": str(row[7]),
         }
 
     async def count_unique_local_facts(self, entity_id: int) -> int:
@@ -3929,7 +4430,7 @@ class PersistentState:
         cur = await self._conn.execute(
             """
             SELECT id, kind, goal_text, params_json, idempotency_key, status, parent_task_id,
-                   created_at, updated_at
+                   mission_id, created_at, updated_at
             FROM workflows WHERE kind = ? AND idempotency_key = ?
             LIMIT 1
             """,
@@ -3945,7 +4446,7 @@ class PersistentState:
         cur = await self._conn.execute(
             """
             SELECT id, kind, goal_text, params_json, idempotency_key, status, parent_task_id,
-                   created_at, updated_at
+                   mission_id, created_at, updated_at
             FROM workflows WHERE parent_task_id = ? ORDER BY id DESC LIMIT 1
             """,
             (parent_task_id,),
@@ -3960,7 +4461,7 @@ class PersistentState:
         cur = await self._conn.execute(
             """
             SELECT id, kind, goal_text, params_json, idempotency_key, status, parent_task_id,
-                   created_at, updated_at
+                   mission_id, created_at, updated_at
             FROM workflows WHERE id = ?
             """,
             (workflow_id,),
@@ -3976,6 +4477,7 @@ class PersistentState:
             params_obj = json.loads(params_raw)
         except json.JSONDecodeError:
             params_obj = {}
+        mission_raw = row[7]
         return {
             "id": int(row[0]),
             "kind": str(row[1]),
@@ -3984,8 +4486,9 @@ class PersistentState:
             "idempotency_key": row[4],
             "status": str(row[5]),
             "parent_task_id": int(row[6]) if row[6] is not None else None,
-            "created_at": str(row[7]),
-            "updated_at": str(row[8]),
+            "mission_id": int(mission_raw) if mission_raw is not None else None,
+            "created_at": str(row[8]),
+            "updated_at": str(row[9]),
         }
 
     async def list_workflow_steps(self, workflow_id: int) -> list[dict[str, Any]]:
@@ -4035,6 +4538,7 @@ class PersistentState:
         parent_task_id: int,
         idempotency_key: str | None,
         steps: list[dict[str, Any]],
+        mission_id: int | None = None,
     ) -> tuple[int, bool]:
         """
         Insert workflow + steps. Idempotent when idempotency_key is set (non-empty).
@@ -4059,10 +4563,17 @@ class PersistentState:
             cur = await self._conn.execute(
                 """
                 INSERT INTO workflows (
-                    kind, goal_text, params_json, idempotency_key, status, parent_task_id
-                ) VALUES (?, ?, ?, ?, 'pending', ?)
+                    kind, goal_text, params_json, idempotency_key, status, parent_task_id, mission_id
+                ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
                 """,
-                (kind_s, str(goal_text).strip(), params_s, key_s, parent_task_id),
+                (
+                    kind_s,
+                    str(goal_text).strip(),
+                    params_s,
+                    key_s,
+                    parent_task_id,
+                    int(mission_id) if mission_id is not None else None,
+                ),
             )
             wf_id = int(cur.lastrowid)
         except aiosqlite.IntegrityError:
@@ -4303,18 +4814,23 @@ class PersistentState:
             "plan": plan,
         }
 
-    async def list_recent_knowledge_item_ids(self, *, limit: int) -> list[int]:
+    async def list_recent_knowledge_item_ids(
+        self, *, limit: int, mission_scope: int | None = None
+    ) -> list[int]:
         """Most recently ingested knowledge_items ids (non-tombstoned)."""
         assert self._conn is not None
         lim = max(1, min(int(limit), 500))
+        mj_join, mj_args = self._knowledge_mission_source_join_clause(
+            mission_scope, ki_alias="ki"
+        )
         cur = await self._conn.execute(
-            """
-            SELECT id FROM knowledge_items
-            WHERE tombstoned = 0
-            ORDER BY ingested_at DESC, id DESC
+            f"""
+            SELECT ki.id FROM knowledge_items ki{mj_join}
+            WHERE ki.tombstoned = 0
+            ORDER BY ki.ingested_at DESC, ki.id DESC
             LIMIT ?
             """,
-            (lim,),
+            (*mj_args, lim),
         )
         rows = await cur.fetchall()
         return [int(r[0]) for r in rows]

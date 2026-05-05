@@ -91,6 +91,50 @@ def _validate_dependency_graph(steps: list[dict[str, Any]]) -> None:
             )
 
 
+def validate_and_normalize_workflow_params(kind: str, params: dict[str, Any]) -> dict[str, Any]:
+    """
+    Validate merged workflow params (post-playbook merge). Returns a copy safe for
+    ``expand_workflow_template`` (normalized strings / ints).
+    """
+    k = str(kind).strip()
+    out = dict(params)
+    if k == "publish_keyword_v1":
+        for fld in ("project_id", "campaign_id", "niche"):
+            if not str(out.get(fld) or "").strip():
+                raise ValueError(f"publish_keyword_v1 requires params_json {fld!r}")
+        if out.get("target_keyword_cluster") is None:
+            raise ValueError("publish_keyword_v1 requires params_json target_keyword_cluster")
+        out["target_keyword_cluster"] = validate_target_keyword_cluster(
+            out.get("target_keyword_cluster")
+        )
+        return out
+    if k == "publish_entity_v1":
+        eid = out.get("entity_id")
+        if eid is None:
+            raise ValueError("publish_entity_v1 requires params_json entity_id (int)")
+        try:
+            out["entity_id"] = int(eid)
+        except (TypeError, ValueError) as e:
+            raise ValueError("entity_id must be an integer") from e
+        for fld in ("project_id", "campaign_id", "niche"):
+            if not str(out.get(fld) or "").strip():
+                raise ValueError(f"publish_entity_v1 requires params_json {fld!r}")
+        if out.get("target_keyword_cluster") is not None:
+            out["target_keyword_cluster"] = validate_target_keyword_cluster(
+                out["target_keyword_cluster"]
+            )
+        return out
+    if k == "rss_fetch_then_graph_then_synth":
+        lim_raw = out.get("recent_item_limit")
+        if lim_raw is not None:
+            try:
+                out["recent_item_limit"] = max(1, min(int(lim_raw), 500))
+            except (TypeError, ValueError):
+                del out["recent_item_limit"]
+        return out
+    raise ValueError(f"unknown workflow kind: {kind!r}")
+
+
 def expand_workflow_template(
     kind: str,
     params: dict[str, Any],
@@ -101,15 +145,13 @@ def expand_workflow_template(
     Return step rows ready for PersistentState.enqueue_workflow (step_index, step_type, input_json).
     Merges ``params`` into SYNTHESIZE step (topic), EXTRACT (recent_item_limit), or
     publisher fields for ``publish_entity_v1`` / ``publish_keyword_v1``.
+
+    Callers must pass params already validated via ``validate_and_normalize_workflow_params``
+    (enforced at enqueue time by the playbook resolver).
     """
     steps = [dict(s) for s in _base_steps(kind)]
     k = str(kind).strip()
     if k == "publish_keyword_v1":
-        for fld in ("project_id", "campaign_id", "niche"):
-            if not str(params.get(fld) or "").strip():
-                raise ValueError(f"publish_keyword_v1 requires params_json {fld!r}")
-        if params.get("target_keyword_cluster") is None:
-            raise ValueError("publish_keyword_v1 requires params_json target_keyword_cluster")
         kw = validate_target_keyword_cluster(params.get("target_keyword_cluster"))
         for st in steps:
             inp = dict(st.get("input_json") or {})
@@ -139,19 +181,10 @@ def expand_workflow_template(
             )
         return steps
     if k == "publish_entity_v1":
-        eid = params.get("entity_id")
-        if eid is None:
-            raise ValueError("publish_entity_v1 requires params_json entity_id (int)")
-        try:
-            int(eid)
-        except (TypeError, ValueError) as e:
-            raise ValueError("entity_id must be an integer") from e
-        for fld in ("project_id", "campaign_id", "niche"):
-            if not str(params.get(fld) or "").strip():
-                raise ValueError(f"publish_entity_v1 requires params_json {fld!r}")
+        eid = int(params["entity_id"])
         for st in steps:
             inp = dict(st.get("input_json") or {})
-            inp["entity_id"] = int(eid)
+            inp["entity_id"] = eid
             for key in (
                 "project_id",
                 "campaign_id",

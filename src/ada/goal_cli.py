@@ -32,6 +32,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="Goal text (multi-word allowed)",
     )
     add_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help="Attach to mission by slug (must exist)",
+    )
+    add_p.add_argument(
         "--plan-json",
         default="{}",
         metavar="JSON",
@@ -50,6 +56,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         metavar="STATUS",
         help="Filter by status (e.g. pending, executing, completed, failed)",
+    )
+    list_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help="Only tasks for this mission slug",
     )
 
     show_p = sub.add_parser("show", help="Show one goal task by id")
@@ -80,7 +92,23 @@ async def _run_add(qe: QueryEngine, args: argparse.Namespace) -> int:
     except json.JSONDecodeError as e:
         print(f"goal add: --plan-json is not valid JSON: {e}", file=sys.stderr)
         return 2
-    tid = await qe.insert_task(goal, status="pending", task_kind=TASK_KIND_GOAL)
+    mission_id: int | None = None
+    if args.mission is not None:
+        ms = args.mission.strip()
+        if not ms:
+            print("goal add: empty --mission slug", file=sys.stderr)
+            return 2
+        row = await qe.get_mission_by_slug(ms)
+        if row is None:
+            print(f"goal add: no mission with slug {ms!r}", file=sys.stderr)
+            return 2
+        mission_id = int(row["id"])
+    tid = await qe.insert_task(
+        goal,
+        status="pending",
+        task_kind=TASK_KIND_GOAL,
+        mission_id=mission_id,
+    )
     if raw_plan.strip() != "{}":
         await qe.set_task_plan_json(tid, raw_plan)
     print(tid)
@@ -89,7 +117,10 @@ async def _run_add(qe: QueryEngine, args: argparse.Namespace) -> int:
 
 async def _run_list(qe: QueryEngine, args: argparse.Namespace) -> int:
     limit = max(1, min(int(args.limit), 500))
-    rows = await qe.list_goal_tasks(limit=limit, status=args.status)
+    ms = args.mission.strip() if args.mission else None
+    rows = await qe.list_goal_tasks(
+        limit=limit, status=args.status, mission_slug=ms
+    )
     if not rows:
         print("(no goal tasks)")
         return 0
@@ -99,7 +130,11 @@ async def _run_list(qe: QueryEngine, args: argparse.Namespace) -> int:
         g = r["goal"].replace("\n", " ")[:120]
         if len(r["goal"]) > 120:
             g += "…"
-        print(f"{gid}\t{st}\t{g}")
+        slug = r.get("mission_slug") or ""
+        if slug:
+            print(f"{gid}\t{st}\t{slug}\t{g}")
+        else:
+            print(f"{gid}\t{st}\t\t{g}")
     return 0
 
 
@@ -114,6 +149,16 @@ async def _run_show(qe: QueryEngine, args: argparse.Namespace) -> int:
         return 2
     print(f"id:\t{r['id']}")
     print(f"status:\t{r['status']}")
+    mid = r.get("mission_id")
+    mslug = r.get("mission_slug")
+    if mid is not None:
+        print(f"mission_id:\t{mid}")
+    else:
+        print("mission_id:\t")
+    if mslug:
+        print(f"mission_slug:\t{mslug}")
+    else:
+        print("mission_slug:\t")
     print(f"created_at:\t{r['created_at']}")
     print(f"updated_at:\t{r['updated_at']}")
     print(f"goal:\t{r['goal']}")

@@ -141,6 +141,7 @@ async def run_triage_cli(
     limit: int,
     client_cls: type = genai.Client,
     backfill_categories: bool = False,
+    mission_slug: str | None = None,
 ) -> tuple[TriageStats, int]:
     """
     Score up to ``limit`` knowledge rows (unscored by default, or backfill categories).
@@ -163,11 +164,25 @@ async def run_triage_cli(
     await qe.connect()
     await enforce_profile_identity(qe, settings)
     stats = TriageStats()
+    mission_scope: int | None = None
+    if mission_slug is not None and str(mission_slug).strip():
+        m = await qe.get_mission_by_slug(str(mission_slug).strip())
+        if m is None:
+            print(
+                f"triage: unknown mission slug {str(mission_slug).strip()!r}",
+                file=sys.stderr,
+            )
+            return TriageStats(), 2
+        mission_scope = int(m["id"])
     try:
         if backfill_categories:
-            rows = await qe.list_backfill_triage_categories(limit=lim)
+            rows = await qe.list_backfill_triage_categories(
+                limit=lim, mission_scope=mission_scope
+            )
         else:
-            rows = await qe.list_unscored_knowledge(limit=lim)
+            rows = await qe.list_unscored_knowledge(
+                limit=lim, mission_scope=mission_scope
+            )
         stats.processed = len(rows)
         if not rows:
             return stats, 0

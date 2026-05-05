@@ -116,6 +116,7 @@ async def run_matrix_plan_and_enqueue(
     *,
     project_id: str,
     campaign_id: str,
+    mission_slug: str | None = None,
 ) -> dict[str, Any]:
     if not settings.gemini_api_key.strip():
         log.warning("matrix planner: GEMINI_API_KEY not set; cannot plan")
@@ -125,7 +126,12 @@ async def run_matrix_plan_and_enqueue(
             session_id=None,
         )
         return await _fallback_or_else_empty(
-            qe, settings, project_id, campaign_id, "missing_gemini_api_key"
+            qe,
+            settings,
+            project_id,
+            campaign_id,
+            "missing_gemini_api_key",
+            mission_slug=mission_slug,
         )
 
     merged = load_merged_policy_for(settings)
@@ -199,6 +205,7 @@ pSEO. You only choose existing entity identifiers from the provided candidate li
             project_id,
             campaign_id,
             decode_err_preview or "",
+            mission_slug=mission_slug,
         )
 
     chosen, verr = validate_planner_entity_ids(
@@ -219,6 +226,7 @@ pSEO. You only choose existing entity identifiers from the provided candidate li
             project_id,
             campaign_id,
             verr,
+            mission_slug=mission_slug,
         )
 
     enq = 0
@@ -230,6 +238,7 @@ pSEO. You only choose existing entity identifiers from the provided candidate li
             row,
             registry=registry,
             dry_run=False,
+            mission_slug=mission_slug,
         )
         if r.get("error"):
             log.warning("matrix enqueue error: %s", r)
@@ -254,6 +263,8 @@ async def _fallback_or_else_empty(
     project_id: str,
     campaign_id: str,
     reason: str,
+    *,
+    mission_slug: str | None = None,
 ) -> dict[str, Any]:
     from ada.publish.matrix import run_matrix_legacy_scan
 
@@ -266,6 +277,7 @@ async def _fallback_or_else_empty(
             campaign_id=campaign_id,
             dry_run=False,
             use_recent_order=False,
+            mission_slug=mission_slug,
         )
 
     return {

@@ -4,6 +4,7 @@
 
 ### Operator docs (Pi / one profile / pSEO)
 
+- [`docs/operator-onboarding.md`](docs/operator-onboarding.md) — single path: **profile (optional) → mission init → playbook → cron**, deprecation map, **`ada mission migrate-env`**  
 - [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — cron + systemd, env matrix, spend caps, dual graph paths, matrix vs keyword tracks, **`ada approval`** for enqueue and publish  
 - [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — stable `page.json` v1 + S3 keys (canonical: `src/ada/publish/page_schema_v1.py`)  
 - [`docs/legal-ops-checklist.md`](docs/legal-ops-checklist.md) — ranking / leads / retention / PII (not legal advice)  
@@ -17,7 +18,7 @@
 
 ### Recently added (keep reading for full detail)
 
-- **`task_kind`** (`chat` \| `goal`), **`ada goal`** subcommands (`add` / `list` / `show`), and **daemon dequeue** of **pending goals only**; **worker-mode** extra system text for `ada daemon`.
+- **`task_kind`** (`chat` \| `goal`), **`ada goal`** (`add` / `list` / `show`; optional **`--mission`**, **`--plan-json`**), **`ada mission`** (`init` / `list` / `show` / `migrate-env` / `tick`), and **daemon dequeue** of **pending goals only**; **worker-mode** extra system text for `ada daemon`.
 - **Web tools** (when **`ADA_ENABLE_WEB_TOOLS=1`**): **`web_search`** (Serper), **`fetch_url_text`** (Jina Reader or httpx per **`ADA_WEB_FETCH_MODE`**), with caps and optional fetch host allowlist.
 - **Phase B persistence**: **`web_sources`** table (bounded excerpts for `search_hit` \| `page_fetch`); optional read-only tool **`list_session_web_sources`** when **`ADA_ENABLE_WEB_SOURCES_TOOL=1`**.
 - **Optional** operator file **`memory/schema_digest.md`** — if present, a short digest can be injected into the system prompt (see `src/ada/prompt.py`).
@@ -132,7 +133,8 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 
 | Table | Role |
 |-------|------|
-| **`tasks`** | Queue / session anchor: `goal`, `status`, `current_output`, **`plan_json`** (default `'{}'`; **read/write** via **`read_task_plan`** / **`write_task_plan`** when **`ADA_ENABLE_PLAN_TOOLS`** is on), **`task_kind`** (`chat` \| `goal`), timestamps |
+| **`missions`** | Optional **operator-defined** tracks: **`slug`** (unique), **`title`**, niche/topic/brief metadata; referenced by **`tasks.mission_id`** (nullable `ON DELETE SET NULL`) |
+| **`tasks`** | Queue / session anchor: `goal`, `status`, `current_output`, **`plan_json`** (default `'{}'`; **read/write** via **`read_task_plan`** / **`write_task_plan`** when **`ADA_ENABLE_PLAN_TOOLS`** is on), **`task_kind`** (`chat` \| `goal`), optional **`mission_id`** → **`missions`**, timestamps |
 | **`messages`** | Transcript: `uuid`, `session_id` → `tasks.id`, `parent_uuid`, `role` (`user` \| `assistant` \| `tool` \| `system`), `content_json`, `tombstone`, `sequence`, `created_at` |
 | **`state`** | String KV cache (e.g. boot flags, last leg tokens, `dream.last_run_at`) |
 | **`usage_ledger`** | Append-only-ish log: `session_id`, `model`, `input_tokens`, `output_tokens`, `recorded_at` |
@@ -141,7 +143,7 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 | **`knowledge_sources`** | Registered ingest endpoints: `kind` (`api` \| `rss` \| `web`), optional `label`, `base_url` |
 | **`knowledge_items`** | Ingested facts: FK to `knowledge_sources`, optional `external_id`, `published_at`, `ingested_at`, `tags_json`, `content_excerpt`, optional `payload_json`, `content_hash`, optional **`relevance_score`** (0–1), optional **`impact_score`** (1–10, from **`ada triage`**), optional **`triage_primary_category`** and **`triage_secondary_categories_json`** (fixed taxonomy; surfaced in API as **`triage_secondary_categories`**), optional **`expires_at`** (ISO), **`tombstoned`** (0/1); legacy rows may have **`relevance_score` NULL** (treat as unknown; queries often use `COALESCE(relevance_score, 1.0)`). **FTS5** `doc` can include triage text after migration (`schema.knowledge_fts.triage_doc_v1`). Insert **dedupes** by `(source_id, external_id)` or `(source_id, content_hash)` when `external_id` is null |
 | **`knowledge_synthesis`** | Optional “opinion” text with `ref_item_ids_json` and optional `task_id` → `tasks` (soft refs to items) |
-| **`workflows`** | Phase 3: `kind`, `goal_text`, `params_json`, optional **`idempotency_key`** (unique with `kind` when set), `status`, **`parent_task_id`** → `tasks.id` |
+| **`workflows`** | Phase 3: `kind`, `goal_text`, `params_json`, optional **`idempotency_key`** (unique with `kind` when set), `status`, **`parent_task_id`** → `tasks.id`, optional **`mission_id`** → `missions.id` (nullable FK) |
 | **`workflow_steps`** | Ordered child steps: `step_index`, **`step_type`** (`FETCH` \| `EXTRACT` \| `SYNTHESIZE` \| `ENRICH` \| `GATE` \| `DRAFT` \| `DEPLOY`), `status`, `input_json`, `output_json`, `error`, `attempt_count` |
 | **`knowledge_items_fts`** | FTS5 virtual table (`doc`); `rowid` = `knowledge_items.id`; maintained by triggers (not used directly by chat) |
 
@@ -171,11 +173,12 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 |---------|---------|
 | **`ada chat`** | REPL: one **`tasks`** row for “Interactive session” (`task_kind=chat`; reuse or `--new-session`), boot via `wakeup.md` once, then `you>` turns |
 | **`ada chat --new-session`** | New `tasks.id` / transcript chain |
-| **`ada goal add …`** | Enqueue a **`task_kind=goal`** row with `status=pending` (optional **`--plan-json`**). **Does not** call the model; **`GEMINI_API_KEY`** not required. |
-| **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--limit`**). |
-| **`ada goal show <id>`** | Print one goal task’s metadata plus **`tasks.current_output`** (the daemon’s final model reply or error text). Long output is **previewed** by default; use **`--full`** for the entire string. |
+| **`ada goal add …`** | Enqueue a **`task_kind=goal`** row with `status=pending` (optional **`--plan-json`**, **`--mission <slug>`**). **Does not** call the model; **`GEMINI_API_KEY`** not required. |
+| **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--mission`**, **`--limit`**). Lines include mission slug when set: `id`, `status`, `mission_slug`, goal preview. |
+| **`ada goal show <id>`** | Print one goal task’s metadata (**`mission_id` / `mission_slug`** when set) plus **`tasks.current_output`** (the daemon’s final model reply or error text). Long output is **previewed** by default; use **`--full`** for the entire string. |
+| **`ada mission init|list|show|migrate-env|tick`** | Create or inspect **`missions`** (`init` / `list` / `show`); **`migrate-env`** merges deprecated programme env vars into **`defaults_json`** (dry-run by default); **`tick`** runs **`schedule_hint_json`** jobs. Does not call the model for `init` / `list` / `show` / `migrate-env`. |
 | **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**. If **`workflows.parent_task_id`** matches the task, runs the **Phase 3 workflow runner**; otherwise runs **one** `orchestrate_turn`. Sets `completed` / `failed`. Use **systemd** (or similar), not cron. |
-| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`**. Kinds: **`rss_fetch_then_graph_then_synth`** (RSS → graph-extract → synthesis), **`publish_entity_v1`** (enrich → gate → draft → deploy), or **`publish_keyword_v1`** (enrich → draft → deploy; keyword-led, no gate). Optional **`--params-json`**, **`--idempotency-key`**. Respects **`ADA_MAX_TASK_STEPS`**. |
+| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`**. Kinds: **`rss_fetch_then_graph_then_synth`** (RSS → graph-extract → synthesis), **`publish_entity_v1`** (enrich → gate → draft → deploy), or **`publish_keyword_v1`** (enrich → draft → deploy; keyword-led, no gate). Optional **`--params-json`**, **`--idempotency-key`**, **`--mission <slug>`** (merges **`missions.defaults_json`** into playbook params **and** sets **`tasks.mission_id`** / **`workflows.mission_id`** on the new rows). Without **`--mission`**, those columns stay **NULL** unless the enqueue comes from an agent turn that inherits the current session task’s mission. Respects **`ADA_MAX_TASK_STEPS`**. |
 | **`ada workflow status <id>`** | Print **`workflows`** row and all **`workflow_steps`** as JSON. |
 | **`ada matrix-scan`** | Scan **publishable** subject **`entities`** linked to taxonomy categories (**`classified_as`** or **`under_category`** → **`type`** = **`category`**); for each, enqueue **`publish_entity_v1`** with **`ADA_PROJECT_ID`** / **`ADA_CAMPAIGN_ID`** and idempotent key **`publish:{entity_id}:{content_hash}`**. Use **`--dry-run`** to list candidates without **`ADA_MATRIX_ENABLE`**. See `.env.example` for NZ pSEO phase 1 (**`ADA_MATRIX_ENTITY_TYPES`** = **`organization,government_body,policy_instrument`** — graph-lite **`policy_instrument`**, not `policy`). |
 | **`ada dream`** | **Manual** compression: model summarizes recent transcript + usage → append **master** / optional **soul**; logs **`action_log`**; **`--dry-run`**, **`--session N`**, **`--max-messages`** |
@@ -332,13 +335,15 @@ Enable with **`systemctl enable --now ada-daemon@client_acme`**. Put **`ADA_PROF
 
 **Upgrade note:** existing profile users who kept persona files in **`<repo>/memory`** should copy them into **`<data_dir>/memory`** before switching, or set **`ADA_MEMORY_DIR=<repo>/memory`** until migrated.
 
+**Missions vs profiles:** **`ADA_PROFILE`** / **`ADA_PROFILE_DATA_ROOT`** (or legacy **`ADA_DATA_DIR`**) determine **which `state.db` file** a process uses. **Missions** are **rows in that same database** (`missions` table); goal tasks may set **`tasks.mission_id`** (CLI: **`ada mission init`**, **`ada goal add --mission <slug>`**). One profile therefore supports **many missions** in one SQLite file. Changing profile (or data dir) switches to a **different** database with its **own** missions and tasks—missions are **not** a substitute for profile isolation.
+
 ### 9.0 Policy & intent files
 
 ADA separates **chat persona** (**`memory/soul.md`**, **`memory/master.md`**) from **policy** and **operator intent**:
 
 | Artifact | Purpose |
 |---------|---------|
-| **[`policies/default.yaml`](policies/default.yaml)** | Numeric limits only: `version`, `intent_max_bytes`, `matrix_planner_top_k`, **`graph_lite_max_items_per_job`**, **`graph_lite_token_cap_per_job`**, **`batch_enrich_max_entities`**, **`batch_enrich_max_tool_rounds`**. **No** prose prompts. Missing file ⇒ built-in defaults. Malformed YAML when the file exists ⇒ **`ValueError`** (fail closed). |
+| **[`policies/default.yaml`](policies/default.yaml)** | Numeric limits only: `version`, `intent_max_bytes`, `matrix_planner_top_k`, **`graph_lite_max_items_per_job`**, **`graph_lite_token_cap_per_job`**, **`batch_enrich_max_entities`**, **`batch_enrich_max_tool_rounds`**. **No** prose prompts. Missing file ⇒ built-in defaults. Malformed YAML when the file exists ⇒ **`ValueError`** (fail closed). Unknown top-level keys after merge log one **stderr** line (drift catcher); programme knobs belong in **`missions.defaults_json`** / playbooks — see [`docs/operator-onboarding.md`](docs/operator-onboarding.md). |
 | **`ADA_POLICY_PACK`** | Optional absolute path, or path **relative to the effective policy directory** (folder containing **`default.yaml`** — see **`ADA_POLICY_ROOT`** / **§9.0a**), to another **`.yaml` / `.yml`** file, or a **directory** whose `*.yaml` / `*.yml` files are merged in lexical order **after** `default.yaml`. |
 | **`ADA_INTENT_MAX_BYTES`**, **`ADA_MATRIX_PLANNER_TOP_K`** | When set, override **`intent_max_bytes`** and **`matrix_planner_top_k`** from YAML. |
 | **`ADA_GRAPH_LITE_POLICY_MAX_ITEMS`**, **`ADA_GRAPH_LITE_POLICY_TOKEN_CAP`** | When set, override **`graph_lite_max_items_per_job`** (1–200) and **`graph_lite_token_cap_per_job`** (256–500000) after YAML merge. |
@@ -346,6 +351,8 @@ ADA separates **chat persona** (**`memory/soul.md`**, **`memory/master.md`**) fr
 | **`memory/intent.md`** | Plain English goals for **data-plane** pipelines (triage, graph-lite extraction, matrix planner, **`ada enrich-graph`**). **Not** injected into default chat (**`build_system_instruction`**). Missing file ⇒ empty string (truncated to the intent byte cap). |
 
 **Merge precedence:** **`default.yaml`** under the effective policy directory (**`<repo>/policies`** or **`ADA_POLICY_ROOT`** / per-profile **`policies/`** — see **§9.0a**) → **`ADA_POLICY_PACK`** overlay(s) → **environment overrides** (`ADA_*` above).
+
+**Programme env deprecation (one release):** several **`ADA_*`** / **`GSC_SITE_URL`** knobs that scope a **programme** (ISR ids, brand/GSC URLs, keyword ingest seeds, matrix caps, publish/triage thresholds) print **stderr** hints on **`Settings.load()`** and may log **`action_log`** `deprecated_env_used` once per process. Prefer **`missions.defaults_json`** and **`ada mission migrate-env <slug>`** — see [`docs/operator-onboarding.md`](docs/operator-onboarding.md). Silence hints with **`ADA_DEPRECATED_ENV_SUPPRESS=1`** only after you accept env-as-global fallback.
 
 **Rollback (policy plane):** remove or restore defaults for `policies/default.yaml`, unset **`ADA_POLICY_PACK`** and overrides, clear **`memory/intent.md`**.
 

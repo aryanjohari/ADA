@@ -117,3 +117,53 @@ async def test_matrix_idempotent_key_calls_enqueue(
         assert n >= 1
     finally:
         await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_matrix_scan_deterministic_uses_legacy_not_planner(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_MATRIX_ENABLE", "1")
+    monkeypatch.setenv("ADA_MATRIX_PLANNER", "1")
+    db = tmp_path / "det.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        from ada.publish import matrix as matrix_mod
+
+        called: dict[str, bool] = {}
+
+        async def fake_planner(*_a, **_kw):
+            called["planner"] = True
+            raise AssertionError("planner should not run")
+
+        legacy = mock.AsyncMock(
+            return_value={
+                "enqueued": 0,
+                "candidates": 0,
+                "dry_run": False,
+                "mode": "matrix_legacy_scan",
+                "skipped": "",
+            }
+        )
+        with (
+            mock.patch(
+                "ada.publish.matrix_planner.run_matrix_plan_and_enqueue",
+                new=fake_planner,
+            ),
+            mock.patch.object(matrix_mod, "run_matrix_legacy_scan", new=legacy),
+        ):
+            out = await matrix_mod.run_matrix_scan(
+                qe,
+                Settings.load(),
+                dry_run=False,
+                deterministic=True,
+                mission_slug=None,
+            )
+        assert called.get("planner") is None
+        assert out.get("mode") == "matrix_legacy_scan"
+        legacy.assert_called_once()
+        _call_kw = legacy.call_args.kwargs
+        assert _call_kw.get("mission_slug") is None
+    finally:
+        await qe.close()

@@ -18,6 +18,7 @@ from ada.workflow.steps import ENRICH_STRICT_TOOL_NAMES, KNOWLEDGE_TOOLS_ENRICH
 from ada.workflow.templates import (
     WORKFLOW_KINDS,
     expand_workflow_template,
+    validate_and_normalize_workflow_params,
     validate_workflow_step_dependencies,
 )
 
@@ -141,7 +142,7 @@ def test_expand_publish_entity_v1_merges_params():
 
 def test_expand_publish_entity_v1_rejects_bad_keyword_cluster():
     with pytest.raises(ValueError, match="unsupported characters"):
-        expand_workflow_template(
+        validate_and_normalize_workflow_params(
             "publish_entity_v1",
             {
                 "entity_id": 42,
@@ -150,7 +151,6 @@ def test_expand_publish_entity_v1_rejects_bad_keyword_cluster():
                 "niche": "widgets",
                 "target_keyword_cluster": "widget<script>",
             },
-            max_steps=10,
         )
 
 
@@ -175,10 +175,9 @@ def test_expand_publish_keyword_v1_steps_no_gate():
 
 def test_expand_publish_keyword_v1_rejects_missing_target():
     with pytest.raises(ValueError, match="target_keyword_cluster"):
-        expand_workflow_template(
+        validate_and_normalize_workflow_params(
             "publish_keyword_v1",
             {"project_id": "p", "campaign_id": "c", "niche": "n"},
-            max_steps=10,
         )
 
 

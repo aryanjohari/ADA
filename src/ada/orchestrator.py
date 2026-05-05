@@ -157,6 +157,7 @@ async def orchestrate_turn(
     )
     legs_cap = max(1, max_tool_rounds)
     memory = memory_config if eff_memory else None
+    knowledge_mission_scope = await qe.get_task_mission_id(session_id)
 
     async def _read_plan_bound() -> str:
         return await qe.get_task_plan_json(session_id)
@@ -340,6 +341,7 @@ async def orchestrate_turn(
                 min_relevance_score=min_rs,
                 valid_at_now=valid_at_now,
                 primary_triage_category=primary_triage_category,
+                mission_scope=knowledge_mission_scope,
             )
             slim: list[dict[str, Any]] = []
             for it in items[:response_cap]:
@@ -388,6 +390,19 @@ async def orchestrate_turn(
                     refs.append(int(x))
                 except (TypeError, ValueError):
                     return {"error": "ref_item_ids must be integers"}
+            if knowledge_mission_scope is not None:
+                for rid in refs:
+                    try:
+                        await qe.get_knowledge_item(
+                            rid, mission_scope=knowledge_mission_scope
+                        )
+                    except LookupError:
+                        return {
+                            "error": (
+                                f"ref_item_ids: knowledge item id={rid} is not visible "
+                                "for this mission (or missing)"
+                            )
+                        }
             tid_raw = call.args.get("task_id")
             if tid_raw is None:
                 task_id = session_id
@@ -418,6 +433,7 @@ async def orchestrate_turn(
                 "rss" if kind == "rss" else "web",
                 label=label_s,
                 base_url=base_url,
+                mission_id=knowledge_mission_scope,
             )
             return {"source_id": kid, "kind": kind, "base_url": base_url}
 
@@ -448,6 +464,18 @@ async def orchestrate_turn(
             notes_raw = call.args.get("causality_notes")
             causality_notes = str(notes_raw).strip() if notes_raw is not None else ""
 
+            if knowledge_mission_scope is not None:
+                try:
+                    await qe.get_knowledge_item(
+                        knowledge_id, mission_scope=knowledge_mission_scope
+                    )
+                except LookupError:
+                    return {
+                        "error": (
+                            "knowledge_id is not visible for this mission "
+                            "(or missing)"
+                        )
+                    }
             try:
                 metric_id = await qe.insert_market_metric(
                     metric_name,
@@ -497,6 +525,7 @@ async def orchestrate_turn(
                 aliases=aliases,
                 external_ids=external_ids,
                 payload_json=payload_json,
+                mission_id=knowledge_mission_scope,
             )
             return out
 
@@ -530,6 +559,19 @@ async def orchestrate_turn(
                     evidence_item_ids.append(int(x))
                 except (TypeError, ValueError):
                     return {"error": "evidence_item_ids must contain integers"}
+            if knowledge_mission_scope is not None and evidence_item_ids:
+                for kid in evidence_item_ids:
+                    try:
+                        await qe.get_knowledge_item(
+                            kid, mission_scope=knowledge_mission_scope
+                        )
+                    except LookupError:
+                        return {
+                            "error": (
+                                f"evidence_item_ids: knowledge id={kid} is not visible "
+                                "for this mission (or missing)"
+                            )
+                        }
             is_hypothesis = bool(call.args.get("is_hypothesis", False))
             if not is_hypothesis and len(evidence_item_ids) == 0:
                 return {"error": "evidence_item_ids required for non-hypothesis edges"}
@@ -589,6 +631,18 @@ async def orchestrate_turn(
                 knowledge_id = int(call.args.get("knowledge_id"))
             except (TypeError, ValueError):
                 return {"error": "edge_id and knowledge_id must be integers"}
+            if knowledge_mission_scope is not None:
+                try:
+                    await qe.get_knowledge_item(
+                        knowledge_id, mission_scope=knowledge_mission_scope
+                    )
+                except LookupError:
+                    return {
+                        "error": (
+                            "knowledge_id is not visible for this mission "
+                            "(or missing)"
+                        )
+                    }
             quote_span = call.args.get("quote_span")
             if quote_span is not None and not isinstance(quote_span, dict):
                 return {"error": "quote_span must be an object"}
@@ -674,6 +728,7 @@ async def orchestrate_turn(
             idempotency_key=idem,
             max_steps=workflow_max_steps,
             require_approval=workflow_require_approval,
+            source_task_id=session_id,
         )
 
     async def _workflow_status_bound(
