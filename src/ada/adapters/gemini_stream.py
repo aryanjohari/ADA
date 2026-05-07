@@ -4,21 +4,176 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
+import random
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError, ClientError, ServerError
 
 from ada.stream_debug import is_stream_debug_on, log_stream
 from ada.stream_types import CompletedFunctionCall, StreamLegResult
 from ada.transcript_format import ROLE_ASSISTANT, ROLE_TOOL, ROLE_USER
 
+log = logging.getLogger("ada.gemini_stream")
+
 
 class StreamTimeout(Exception):
     """No chunk within idle window, or entire leg exceeded wall-clock max."""
 
+
+@dataclass(frozen=True)
+class GeminiStreamRetryEnv:
+    """Transient streaming retries for Gemini capacity / 5xx."""
+
+    max_retries: int
+    base_ms: int
+    cap_ms: int
+    jitter_ratio: float
+    retry_429: bool
+
+    @classmethod
+    def from_environ(cls) -> "GeminiStreamRetryEnv":
+        raw_max = os.environ.get("ADA_GEMINI_RETRY_MAX", "4").strip()
+        try:
+            max_retries = int(raw_max)
+        except ValueError:
+            max_retries = 4
+        max_retries = max(0, min(24, max_retries))
+
+        raw_base = os.environ.get("ADA_GEMINI_RETRY_BASE_MS", "1500").strip()
+        try:
+            base_ms = int(raw_base)
+        except ValueError:
+            base_ms = 1500
+        base_ms = max(100, min(120_000, base_ms))
+
+        raw_cap = os.environ.get("ADA_GEMINI_RETRY_CAP_MS", "45000").strip()
+        try:
+            cap_ms = int(raw_cap)
+        except ValueError:
+            cap_ms = 45_000
+        cap_ms = max(base_ms, min(300_000, cap_ms))
+
+        raw_j = os.environ.get("ADA_GEMINI_RETRY_JITTER_RATIO", "0.2").strip()
+        try:
+            jitter_ratio = float(raw_j)
+        except ValueError:
+            jitter_ratio = 0.2
+        jitter_ratio = max(0.0, min(0.95, jitter_ratio))
+
+        r429 = os.environ.get("ADA_GEMINI_RETRY_429", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        return cls(
+            max_retries=max_retries,
+            base_ms=base_ms,
+            cap_ms=cap_ms,
+            jitter_ratio=jitter_ratio,
+            retry_429=r429,
+        )
+
+
+async def _emit_noop_delta(_s: str) -> None:
+    return
+
+
+def _overload_text_hint(text: str) -> bool:
+    low = text.lower()
+    return any(
+        h in low
+        for h in (
+            "high demand",
+            "overloaded",
+            "currently experiencing high traffic",
+            "try again later",
+        )
+    )
+
+
+def transient_gemini_stream_error(exc: BaseException, *, retry_429: bool) -> bool:
+    """True for Gemini capacity / infra errors that merit exponential backoff."""
+    if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+        return False
+
+    # google-genai uses httpx; 5xx => ServerError, 4xx => ClientError (both subclass APIError)
+    if isinstance(exc, ServerError):
+        return True
+
+    if isinstance(exc, ClientError):
+        code = getattr(exc, "code", None)
+        status_u = str(getattr(exc, "status", "") or "").upper()
+        msg = str(getattr(exc, "message", "") or exc)
+
+        non_retry_codes = frozenset({400, 401, 403, 404})
+        non_retry_status = frozenset(
+            {
+                "INVALID_ARGUMENT",
+                "FAILED_PRECONDITION",
+                "PERMISSION_DENIED",
+                "UNAUTHENTICATED",
+                "NOT_FOUND",
+            }
+        )
+        if isinstance(code, int) and code in non_retry_codes:
+            return False
+        if status_u in non_retry_status:
+            return False
+        if retry_429:
+            if isinstance(code, int) and code == 429:
+                return True
+            if status_u == "RESOURCE_EXHAUSTED":
+                return True
+        if _overload_text_hint(msg):
+            return True
+        return False
+
+    if isinstance(exc, APIError):
+        status_u = str(getattr(exc, "status", "") or "").upper()
+        msg = str(getattr(exc, "message", "") or exc)
+        if status_u == "UNAVAILABLE":
+            return True
+        if retry_429 and status_u == "RESOURCE_EXHAUSTED":
+            return True
+        if _overload_text_hint(msg):
+            return True
+
+    low = str(exc).lower()
+    if _overload_text_hint(low):
+        return True
+    httpish_sub = ("503", "504", "502", "gateway", "unavailable", "timed out")
+    if any(h in low for h in httpish_sub):
+        stripped = low.replace("_", "").replace(" ", "")
+        if "invalidargument" not in stripped and "unauthenticated" not in stripped:
+            return True
+
+    return False
+
+
+def _gemini_retry_sleep_ms_before_next_attempt(
+    *,
+    failures_so_far: int,
+    base_ms: int,
+    cap_ms: int,
+    jitter_ratio: float,
+) -> int:
+    expo = float(base_ms * (2 ** max(0, failures_so_far - 1)))
+    delay = float(min(cap_ms, expo))
+    jitter = delay * jitter_ratio * random.random()
+    return int(min(cap_ms, delay + jitter))
+
+
+def _truncate_err(exc: BaseException, limit: int = 2048) -> str:
+    t = repr(exc)
+    return t if len(t) <= limit else t[: limit - 1] + "…"
 
 
 def chain_rows_to_contents(rows: list[dict[str, Any]]) -> list[types.Content]:
@@ -418,34 +573,18 @@ def _merge_usage_metadata(into: dict[str, Any], um: object) -> None:
             into[attr] = v
 
 
-async def stream_one_model_leg(
+async def _stream_one_generate_content_attempt(
     *,
     api_key: str,
     model: str,
     system_instruction: str,
     contents: list[types.Content],
     tool: types.Tool | None,
-    on_text_delta: Callable[[str], Awaitable[None]] | None = None,
-    chunk_idle_timeout_sec: float | None = 120.0,
-    leg_max_wall_sec: float | None = 600.0,
-    debug_stream: bool = False,
+    emit_text_delta: Callable[[str], Awaitable[None]],
+    chunk_idle_timeout_sec: float | None,
+    leg_max_wall_sec: float | None,
+    dbg: bool,
 ) -> StreamLegResult:
-    """
-    One generate_content_stream leg with optional tools; manual function calling.
-    """
-    dbg = is_stream_debug_on(debug_stream)
-    decl_n = 0
-    if tool and getattr(tool, "function_declarations", None):
-        decl_n = len(tool.function_declarations or [])
-    log_stream(
-        dbg,
-        "stream",
-        "leg_start",
-        f"model={model!r}",
-        f"contents_messages={len(contents)}",
-        f"tool_function_declarations={decl_n}",
-    )
-
     client = genai.Client(api_key=api_key)
     cfg = types.GenerateContentConfig(
         system_instruction=system_instruction,
@@ -549,10 +688,8 @@ async def stream_one_model_leg(
                     ptext = _part_text_delta(part)
                     if ptext:
                         text_buf.append(ptext)
-                        if on_text_delta:
-                            await on_text_delta(ptext)
+                        await emit_text_delta(ptext)
 
-        # First-candidate helper; stable keys dedupe against the parts walk above.
         extra_fcs = getattr(chunk, "function_calls", None) or []
         for pfc in extra_fcs:
             if pfc is not None:
@@ -568,8 +705,7 @@ async def stream_one_model_leg(
                 seen_text += t
             if delta:
                 text_buf.append(delta)
-                if on_text_delta:
-                    await on_text_delta(delta)
+                await emit_text_delta(delta)
 
         if dbg:
             added_fc = len(fc_order) - fc_before
@@ -592,7 +728,7 @@ async def stream_one_model_leg(
         dbg,
         "stream",
         "leg_end",
-        f"text_len={len(text)}",
+        f"attempt_text_len={len(text)}",
         f"text_preview={_clip(text) if text else repr(text)}",
         f"function_calls_n={len(calls)}",
         f"names={[c.name for c in calls]}",
@@ -605,6 +741,134 @@ async def stream_one_model_leg(
         usage=usage,
         finish_reason=finish_reason,
     )
+
+
+async def stream_one_model_leg(
+    *,
+    api_key: str,
+    model: str,
+    system_instruction: str,
+    contents: list[types.Content],
+    tool: types.Tool | None,
+    on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+    chunk_idle_timeout_sec: float | None = 120.0,
+    leg_max_wall_sec: float | None = 600.0,
+    debug_stream: bool = False,
+    gemini_retry_env: GeminiStreamRetryEnv | None = None,
+    on_transient_gemini_retry: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+) -> StreamLegResult:
+    """
+    One generate_content_stream leg with optional tools; manual function calling.
+
+    Retries transient Gemini failures (503/5xx/UNAVAILABLE/optional 429 via ``ADA_GEMINI_RETRY_*`` env)
+    with exponential backoff. When retries are enabled, text deltas buffer until one full attempt
+    succeeds so partial failed streams do not duplicate ``on_text_delta`` emissions.
+    """
+    dbg = is_stream_debug_on(debug_stream)
+    r_cfg = gemini_retry_env if gemini_retry_env is not None else GeminiStreamRetryEnv.from_environ()
+
+    decl_n = 0
+    if tool and getattr(tool, "function_declarations", None):
+        decl_n = len(tool.function_declarations or [])
+    log_stream(
+        dbg,
+        "stream",
+        "leg_start",
+        f"model={model!r}",
+        f"contents_messages={len(contents)}",
+        f"tool_function_declarations={decl_n}",
+    )
+
+    attempts_total = max(1, r_cfg.max_retries + 1)
+    defer_emit = r_cfg.max_retries > 0
+    pending_deltas: list[str] = []
+    transient_fail_count = 0
+
+    async def deferring_emit(fragment: str) -> None:
+        pending_deltas.append(fragment)
+
+    for attempt_one_based in range(1, attempts_total + 1):
+        log_stream(
+            dbg,
+            "stream",
+            "leg_attempt",
+            f"i={attempt_one_based}/{attempts_total}",
+            f"transient_retries_remaining={attempts_total - attempt_one_based}",
+        )
+        pending_deltas.clear()
+        emitter: Callable[[str], Awaitable[None]] = deferring_emit if defer_emit else (
+            on_text_delta or _emit_noop_delta
+        )
+
+        try:
+            result = await _stream_one_generate_content_attempt(
+                api_key=api_key,
+                model=model,
+                system_instruction=system_instruction,
+                contents=contents,
+                tool=tool,
+                emit_text_delta=emitter,
+                chunk_idle_timeout_sec=chunk_idle_timeout_sec,
+                leg_max_wall_sec=leg_max_wall_sec,
+                dbg=dbg,
+            )
+            if defer_emit and on_text_delta:
+                for fragment in pending_deltas:
+                    await on_text_delta(fragment)
+            return result
+
+        except asyncio.CancelledError:
+            raise
+
+        except StreamTimeout:
+            raise
+
+        except Exception as exc:
+
+            transient = transient_gemini_stream_error(exc, retry_429=r_cfg.retry_429)
+
+            remaining_after_this = attempts_total - attempt_one_based
+            log.info(
+                "gemini stream attempt failed (model=%s try=%s/%s transient=%s): %s",
+                model,
+                attempt_one_based,
+                attempts_total,
+                transient,
+                exc,
+            )
+
+            if not transient:
+                raise
+
+            transient_fail_count += 1
+
+            if remaining_after_this <= 0:
+                raise
+
+            sleep_ms = _gemini_retry_sleep_ms_before_next_attempt(
+                failures_so_far=transient_fail_count,
+                base_ms=r_cfg.base_ms,
+                cap_ms=r_cfg.cap_ms,
+                jitter_ratio=r_cfg.jitter_ratio,
+            )
+            retry_payload = {
+                "model": model,
+                "attempt": attempt_one_based,
+                "attempts_total": attempts_total,
+                "sleep_ms": sleep_ms,
+                "error": _truncate_err(exc),
+                "error_type": type(exc).__name__,
+                "http_code": getattr(exc, "code", None)
+                if isinstance(exc, APIError)
+                else None,
+                "status": getattr(exc, "status", None)
+                if isinstance(exc, APIError)
+                else None,
+            }
+            if on_transient_gemini_retry:
+                await on_transient_gemini_retry(retry_payload)
+
+            await asyncio.sleep(sleep_ms / 1000.0)
 
 
 async def stream_generate_text(

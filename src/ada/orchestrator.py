@@ -856,6 +856,13 @@ async def _agentic_loop(
 ) -> str:
     parent = user_parent_uuid
 
+    async def _gemini_transient_retry_log(payload: dict[str, Any]) -> None:
+        await qe.append_action_log(
+            "gemini_stream_transient_retry",
+            payload,
+            session_id=session_id,
+        )
+
     for _ in range(legs_cap):
         tool_rows_this_leg: list[str] = []
         leg: Any = None
@@ -879,6 +886,8 @@ async def _agentic_loop(
                     on_text_delta=_td if on_delta else None,
                     chunk_idle_timeout_sec=stream_chunk_idle_timeout_sec,
                     leg_max_wall_sec=stream_leg_max_wall_sec,
+                    debug_stream=debug_stream,
+                    on_transient_gemini_retry=_gemini_transient_retry_log,
                 )
             except asyncio.CancelledError:
                 await qe.tombstone(

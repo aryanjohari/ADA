@@ -5,6 +5,7 @@ Summary: ADA — headless agent harness (SQLite + Gemini)
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: google-genai>=1.0.0
+Requires-Dist: pyyaml>=6.0
 Requires-Dist: aiosqlite>=0.20
 Requires-Dist: httpx>=0.27
 Requires-Dist: feedparser>=6.0.11
@@ -23,6 +24,7 @@ Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
 
 ### Operator docs (Pi / one profile / pSEO)
 
+- [`docs/operator-onboarding.md`](docs/operator-onboarding.md) — single path: **profile (optional) → mission init → playbook → cron**, deprecation map, **`ada mission migrate-env`**  
 - [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — cron + systemd, env matrix, spend caps, dual graph paths, matrix vs keyword tracks, **`ada approval`** for enqueue and publish  
 - [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — stable `page.json` v1 + S3 keys (canonical: `src/ada/publish/page_schema_v1.py`)  
 - [`docs/legal-ops-checklist.md`](docs/legal-ops-checklist.md) — ranking / leads / retention / PII (not legal advice)  
@@ -30,12 +32,13 @@ Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
 - [`scripts/ada_entity_track.sh`](scripts/ada_entity_track.sh), [`scripts/ada_keyword_track.sh`](scripts/ada_keyword_track.sh) — cron-friendly entity vs keyword pipelines  
 - [`docs/OPERATOR_SQLITE_BACKUP.md`](docs/OPERATOR_SQLITE_BACKUP.md) — `state.db` backup / restore drill  
 - [`docs/OPERATOR_LOGGING.md`](docs/OPERATOR_LOGGING.md) — systemd / file logging for daemon on Pi  
+- [`docs/operator-publish-gate.md`](docs/operator-publish-gate.md) — GATE vs ENRICH vs DRAFT (distinct `source_url` facts), diagnosis (`ada workflow status`, `ada gate-failures`, logs)
 
 **GATE** (`ADA_PUBLISH_MIN_UNIQUE_FACTS`, distinct `source_url` on graph edges) applies only to **`publish_entity_v1`**, not **`publish_keyword_v1`**. **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`** gates **`DEPLOY`** for **both** publish kinds when enabled.
 
 ### Recently added (keep reading for full detail)
 
-- **`task_kind`** (`chat` \| `goal`), **`ada goal`** subcommands (`add` / `list` / `show`), and **daemon dequeue** of **pending goals only**; **worker-mode** extra system text for `ada daemon`.
+- **`task_kind`** (`chat` \| `goal`), **`ada goal`** (`add` / `list` / `show`; optional **`--mission`**, **`--plan-json`**), **`ada mission`** (`init` / `list` / `show` / `migrate-env` / `tick`), and **daemon dequeue** of **pending goals only**; **worker-mode** extra system text for `ada daemon`.
 - **Web tools** (when **`ADA_ENABLE_WEB_TOOLS=1`**): **`web_search`** (Serper), **`fetch_url_text`** (Jina Reader or httpx per **`ADA_WEB_FETCH_MODE`**), with caps and optional fetch host allowlist.
 - **Phase B persistence**: **`web_sources`** table (bounded excerpts for `search_hit` \| `page_fetch`); optional read-only tool **`list_session_web_sources`** when **`ADA_ENABLE_WEB_SOURCES_TOOL=1`**.
 - **Optional** operator file **`memory/schema_digest.md`** — if present, a short digest can be injected into the system prompt (see `src/ada/prompt.py`).
@@ -56,7 +59,7 @@ Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
 6. [Agentic turn (how one user message runs)](#6-agentic-turn-how-one-user-message-runs)
 7. [Tools and security](#7-tools-and-security)
 8. [Dream mode and memory I/O](#8-dream-mode-and-memory-io)
-9. [Configuration (environment)](#9-configuration-environment)
+9. [Configuration (environment)](#9-configuration-environment) — includes **policy / intent**, **deploy evolved ADA**, B2B publisher
 10. [Setup and tests](#10-setup-and-tests)
 11. [Roadmap / not implemented](#11-roadmap--not-implemented)
 12. [Further reading](#12-further-reading)
@@ -150,7 +153,8 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 
 | Table | Role |
 |-------|------|
-| **`tasks`** | Queue / session anchor: `goal`, `status`, `current_output`, **`plan_json`** (default `'{}'`; **read/write** via **`read_task_plan`** / **`write_task_plan`** when **`ADA_ENABLE_PLAN_TOOLS`** is on), **`task_kind`** (`chat` \| `goal`), timestamps |
+| **`missions`** | Optional **operator-defined** tracks: **`slug`** (unique), **`title`**, niche/topic/brief metadata; referenced by **`tasks.mission_id`** (nullable `ON DELETE SET NULL`) |
+| **`tasks`** | Queue / session anchor: `goal`, `status`, `current_output`, **`plan_json`** (default `'{}'`; **read/write** via **`read_task_plan`** / **`write_task_plan`** when **`ADA_ENABLE_PLAN_TOOLS`** is on), **`task_kind`** (`chat` \| `goal`), optional **`mission_id`** → **`missions`**, timestamps |
 | **`messages`** | Transcript: `uuid`, `session_id` → `tasks.id`, `parent_uuid`, `role` (`user` \| `assistant` \| `tool` \| `system`), `content_json`, `tombstone`, `sequence`, `created_at` |
 | **`state`** | String KV cache (e.g. boot flags, last leg tokens, `dream.last_run_at`) |
 | **`usage_ledger`** | Append-only-ish log: `session_id`, `model`, `input_tokens`, `output_tokens`, `recorded_at` |
@@ -159,7 +163,7 @@ Normative message shapes and ordering: [`docs/claude_logic.md`](docs/claude_logi
 | **`knowledge_sources`** | Registered ingest endpoints: `kind` (`api` \| `rss` \| `web`), optional `label`, `base_url` |
 | **`knowledge_items`** | Ingested facts: FK to `knowledge_sources`, optional `external_id`, `published_at`, `ingested_at`, `tags_json`, `content_excerpt`, optional `payload_json`, `content_hash`, optional **`relevance_score`** (0–1), optional **`impact_score`** (1–10, from **`ada triage`**), optional **`triage_primary_category`** and **`triage_secondary_categories_json`** (fixed taxonomy; surfaced in API as **`triage_secondary_categories`**), optional **`expires_at`** (ISO), **`tombstoned`** (0/1); legacy rows may have **`relevance_score` NULL** (treat as unknown; queries often use `COALESCE(relevance_score, 1.0)`). **FTS5** `doc` can include triage text after migration (`schema.knowledge_fts.triage_doc_v1`). Insert **dedupes** by `(source_id, external_id)` or `(source_id, content_hash)` when `external_id` is null |
 | **`knowledge_synthesis`** | Optional “opinion” text with `ref_item_ids_json` and optional `task_id` → `tasks` (soft refs to items) |
-| **`workflows`** | Phase 3: `kind`, `goal_text`, `params_json`, optional **`idempotency_key`** (unique with `kind` when set), `status`, **`parent_task_id`** → `tasks.id` |
+| **`workflows`** | Phase 3: `kind`, `goal_text`, `params_json`, optional **`idempotency_key`** (unique with `kind` when set), `status`, **`parent_task_id`** → `tasks.id`, optional **`mission_id`** → `missions.id` (nullable FK) |
 | **`workflow_steps`** | Ordered child steps: `step_index`, **`step_type`** (`FETCH` \| `EXTRACT` \| `SYNTHESIZE` \| `ENRICH` \| `GATE` \| `DRAFT` \| `DEPLOY`), `status`, `input_json`, `output_json`, `error`, `attempt_count` |
 | **`knowledge_items_fts`** | FTS5 virtual table (`doc`); `rowid` = `knowledge_items.id`; maintained by triggers (not used directly by chat) |
 
@@ -189,13 +193,14 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 |---------|---------|
 | **`ada chat`** | REPL: one **`tasks`** row for “Interactive session” (`task_kind=chat`; reuse or `--new-session`), boot via `wakeup.md` once, then `you>` turns |
 | **`ada chat --new-session`** | New `tasks.id` / transcript chain |
-| **`ada goal add …`** | Enqueue a **`task_kind=goal`** row with `status=pending` (optional **`--plan-json`**). **Does not** call the model; **`GEMINI_API_KEY`** not required. |
-| **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--limit`**). |
-| **`ada goal show <id>`** | Print one goal task’s metadata plus **`tasks.current_output`** (the daemon’s final model reply or error text). Long output is **previewed** by default; use **`--full`** for the entire string. |
+| **`ada goal add …`** | Enqueue a **`task_kind=goal`** row with `status=pending` (optional **`--plan-json`**, **`--mission <slug>`**). **Does not** call the model; **`GEMINI_API_KEY`** not required. |
+| **`ada goal list`** | List recent goal tasks (optional **`--status`**, **`--mission`**, **`--limit`**). Lines include mission slug when set: `id`, `status`, `mission_slug`, goal preview. |
+| **`ada goal show <id>`** | Print one goal task’s metadata (**`mission_id` / `mission_slug`** when set) plus **`tasks.current_output`** (the daemon’s final model reply or error text). Long output is **previewed** by default; use **`--full`** for the entire string. |
+| **`ada mission init|list|show|migrate-env|tick`** | Create or inspect **`missions`** (`init` / `list` / `show`); **`migrate-env`** merges deprecated programme env vars into **`defaults_json`** (dry-run by default); **`tick`** runs **`schedule_hint_json`** jobs. Does not call the model for `init` / `list` / `show` / `migrate-env`. |
 | **`ada daemon`** | Long-running worker: poll **`tasks` WHERE `status='pending'` AND `task_kind='goal'`**. If **`workflows.parent_task_id`** matches the task, runs the **Phase 3 workflow runner**; otherwise runs **one** `orchestrate_turn`. Sets `completed` / `failed`. Use **systemd** (or similar), not cron. |
-| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`**. Kinds: **`rss_fetch_then_graph_then_synth`** (RSS → graph-extract → synthesis), **`publish_entity_v1`** (enrich → gate → draft → deploy), or **`publish_keyword_v1`** (enrich → draft → deploy; keyword-led, no gate). Optional **`--params-json`**, **`--idempotency-key`**. Respects **`ADA_MAX_TASK_STEPS`**. |
+| **`ada workflow enqueue`** | Create a pending goal + **`workflows`** / **`workflow_steps`** from a template **`--kind`**. Kinds: **`rss_fetch_then_graph_then_synth`** (RSS → graph-extract → synthesis), **`publish_entity_v1`** (enrich → gate → draft → deploy), or **`publish_keyword_v1`** (enrich → draft → deploy; keyword-led, no gate). Optional **`--params-json`**, **`--idempotency-key`**, **`--mission <slug>`** (merges **`missions.defaults_json`** into playbook params **and** sets **`tasks.mission_id`** / **`workflows.mission_id`** on the new rows). Without **`--mission`**, those columns stay **NULL** unless the enqueue comes from an agent turn that inherits the current session task’s mission. Respects **`ADA_MAX_TASK_STEPS`**. |
 | **`ada workflow status <id>`** | Print **`workflows`** row and all **`workflow_steps`** as JSON. |
-| **`ada matrix-scan`** | Scan **publishable** subject **`entities`** linked to taxonomy categories (**`classified_as`** or **`under_category`** → **`type`** = **`category`**); for each, enqueue **`publish_entity_v1`** with **`ADA_PROJECT_ID`** / **`ADA_CAMPAIGN_ID`** and idempotent key **`publish:{entity_id}:{content_hash}`**. Use **`--dry-run`** to list candidates without **`ADA_MATRIX_ENABLE`**. NZ pSEO phase 1 **`ADA_MATRIX_ENTITY_TYPES`** often **`organization,government_body,policy_instrument`** (**`policy_instrument`**, not `policy`). |
+| **`ada matrix-scan`** | Scan **publishable** subject **`entities`** linked to taxonomy categories (**`classified_as`** or **`under_category`** → **`type`** = **`category`**); for each, enqueue **`publish_entity_v1`** with **`ADA_PROJECT_ID`** / **`ADA_CAMPAIGN_ID`** and idempotent key **`publish:{entity_id}:{content_hash}`**. Use **`--dry-run`** to list candidates without **`ADA_MATRIX_ENABLE`**. See `.env.example` for NZ pSEO phase 1 (**`ADA_MATRIX_ENTITY_TYPES`** = **`organization,government_body,policy_instrument`** — graph-lite **`policy_instrument`**, not `policy`). |
 | **`ada dream`** | **Manual** compression: model summarizes recent transcript + usage → append **master** / optional **soul**; logs **`action_log`**; **`--dry-run`**, **`--session N`**, **`--max-messages`** |
 | **`ada ingest-rss`** | **Offline** fetch: reads **`knowledge_sources`** where **`kind=rss`** and **`base_url`** is set, downloads each feed, parses Atom/RSS, inserts **`knowledge_items`** (deduped). **`GEMINI_API_KEY`** is optional unless **`ADA_INGEST_GATEKEEPER=1`** or **`ADA_KNOWLEDGE_EMBEDDINGS=1`** (gate scores entries; embeddings write vectors). Schedule with **cron** / **systemd** (often **daily**). |
 | **`ada add-rss-source URL [--label …]`** | Register an RSS **`base_url`** in **`knowledge_sources`** (then run **`ada ingest-rss`**). |
@@ -205,10 +210,11 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **`ada ingest-brand --site-url URL [--max-urls N] [--dry-run]`** | Bounded brand truth ingest (homepage + key internal pages) into **`knowledge_items`** with `source_kind=brand` metadata. Uses `ADA_BRAND_SITE_URL` when `--site-url` is omitted. |
 | **`ada keyword-select --entity-id ID --site URL --start-date YYYY-MM-DD --end-date YYYY-MM-DD`** | Deterministically select a top keyword cluster from local GSC tables; returns explicit fallback (`gsc_table_missing` / `gsc_no_rows`) when no data is available. |
 | **`ada triage`** | Score and classify **`knowledge_items`** (impact 1–10 + primary/secondary triage categories via JSON). Optional **`--limit`**, **`--backfill-categories`** (fill categories for rows that already have **`impact_score`**). Requires **`GEMINI_API_KEY`**. |
-| **`ada extract-graph-lite`** | Batch graph-lite extraction from recent **`knowledge_items`** into **`entities`** / **`graph_edges`** / **`edge_evidence`** (Gemini JSON). Optional **`--limit`**, **`--token-cap`**, **`--source-id`**. Requires **`GEMINI_API_KEY`** for the default LLM extractor. |
+| **`ada extract-graph-lite`** | Batch graph-lite extraction from recent **`knowledge_items`** into **`entities`** / **`graph_edges`** / **`edge_evidence`** (Gemini JSON). Uses **`memory/intent.md`** + merged numeric **`policies/default.yaml`** in the model system instruction (not chat). Optional **`--limit`**, **`--token-cap`**, **`--source-id`**. Requires **`GEMINI_API_KEY`** for the default LLM extractor. |
+| **`ada enrich-graph`** | Bounded batch **ENRICH** for matrix-style subject **`entities`** (same tool semantics as workflow **ENRICH**). System instruction = **`build_llm_context`** over **`memory/intent.md`** + policy (not **`build_system_instruction`**). Optional **`--entity-id`** (repeatable), **`--limit`**. Logs **`action_log`** kind **`batch_graph_enrich`**. Requires **`GEMINI_API_KEY`** when the live ENRICH path runs (otherwise falls back to the reference connector path). |
 | **`ada approval request` / `decide` / `show`** | Durable approval records in SQLite (**`artifact-type`**, **`artifact-ref`**, status). Used with publish approval env vars; no LLM. |
 
-**`GEMINI_API_KEY`** is required for **`ada chat`**, **`ada daemon`**, **`ada dream`**, **`ada triage`**, and **`ada extract-graph-lite`** (when using the built-in model). **`ada goal`**, **`ada approval`**, and **`ada add-rss-source`** do not call the model. **`ada ingest-rss`** uses HTTP only unless gate or embeddings are enabled (then Gemini).
+**`GEMINI_API_KEY`** is required for **`ada chat`**, **`ada daemon`**, **`ada dream`**, **`ada triage`**, **`ada extract-graph-lite`**, and **`ada enrich-graph`** (when using the built-in model paths). **`ada goal`**, **`ada approval`**, and **`ada add-rss-source`** do not call the model. **`ada ingest-rss`** uses HTTP only unless gate or embeddings are enabled (then Gemini).
 
 ---
 
@@ -282,7 +288,7 @@ Details: `src/ada/dream/run.py`, `src/ada/memory_io.py`.
 See **`.env.example`** for the full list. Important groups:
 
 - **Model:** `GEMINI_API_KEY`, `GEMINI_MODEL`
-- **Paths:** `ADA_DATA_DIR`
+- **Paths:** `ADA_DATA_DIR`, **`ADA_PROFILE`** / **`ADA_PROFILE_DATA_ROOT`**, **`ADA_MEMORY_DIR`**, **`ADA_POLICY_ROOT`**, **`ADA_REQUIRE_PROFILE_ISOLATION`** (see **§9.0a**)
 - **Agentic loop:** `ADA_MAX_TOOL_ROUNDS`, shell caps/timeouts
 - **Stream hardening:** `ADA_STREAM_CHUNK_IDLE_SEC`, `ADA_STREAM_LEG_MAX_SEC`, `ADA_REWIRE_AFTER_TOMBSTONE`
 - **Memory / dream:** `ADA_ENABLE_MEMORY_TOOLS`, `ADA_MEMORY_MAX_APPEND_BYTES`, `ADA_MEMORY_MAX_FILE_BYTES`, `ADA_DREAM_MAX_SOUL_BYTES`, `ADA_DREAM_MAX_MESSAGES`
@@ -295,6 +301,111 @@ See **`.env.example`** for the full list. Important groups:
 
 `Settings.load()` in `src/ada/config.py` is the single source of parsed values.
 
+### 9.0a Multi-tenant / parallel profiles
+
+Run **N** isolated tenants from one checkout by giving each process a distinct **`ADA_PROFILE`** + **`ADA_PROFILE_DATA_ROOT`** (and distinct **`GEMINI_API_KEY`** / cloud creds via **systemd** `EnvironmentFile=`, not a shared repo **`.env`**).
+
+| Variable | Role |
+|----------|------|
+| **`ADA_PROFILE`** | Slug (`^[a-z0-9][a-z0-9_-]{1,63}$`); runtime **`data_dir`** = `<ADA_PROFILE_DATA_ROOT>/<ADA_PROFILE>/` (SQLite **`state.db`**, **`artifacts/`**, **`audit/`**). |
+| **`ADA_PROFILE_DATA_ROOT`** | Absolute directory containing one subdirectory per profile slug. |
+| **`ADA_MEMORY_DIR`** | Optional. If unset in profile mode, defaults to **`<data_dir>/memory`** (per-tenant soul/master/intent/allowlist). Legacy **`ADA_DATA_DIR`** / default data layout still uses **`<repo>/memory`**. |
+| **`ADA_POLICY_ROOT`** | Optional. Directory that contains **`default.yaml`** (same shape as **`<repo>/policies/`**). In profile mode, if **`<data_dir>/policies/default.yaml`** exists, that directory is used; otherwise ADA falls back to **`<repo>/policies`** and prints one stderr line: **`policy_root_fallback profile=…`**. Operators who need **fail-closed** policy isolation should ship a **`default.yaml`** per profile (or set **`ADA_POLICY_ROOT`** to an absolute path outside the repo); a stricter startup mode may be added later. |
+| **`ADA_REQUIRE_PROFILE_ISOLATION`** | When **`1`**, requires profile env vars **and** rejects resolved **`ADA_MEMORY_DIR`** / **`ADA_POLICY_ROOT`** (or their defaults) if they lie **under the ADA project root** — use this in prod so tenants cannot accidentally share repo **`<repo>/memory`** or **`<repo>/policies`**. |
+
+**Per-profile layout (recommended):**
+
+```text
+<ADA_PROFILE_DATA_ROOT>/
+  <profile>/
+    state.db
+    memory/           # soul.md, master.md, intent.md, …
+    policies/
+      default.yaml    # optional; omit ⇒ repo policies fallback + stderr hint
+    artifacts/
+    audit/
+```
+
+**`ADA_POLICY_PACK`:** relative paths resolve against the effective **`ADA_POLICY_ROOT`** directory (the folder holding **`default.yaml`**). With legacy **`ADA_DATA_DIR`** only, that directory is **`<repo>/policies`**, so behavior matches older docs. In profile mode, prefer **absolute** pack paths or files under the profile’s **`policies/`** directory.
+
+**Parallel daemons (systemd):** use an **instance** unit so each tenant has its own env file, e.g. **`/etc/systemd/system/ada-daemon@.service`**:
+
+```ini
+[Unit]
+Description=ADA daemon (%i)
+
+[Service]
+Type=simple
+User=ada
+WorkingDirectory=/opt/ADA
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/ada/%i.env
+ExecStart=/opt/ADA/.venv/bin/ada daemon
+SyslogIdentifier=ada-daemon@%i
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable with **`systemctl enable --now ada-daemon@client_acme`**. Put **`ADA_PROFILE=client_acme`**, **`ADA_PROFILE_DATA_ROOT=/var/lib/ada-profiles`**, keys, and caps in **`/etc/ada/client_acme.env`**. Logs: **`journalctl -u 'ada-daemon@*'`** or **`journalctl -u ada-daemon@client_acme`**.
+
+**Observability:** the Streamlit app resolves **`state.db`** from the same env as the CLI (`ADA_PROFILE` / **`ADA_DATA_DIR`**, etc.); run one dashboard per tenant or pass the same env block as the daemon.
+
+**Secrets:** **`load_dotenv_if_present()`** only fills keys missing from the process environment; a **shared** repo **`.env`** can still inject defaults (e.g. **`ADA_DATA_DIR`**) into the wrong tenant if a unit forgets to set overrides. Prefer **`EnvironmentFile=`** per instance and avoid committing real secrets.
+
+**Upgrade note:** existing profile users who kept persona files in **`<repo>/memory`** should copy them into **`<data_dir>/memory`** before switching, or set **`ADA_MEMORY_DIR=<repo>/memory`** until migrated.
+
+**Missions vs profiles:** **`ADA_PROFILE`** / **`ADA_PROFILE_DATA_ROOT`** (or legacy **`ADA_DATA_DIR`**) determine **which `state.db` file** a process uses. **Missions** are **rows in that same database** (`missions` table); goal tasks may set **`tasks.mission_id`** (CLI: **`ada mission init`**, **`ada goal add --mission <slug>`**). One profile therefore supports **many missions** in one SQLite file. Changing profile (or data dir) switches to a **different** database with its **own** missions and tasks—missions are **not** a substitute for profile isolation.
+
+### 9.0 Policy & intent files
+
+ADA separates **chat persona** (**`memory/soul.md`**, **`memory/master.md`**) from **policy** and **operator intent**:
+
+| Artifact | Purpose |
+|---------|---------|
+| **[`policies/default.yaml`](policies/default.yaml)** | Numeric limits only: `version`, `intent_max_bytes`, `matrix_planner_top_k`, **`graph_lite_max_items_per_job`**, **`graph_lite_token_cap_per_job`**, **`batch_enrich_max_entities`**, **`batch_enrich_max_tool_rounds`**. **No** prose prompts. Missing file ⇒ built-in defaults. Malformed YAML when the file exists ⇒ **`ValueError`** (fail closed). Unknown top-level keys after merge log one **stderr** line (drift catcher); programme knobs belong in **`missions.defaults_json`** / playbooks — see [`docs/operator-onboarding.md`](docs/operator-onboarding.md). |
+| **`ADA_POLICY_PACK`** | Optional absolute path, or path **relative to the effective policy directory** (folder containing **`default.yaml`** — see **`ADA_POLICY_ROOT`** / **§9.0a**), to another **`.yaml` / `.yml`** file, or a **directory** whose `*.yaml` / `*.yml` files are merged in lexical order **after** `default.yaml`. |
+| **`ADA_INTENT_MAX_BYTES`**, **`ADA_MATRIX_PLANNER_TOP_K`** | When set, override **`intent_max_bytes`** and **`matrix_planner_top_k`** from YAML. |
+| **`ADA_GRAPH_LITE_POLICY_MAX_ITEMS`**, **`ADA_GRAPH_LITE_POLICY_TOKEN_CAP`** | When set, override **`graph_lite_max_items_per_job`** (1–200) and **`graph_lite_token_cap_per_job`** (256–500000) after YAML merge. |
+| **`ADA_BATCH_ENRICH_MAX_ENTITIES`**, **`ADA_BATCH_ENRICH_MAX_TOOL_ROUNDS`** | When set, override **`batch_enrich_max_entities`** (1–10000) and **`batch_enrich_max_tool_rounds`** (1–48) after YAML merge. |
+| **`memory/intent.md`** | Plain English goals for **data-plane** pipelines (triage, graph-lite extraction, matrix planner, **`ada enrich-graph`**). **Not** injected into default chat (**`build_system_instruction`**). Missing file ⇒ empty string (truncated to the intent byte cap). |
+
+**Merge precedence:** **`default.yaml`** under the effective policy directory (**`<repo>/policies`** or **`ADA_POLICY_ROOT`** / per-profile **`policies/`** — see **§9.0a**) → **`ADA_POLICY_PACK`** overlay(s) → **environment overrides** (`ADA_*` above).
+
+**Programme env deprecation (one release):** several **`ADA_*`** / **`GSC_SITE_URL`** knobs that scope a **programme** (ISR ids, brand/GSC URLs, keyword ingest seeds, matrix caps, publish/triage thresholds) print **stderr** hints on **`Settings.load()`** and may log **`action_log`** `deprecated_env_used` once per process. Prefer **`missions.defaults_json`** and **`ada mission migrate-env <slug>`** — see [`docs/operator-onboarding.md`](docs/operator-onboarding.md). Silence hints with **`ADA_DEPRECATED_ENV_SUPPRESS=1`** only after you accept env-as-global fallback.
+
+**Rollback (policy plane):** remove or restore defaults for `policies/default.yaml`, unset **`ADA_POLICY_PACK`** and overrides, clear **`memory/intent.md`**.
+
+**DAG ENRICH vs batch `enrich-graph`:** the **`publish_entity_v1`** template runs **ENRICH** inside the daemon with the normal worker **`build_system_instruction`** (harness + master + soul). **`ada enrich-graph`** is a **cron-friendly background widen** that reuses the same ENRICH implementation (`run_publish_entity_enrich`) but passes a **data-plane** system instruction built from **`build_llm_context`** + **`memory/intent.md`** + numeric policy only—useful to densify the graph before or between publish runs without coupling to one workflow goal.
+
+### 9.0b Deploy evolved ADA
+
+**Cron / systemd ordering (recommended):** **`ada ingest-rss`** → **`ada extract-graph-lite`** → **`ada triage`** → optional **`ada enrich-graph --limit …`** (background graph widen) → **`ada matrix-scan`** (`--dry-run` optional) → long-running **`ada daemon`** (workflow runner).
+
+### 9.0c Smoke path (intent → graph → batch enrich → one publish)
+
+Minimal operator check that **`memory/intent.md`** and **`policies/default.yaml`** steer data-plane jobs (not chat):
+
+1. Edit **`memory/intent.md`** with plain goals (e.g. sectors or regions to emphasize).
+2. Run **`ada extract-graph-lite`** (optional **`--limit`** / **`--token-cap`**; values are clamped by policy ceilings).
+3. Run **`ada enrich-graph --limit 1`** (or **`--entity-id <id>`** once or repeated, then **`--limit`** to cap the union). Inspect **`action_log`** for kind **`batch_graph_enrich`**.
+4. Enqueue **one** publish workflow, for example: **`ada workflow enqueue --kind publish_entity_v1 --goal "smoke publish" --params-json '{"entity_id":YOUR_ID,"project_id":"default","campaign_id":"main"}'`** (adjust JSON to match your entity and ISR ids), or run **`ada matrix-scan`** with **`ADA_MATRIX_PLANNER=0`** and a small pool so only one workflow is created.
+5. Run **`ada daemon`** until the workflow reaches **DRAFT** (watch logs under **`data/logs/`** per [`docs/OPERATOR_LOGGING.md`](docs/OPERATOR_LOGGING.md)). Inspect **`ada workflow status <id>`** for step rows (**ENRICH** / **GATE** / **DRAFT**).
+
+**Matrix modes**
+
+| Mode | Behaviour |
+|------|-----------|
+| **Legacy matrix-scan** | **`ADA_MATRIX_ENABLE=1`**, **`ADA_MATRIX_PLANNER=0`** (default). Candidates: subject entities with **`classified_as`** / **`under_category`** to a category; **stable order:** `entities.id ASC` (same as PostgreSQL deterministic scan). See [`src/ada/persistent/store.py`](src/ada/persistent/store.py) `list_subjects_with_classified_category`. |
+| **Prioritized planner** | **`ADA_MATRIX_PLANNER=1`** (requires **`GEMINI_API_KEY`** for one planning call per **`ada matrix-scan`** unless validation fails early). Bounded pool: **`list_subjects_with_classified_category_recent_for_planner`** — **recent** = **`last_enriched_at DESC`**, **`NULL`** enriched rows ordered **after** dated rows (`(last_enriched_at IS NULL) ASC` then `DESC`), then **`e.id`** / category as tie‑breakers. The model returns **`entity_ids`** only; the server parses JSON → **whitelist** against that pool → **dedupe** → **truncate to `matrix_planner_top_k` from policy** → **`publish_entity_v1`** enqueue via the same idempotent keys as legacy. |
+| **Fallback** | **`ADA_MATRIX_PLANNER_LEGACY_FALLBACK=1`**: on invalid/unparseable planner JSON or validation failure, run **legacy deterministic** enqueue ( **`ADA_MATRIX_ENABLE`** still respected). |
+
+**Smoke checks:** **`ada workflow status`**, **`ada gate-failures`**, **`data/` logs** ([`docs/OPERATOR_LOGGING.md`](docs/OPERATOR_LOGGING.md)). Audit / ops: **`action_log`** kinds **`matrix_planner_validation_failed`**, **`matrix_planner_blocked`**.
+
+**Risk / monitoring:** planner adds **LLM tokens** once per scan; watch **`usage_ledger`**, global caps (**`ADA_DAILY_TOKEN_BUDGET`**, **`ADA_MONTHLY_TOKEN_BUDGET`**), and GATE failure rates.
+
+**Staging → prod checklist:** validate **`ada matrix-scan --dry-run`** (`ADA_MATRIX_ENABLE` unset still lists candidates without enqueue); enable **`GEMINI_API_KEY`**; enable **`ADA_MATRIX_PLANNER=1`** only when ready; run **`pytest -q`** on the deployment revision.
+
 ### 9.1 B2B Data Publisher (pSEO / ISR)
 
 The **publish** pipeline is **deterministic** where possible: **`ENRICH`** writes **`knowledge_items`**, graph edges (with optional **`source_url`**) and **`entities.last_enriched_at`**; **`GATE`** counts **distinct** non-empty `source_url` on active outgoing edges for `entity_id` and fails the workflow if below **`ADA_PUBLISH_MIN_UNIQUE_FACTS`** (default **3**), so **`DRAFT`** (Gemini JSON) and **`DEPLOY`** (S3) do not run. **Matrix** (**`ada matrix-scan`**) is a separate **cron**-friendly process that enqueues work; the **daemon** executes workflows. **AWS:** set **`S3_BUCKET_NAME`** (or **`ADA_S3_BUCKET`**, same value as the Next app’s bucket), **`AWS_REGION`**, and credentials (or an instance role) with `s3:PutObject` and `s3:GetObject` on `/{project_id}/{campaign_id}/*` for the write identity; the Next **read** role typically needs `s3:ListBucket` + `GetObject`/`HeadObject` (IAM split; see `docs/pseo-isr-contract.md`).
@@ -306,6 +417,8 @@ The **publish** pipeline is **deterministic** where possible: **`ENRICH`** write
 | **`publish_keyword_v1`** | `ENRICH` → `DRAFT` → `DEPLOY` | **`target_keyword_cluster`**, **`project_id`**, **`campaign_id`**, **`niche`**; optional **`keyword_source`**, **`slug`**, **`brand_name`**, **`vertical`**. A **`keyword_landing`** subject entity is created/merged on first **ENRICH**; **`workflows.params_json`** is updated with **`entity_id`** (resume-safe). **No** graph fact **GATE**. |
 
 **Full graph vs keyword-first (operator note):** Use **`publish_entity_v1`** when a **real graph subject** (matrix/ISR entity) is ready: **GATE** enforces **ADA_PUBLISH_MIN_UNIQUE_FACTS** on outgoing edges. Use **`publish_keyword_v1`** to ship a page **tied to a keyword** without selecting a matrix entity—the daemon **ENRICH** step uses the same web/graph rules as **`publish_entity_v1`** (e.g. connector ENRICH when live web is off) but **skips** **GATE**. **Enqueue and deploy** approval env vars (**`ADA_REQUIRE_APPROVAL_FOR_ENQUEUE`**, **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`**) are unchanged. **`ada matrix-scan`** only enqueues **`publish_entity_v1`**, not the keyword kind.
+
+**Keyword track vs matrix planner:** **`publish_keyword_v1`** remains **deterministic** (GSC / keyword selection + template params in code). The **matrix prioritized planner** only proposes **`entity_id`** values for **`publish_entity_v1`** and must **not** mix in keyword workflows; keyword-led publishes use **`ada workflow enqueue --kind publish_keyword_v1`** (or your keyword automation) separately.
 
 **Publisher env:** all variables are documented in [`.env.example`](.env.example) (S3, AWS credentials, `ADA_PUBLISH_MIN_UNIQUE_FACTS`, `ADA_PUBLISH_DRAFT_MODEL`, `ADA_MATRIX_*`, `ADA_PROJECT_ID`, `ADA_CAMPAIGN_ID`).
 

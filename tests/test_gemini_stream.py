@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.genai import types as gtypes
+from google.genai.errors import ClientError, ServerError
 
 from ada.adapters import gemini_stream as gs
 
@@ -114,3 +116,131 @@ async def test_stream_one_model_leg_function_only_no_error_from_empty_text() -> 
     assert leg.text == ""
     assert len(leg.function_calls) == 1
     assert leg.function_calls[0].name == "web_search"
+
+
+def test_transient_gemini_detects_high_demand_strings() -> None:
+    assert gs.transient_gemini_stream_error(RuntimeError('model is busy: "high demand"'), retry_429=False)
+
+
+def test_transient_gemini_skip_invalid_argument_http() -> None:
+    exc = ClientError(
+        400,
+        {"error": {"status": "INVALID_ARGUMENT", "message": "bad"}},
+        None,
+    )
+    assert gs.transient_gemini_stream_error(exc, retry_429=False) is False
+
+
+def test_transient_gemini_optional_429(monkeypatch) -> None:
+    exc = ClientError(429, {"error": {"status": "", "message": "rate"}}, None)
+    assert gs.transient_gemini_stream_error(exc, retry_429=False) is False
+    assert gs.transient_gemini_stream_error(exc, retry_429=True) is True
+
+
+@pytest.mark.asyncio
+async def test_stream_one_model_leg_retries_503_exponential(monkeypatch) -> None:
+    """503 on stream open then succeeds: multiple API tries, deltas flush once after success."""
+    sleeps: list[float] = []
+
+    async def record_sleep(s: float) -> None:
+        sleeps.append(s)
+
+    monkeypatch.setattr(asyncio, "sleep", record_sleep)
+
+    r_env = gs.GeminiStreamRetryEnv(
+        max_retries=4,
+        base_ms=1000,
+        cap_ms=10_000,
+        jitter_ratio=0.0,
+        retry_429=False,
+    )
+
+    class Chunk:
+        text = "hi"
+        candidates: list = []
+        usage_metadata = None
+
+        function_calls = None
+
+    async def ok_stream():
+        yield Chunk()
+
+    async def unavailable():
+        raise ServerError(
+            503,
+            {"error": {"status": "UNAVAILABLE", "message": "slow"}},
+            None,
+        )
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content_stream = AsyncMock(
+        side_effect=[
+            unavailable(),
+            unavailable(),
+            ok_stream(),
+        ]
+    )
+
+    deltas: list[str] = []
+
+    async def on_delta(t: str) -> None:
+        deltas.append(t)
+
+    retry_logged: list[dict] = []
+
+    async def on_retry(pl: dict) -> None:
+        retry_logged.append(pl)
+
+    with patch.object(gs.genai, "Client", return_value=mock_client):
+        leg = await gs.stream_one_model_leg(
+            api_key="k",
+            model="m",
+            system_instruction="",
+            contents=[],
+            tool=gtypes.Tool(function_declarations=[]),
+            on_text_delta=on_delta,
+            gemini_retry_env=r_env,
+            on_transient_gemini_retry=on_retry,
+        )
+
+    assert leg.text == "hi"
+    assert deltas == ["hi"]
+    assert mock_client.aio.models.generate_content_stream.await_count == 3
+    assert len(retry_logged) == 2
+    assert retry_logged[0]["sleep_ms"] == 1000
+    assert retry_logged[1]["sleep_ms"] == 2000
+    assert sleeps == [1.0, 2.0]
+
+
+@pytest.mark.asyncio
+async def test_stream_one_model_leg_non_transient_no_retry() -> None:
+    async def boom() -> None:
+        raise ClientError(
+            400,
+            {"error": {"status": "INVALID_ARGUMENT", "message": "bad"}},
+            None,
+        )
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content_stream = AsyncMock(side_effect=boom)
+
+    r_env = gs.GeminiStreamRetryEnv(
+        max_retries=4,
+        base_ms=1,
+        cap_ms=100,
+        jitter_ratio=0.0,
+        retry_429=False,
+    )
+
+    with patch.object(gs.genai, "Client", return_value=mock_client):
+        with pytest.raises(ClientError):
+            await gs.stream_one_model_leg(
+                api_key="k",
+                model="m",
+                system_instruction="",
+                contents=[],
+                tool=gtypes.Tool(function_declarations=[]),
+                gemini_retry_env=r_env,
+            )
+
+    assert mock_client.aio.models.generate_content_stream.await_count == 1
