@@ -6,6 +6,7 @@ import hashlib
 import os
 import re
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,6 +67,168 @@ def build_file_deny_prefixes(
     if denylist_file is not None:
         parts.extend(load_denylist_paths_from_file(denylist_file))
     return _unique_resolved_paths(*parts)
+
+
+def _env_lookup(environ: Mapping[str, str], key: str, default: str = "") -> str:
+    v = environ.get(key, default)
+    return default if v is None else str(v)
+
+
+@dataclass(frozen=True)
+class RuntimePaths:
+    """Resolved data/memory/policy paths from environment (no GEMINI or API keys)."""
+
+    project_root: Path
+    data_dir: Path
+    memory_dir: Path
+    policy_root: Path
+    require_profile_isolation: bool
+    ada_profile: str
+    ada_profile_data_root: Path
+    profile_data_dir: Path
+    profile_artifacts_dir: Path
+    profile_audit_dir: Path
+    profile_fingerprint: str
+    active_profile_slug: str | None
+    policy_used_repo_fallback: bool
+
+    @property
+    def state_db_path(self) -> Path:
+        return (self.data_dir / "state.db").resolve()
+
+
+def resolve_runtime_paths_from_environ(
+    *,
+    project_root: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    warn_policy_fallback: bool = True,
+) -> RuntimePaths:
+    """
+    Same rules as the first segment of Settings.load (data_dir, memory, policy, isolation).
+    Use ``environ`` to preview paths without mutating ``os.environ`` (e.g. operator UI).
+    """
+    env: Mapping[str, str] = environ if environ is not None else os.environ
+    root = project_root if project_root is not None else _find_project_root()
+    require_profile_isolation = _env_lookup(env, "ADA_REQUIRE_PROFILE_ISOLATION", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    profile_raw = _env_lookup(env, "ADA_PROFILE", "").strip().lower()
+    profile_root_raw = _env_lookup(env, "ADA_PROFILE_DATA_ROOT", "").strip()
+    commercial_raw = _env_lookup(env, "ADA_COMMERCIAL_DATA_DIR", "").strip()
+    policy_used_repo_fallback = False
+
+    if profile_raw or profile_root_raw:
+        if commercial_raw:
+            raise ValueError(
+                "ADA_COMMERCIAL_DATA_DIR cannot be combined with ADA_PROFILE/ADA_PROFILE_DATA_ROOT"
+            )
+        if not profile_raw:
+            raise ValueError("ADA_PROFILE is required when ADA_PROFILE_DATA_ROOT is set")
+        if not PROFILE_SLUG_RE.match(profile_raw):
+            raise ValueError("ADA_PROFILE must match ^[a-z0-9][a-z0-9_-]{1,63}$")
+        if not profile_root_raw:
+            raise ValueError("ADA_PROFILE_DATA_ROOT is required when ADA_PROFILE is set")
+        profile_data_root = Path(profile_root_raw).expanduser()
+        if not profile_data_root.is_absolute():
+            raise ValueError("ADA_PROFILE_DATA_ROOT must be an absolute path")
+        profile_data_dir = (profile_data_root / profile_raw).resolve()
+        data_dir = profile_data_dir
+        ada_profile = profile_raw
+        ada_profile_data_root = profile_data_root.resolve()
+        active_profile_slug = profile_raw
+    elif commercial_raw:
+        data_dir = Path(commercial_raw).expanduser().resolve()
+        ada_profile = "legacy-commercial"
+        ada_profile_data_root = data_dir.parent.resolve()
+        active_profile_slug = None
+    else:
+        data_dir = Path(
+            _env_lookup(env, "ADA_DATA_DIR", str(root / "data"))
+        ).expanduser().resolve()
+        ada_profile = "legacy-default"
+        ada_profile_data_root = data_dir.parent.resolve()
+        active_profile_slug = None
+
+    if require_profile_isolation and not profile_raw:
+        raise ValueError(
+            "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_PROFILE and ADA_PROFILE_DATA_ROOT"
+        )
+
+    profile_data_dir = data_dir.resolve()
+    profile_artifacts_dir = profile_data_dir / "artifacts"
+    profile_audit_dir = profile_data_dir / "audit"
+    fp_seed = f"{ada_profile}|{profile_data_dir}|{root.resolve()}"
+    profile_fingerprint = hashlib.sha256(fp_seed.encode("utf-8")).hexdigest()[:24]
+
+    root_resolved = root.resolve()
+    repo_memory = root_resolved / "memory"
+    repo_policies = root_resolved / "policies"
+
+    memory_env = _env_lookup(env, "ADA_MEMORY_DIR", "").strip()
+    if memory_env:
+        memory_dir = _resolve_env_path(memory_env, project_root=root_resolved)
+    elif profile_raw:
+        memory_dir = (profile_data_dir / "memory").resolve()
+    else:
+        memory_dir = repo_memory
+
+    policy_env = _env_lookup(env, "ADA_POLICY_ROOT", "").strip()
+    if policy_env:
+        policy_root = _resolve_env_path(policy_env, project_root=root_resolved)
+    elif profile_raw:
+        profile_default_yaml = (profile_data_dir / "policies" / "default.yaml").resolve()
+        if profile_default_yaml.is_file():
+            policy_root = (profile_data_dir / "policies").resolve()
+        else:
+            policy_root = repo_policies
+            policy_used_repo_fallback = True
+            if warn_policy_fallback:
+                print(
+                    "ada: policy_root_fallback "
+                    f"profile={profile_raw!r} policy_root={policy_root}",
+                    file=sys.stderr,
+                )
+    else:
+        policy_root = repo_policies
+
+    if require_profile_isolation:
+        try:
+            mem_rel = memory_dir.is_relative_to(root_resolved)
+        except (OSError, ValueError):
+            mem_rel = False
+        try:
+            pol_rel = policy_root.is_relative_to(root_resolved)
+        except (OSError, ValueError):
+            pol_rel = False
+        if mem_rel:
+            raise ValueError(
+                "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_MEMORY_DIR outside "
+                f"the project tree; got {memory_dir} under {root_resolved}"
+            )
+        if pol_rel:
+            raise ValueError(
+                "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_POLICY_ROOT outside "
+                f"the project tree; got {policy_root} under {root_resolved}"
+            )
+
+    return RuntimePaths(
+        project_root=root,
+        data_dir=data_dir,
+        memory_dir=memory_dir,
+        policy_root=policy_root,
+        require_profile_isolation=require_profile_isolation,
+        ada_profile=ada_profile,
+        ada_profile_data_root=ada_profile_data_root,
+        profile_data_dir=profile_data_dir,
+        profile_artifacts_dir=profile_artifacts_dir,
+        profile_audit_dir=profile_audit_dir,
+        profile_fingerprint=profile_fingerprint,
+        active_profile_slug=active_profile_slug,
+        policy_used_repo_fallback=policy_used_repo_fallback,
+    )
 
 
 @dataclass(frozen=True)
@@ -230,103 +393,19 @@ class Settings:
     @classmethod
     def load(cls) -> "Settings":
         root = _find_project_root()
-        require_profile_isolation = os.environ.get(
-            "ADA_REQUIRE_PROFILE_ISOLATION", "0"
-        ).strip().lower() in ("1", "true", "yes", "on")
-        profile_raw = os.environ.get("ADA_PROFILE", "").strip().lower()
-        profile_root_raw = os.environ.get("ADA_PROFILE_DATA_ROOT", "").strip()
-        commercial_raw = os.environ.get("ADA_COMMERCIAL_DATA_DIR", "").strip()
-        if profile_raw or profile_root_raw:
-            if commercial_raw:
-                raise ValueError(
-                    "ADA_COMMERCIAL_DATA_DIR cannot be combined with ADA_PROFILE/ADA_PROFILE_DATA_ROOT"
-                )
-            if not profile_raw:
-                raise ValueError("ADA_PROFILE is required when ADA_PROFILE_DATA_ROOT is set")
-            if not PROFILE_SLUG_RE.match(profile_raw):
-                raise ValueError(
-                    "ADA_PROFILE must match ^[a-z0-9][a-z0-9_-]{1,63}$"
-                )
-            if not profile_root_raw:
-                raise ValueError("ADA_PROFILE_DATA_ROOT is required when ADA_PROFILE is set")
-            profile_data_root = Path(profile_root_raw).expanduser()
-            if not profile_data_root.is_absolute():
-                raise ValueError("ADA_PROFILE_DATA_ROOT must be an absolute path")
-            profile_data_dir = (profile_data_root / profile_raw).resolve()
-            data_dir = profile_data_dir
-            ada_profile = profile_raw
-            ada_profile_data_root = profile_data_root.resolve()
-        elif commercial_raw:
-            data_dir = Path(commercial_raw).expanduser()
-            ada_profile = "legacy-commercial"
-            ada_profile_data_root = data_dir.parent.resolve()
-        else:
-            data_dir = Path(
-                os.environ.get("ADA_DATA_DIR", str(root / "data"))
-            ).expanduser()
-            ada_profile = "legacy-default"
-            ada_profile_data_root = data_dir.parent.resolve()
-        if require_profile_isolation and not profile_raw:
-            raise ValueError(
-                "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_PROFILE and ADA_PROFILE_DATA_ROOT"
-            )
-        profile_data_dir = data_dir.resolve()
-        profile_artifacts_dir = profile_data_dir / "artifacts"
-        profile_audit_dir = profile_data_dir / "audit"
-        fp_seed = f"{ada_profile}|{profile_data_dir}|{root.resolve()}"
-        profile_fingerprint = hashlib.sha256(fp_seed.encode("utf-8")).hexdigest()[:24]
-
-        root_resolved = root.resolve()
-        repo_memory = root_resolved / "memory"
-        repo_policies = root_resolved / "policies"
-
-        memory_env = os.environ.get("ADA_MEMORY_DIR", "").strip()
-        if memory_env:
-            memory_dir = _resolve_env_path(memory_env, project_root=root_resolved)
-        elif profile_raw:
-            memory_dir = (profile_data_dir / "memory").resolve()
-        else:
-            memory_dir = repo_memory
-
-        policy_env = os.environ.get("ADA_POLICY_ROOT", "").strip()
-        if policy_env:
-            policy_root = _resolve_env_path(policy_env, project_root=root_resolved)
-        elif profile_raw:
-            profile_default_yaml = (profile_data_dir / "policies" / "default.yaml").resolve()
-            if profile_default_yaml.is_file():
-                policy_root = (profile_data_dir / "policies").resolve()
-            else:
-                policy_root = repo_policies
-                print(
-                    "ada: policy_root_fallback "
-                    f"profile={profile_raw!r} policy_root={policy_root}",
-                    file=sys.stderr,
-                )
-        else:
-            policy_root = repo_policies
-
-        # TODO(strict-fail-closed): optional fail-fast when profile mode uses repo policy fallback
-        # (policy_root under project_root) for operators who require full policy isolation.
-
-        if require_profile_isolation:
-            try:
-                mem_rel = memory_dir.is_relative_to(root_resolved)
-            except (OSError, ValueError):
-                mem_rel = False
-            try:
-                pol_rel = policy_root.is_relative_to(root_resolved)
-            except (OSError, ValueError):
-                pol_rel = False
-            if mem_rel:
-                raise ValueError(
-                    "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_MEMORY_DIR outside "
-                    f"the project tree; got {memory_dir} under {root_resolved}"
-                )
-            if pol_rel:
-                raise ValueError(
-                    "ADA_REQUIRE_PROFILE_ISOLATION=1 requires ADA_POLICY_ROOT outside "
-                    f"the project tree; got {policy_root} under {root_resolved}"
-                )
+        rp = resolve_runtime_paths_from_environ(
+            project_root=root, environ=os.environ, warn_policy_fallback=True
+        )
+        data_dir = rp.data_dir
+        memory_dir = rp.memory_dir
+        policy_root = rp.policy_root
+        require_profile_isolation = rp.require_profile_isolation
+        ada_profile = rp.ada_profile
+        ada_profile_data_root = rp.ada_profile_data_root
+        profile_data_dir = rp.profile_data_dir
+        profile_artifacts_dir = rp.profile_artifacts_dir
+        profile_audit_dir = rp.profile_audit_dir
+        profile_fingerprint = rp.profile_fingerprint
 
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()

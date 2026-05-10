@@ -1,24 +1,28 @@
-# ada-control — Streamlit operator panel
+# ada-control — compatibility launcher
 
-**[dashboard only]** read-mostly UI for the ADA repo. It does **not** modify `src/ada/**`.
+The operator UI now lives in **`src/ada/observability/`** (bootstrap + env + profiles + memory + observability). This directory keeps a thin **`app.py`** that delegates to the package implementation.
 
 ## Run (Python 3.11+)
+
+**Preferred:**
 
 ```bash
 cd /path/to/ADA
 python -m venv .venv && . .venv/bin/activate
-pip install -r ada-control/requirements.txt
+pip install -e '.[streamlit]'
+streamlit run scripts/ada_observability_app.py
+```
+
+**Still supported:**
+
+```bash
+pip install -e '.[streamlit]'
 streamlit run ada-control/app.py
 ```
 
-Or from `ada-control/`:
+Or from `ada-control/` with the repo on `PYTHONPATH` / editable install: `streamlit run app.py`.
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-Set **ADA repo root** in the sidebar if it is not the parent of `ada-control/`.
+Set **ADA repo root** in the sidebar when it differs from the detected project root.
 
 ## Legend
 
@@ -30,8 +34,11 @@ Set **ADA repo root** in the sidebar if it is not the parent of `ada-control/`.
 - No shell: subprocess uses `shell=False` and only **whitelisted** argv (see below).
 - **`state.db`** is opened **`mode=ro`** (URI). The app does not write the database.
 - The SQL sandbox allows a **single** `SELECT` / `WITH … SELECT` plus a block list (no `INSERT`, `UPDATE`, `ATTACH`, etc.).
+- Optional **audit** rows: operator actions may append `action_log` kind **`operator_ui_bootstrap`** (see `docs/OPERATOR_LOGGING.md`).
 
 ## Whitelisted `ada` commands
+
+Canonical whitelist: **`src/ada/observability/operator_whitelist.py`** (closed argv builder).
 
 | Command | Writes SQLite | Network / keys |
 |--------|---------------|----------------|
@@ -43,6 +50,8 @@ Set **ADA repo root** in the sidebar if it is not the parent of `ada-control/`.
 | `ada gate-failures [--limit] [--all-kinds]` | no | no |
 | `ada mission tick --mission SLUG --dry-run` | no | no |
 | `ada matrix-scan --dry-run [--mission] [--deterministic]` | no | no |
+| `ada mission init …` | **yes** | no |
+| `ada mission migrate-env <slug>` (no `--apply`) | no | no |
 
 **Not whitelisted (use the real CLI):** `ada chat`, `ada daemon`, `ada goal add`, `ada workflow enqueue/retry`, ingest, triage, publish matrix without `--dry-run`, etc.
 
