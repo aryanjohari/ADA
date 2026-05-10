@@ -171,7 +171,8 @@ def resolve_runtime_paths_from_environ(
     if memory_env:
         memory_dir = _resolve_env_path(memory_env, project_root=root_resolved)
     elif profile_raw:
-        memory_dir = (profile_data_dir / "memory").resolve()
+        # Profile mode: soul/master/intent live alongside state.db under the profile folder.
+        memory_dir = profile_data_dir.resolve()
     else:
         memory_dir = repo_memory
 

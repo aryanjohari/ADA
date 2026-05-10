@@ -24,7 +24,7 @@ def test_profile_mode_default_memory_and_policy_fallback(
     monkeypatch.setenv("ADA_PROFILE", "acme")
     monkeypatch.setenv("ADA_PROFILE_DATA_ROOT", str(tmp_path))
     settings = Settings.load()
-    assert settings.memory_dir == (tmp_path / "acme" / "memory").resolve()
+    assert settings.memory_dir == (tmp_path / "acme").resolve()
     assert settings.policy_root == (settings.project_root / "policies").resolve()
     err = capsys.readouterr().err
     assert "policy_root_fallback" in err

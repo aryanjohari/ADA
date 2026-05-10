@@ -289,7 +289,7 @@ Run **N** isolated tenants from one checkout by giving each process a distinct *
 |----------|------|
 | **`ADA_PROFILE`** | Slug (`^[a-z0-9][a-z0-9_-]{1,63}$`); runtime **`data_dir`** = `<ADA_PROFILE_DATA_ROOT>/<ADA_PROFILE>/` (SQLite **`state.db`**, **`artifacts/`**, **`audit/`**). |
 | **`ADA_PROFILE_DATA_ROOT`** | Absolute directory containing one subdirectory per profile slug. |
-| **`ADA_MEMORY_DIR`** | Optional. If unset in profile mode, defaults to **`<data_dir>/memory`** (per-tenant soul/master/intent/allowlist). Legacy **`ADA_DATA_DIR`** / default data layout still uses **`<repo>/memory`**. |
+| **`ADA_MEMORY_DIR`** | Optional. If unset in profile mode, defaults to **`ADA_PROFILE_DATA_ROOT/ADA_PROFILE`** (same as **`data_dir`** — soul/master/intent alongside `state.db`). Legacy **`ADA_DATA_DIR`** / default data layout still uses **`<repo>/memory`**. |
 | **`ADA_POLICY_ROOT`** | Optional. Directory that contains **`default.yaml`** (same shape as **`<repo>/policies/`**). In profile mode, if **`<data_dir>/policies/default.yaml`** exists, that directory is used; otherwise ADA falls back to **`<repo>/policies`** and prints one stderr line: **`policy_root_fallback profile=…`**. Operators who need **fail-closed** policy isolation should ship a **`default.yaml`** per profile (or set **`ADA_POLICY_ROOT`** to an absolute path outside the repo); a stricter startup mode may be added later. |
 | **`ADA_REQUIRE_PROFILE_ISOLATION`** | When **`1`**, requires profile env vars **and** rejects resolved **`ADA_MEMORY_DIR`** / **`ADA_POLICY_ROOT`** (or their defaults) if they lie **under the ADA project root** — use this in prod so tenants cannot accidentally share repo **`<repo>/memory`** or **`<repo>/policies`**. |
 
@@ -299,7 +299,8 @@ Run **N** isolated tenants from one checkout by giving each process a distinct *
 <ADA_PROFILE_DATA_ROOT>/
   <profile>/
     state.db
-    memory/           # soul.md, master.md, intent.md, …
+    soul.md, master.md, intent.md, wakeup.md, shell_allowlist.txt, …  # default memory_dir = this folder
+    backups/          # created by append tools / memory_io
     policies/
       default.yaml    # optional; omit ⇒ repo policies fallback + stderr hint
     artifacts/
@@ -333,7 +334,7 @@ Enable with **`systemctl enable --now ada-daemon@client_acme`**. Put **`ADA_PROF
 
 **Secrets:** **`load_dotenv_if_present()`** only fills keys missing from the process environment; a **shared** repo **`.env`** can still inject defaults (e.g. **`ADA_DATA_DIR`**) into the wrong tenant if a unit forgets to set overrides. Prefer **`EnvironmentFile=`** per instance and avoid committing real secrets.
 
-**Upgrade note:** existing profile users who kept persona files in **`<repo>/memory`** should copy them into **`<data_dir>/memory`** before switching, or set **`ADA_MEMORY_DIR=<repo>/memory`** until migrated.
+**Upgrade note:** existing profile users who kept persona files in **`<repo>/memory`** should copy them into **`ADA_PROFILE_DATA_ROOT/ADA_PROFILE`** (or set **`ADA_MEMORY_DIR`** explicitly) before switching.
 
 **Missions vs profiles:** **`ADA_PROFILE`** / **`ADA_PROFILE_DATA_ROOT`** (or legacy **`ADA_DATA_DIR`**) determine **which `state.db` file** a process uses. **Missions** are **rows in that same database** (`missions` table); goal tasks may set **`tasks.mission_id`** (CLI: **`ada mission init`**, **`ada goal add --mission <slug>`**). One profile therefore supports **many missions** in one SQLite file. Changing profile (or data dir) switches to a **different** database with its **own** missions and tasks—missions are **not** a substitute for profile isolation.
 

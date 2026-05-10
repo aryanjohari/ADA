@@ -43,7 +43,7 @@ def test_profile_mode_memory_under_data(tmp_path: Path, monkeypatch: pytest.Monk
         warn_policy_fallback=False,
     )
     assert rp.data_dir == (root / prof).resolve()
-    assert rp.memory_dir == (root / prof / "memory").resolve()
+    assert rp.memory_dir == (root / prof).resolve()
     assert rp.active_profile_slug == prof
 
 
