@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import uuid
@@ -30,6 +31,7 @@ from ada.observability.env_wizard import (
     parse_dotenv_file,
     validate_paths_and_env,
 )
+from ada.observability.goal_outputs import completed_goal_outputs_recent
 from ada.observability.memory_files import (
     DEFAULT_BOOTSTRAP_BASENAMES,
     list_bootstrap_files,
@@ -592,6 +594,8 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
     with st.expander("Operator hygiene (PII / secrets)", expanded=False):
         st.markdown(
             "- **PII:** do not paste secrets into chat.\n"
+            "- **Goal outputs:** goal text and model `current_output` may contain sensitive "
+            "or personally identifiable information; handle accordingly.\n"
             "- **action_log:** filter UI-driven rows: `kind = 'operator_ui_bootstrap'` "
             "(see docs/OPERATOR_LOGGING.md)."
         )
@@ -603,7 +607,17 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
         return
 
     with conn:
-        sub = st.tabs(["Overview", "Tasks", "Workflows", "Usage", "Action log", "Caps / budgets"])
+        sub = st.tabs(
+            [
+                "Overview",
+                "Tasks",
+                "Goal outputs",
+                "Workflows",
+                "Usage",
+                "Action log",
+                "Caps / budgets",
+            ]
+        )
 
         with sub[0]:
             try:
@@ -630,6 +644,57 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
                     st.dataframe(tasks, use_container_width=True)
 
         with sub[2]:
+            st.subheader("Completed goal outputs")
+            st.caption(
+                "Read-only: completed goal tasks with non-empty `current_output`. "
+                "Mission scope uses the sidebar **Mission slug filter** (if set). "
+                "Goal text and outputs may contain sensitive data."
+            )
+            limit_n = st.slider("Max rows", min_value=20, max_value=50, value=30, step=5)
+            show_full_goal = st.checkbox("Show full goal text", value=False)
+            _goal_preview_len = 280
+
+            try:
+                rows = completed_goal_outputs_recent(
+                    conn,
+                    limit=limit_n,
+                    mission_slug=cfg["mission_filter"] or None,
+                )
+            except Exception as e:
+                st.exception(e)
+            else:
+                if not rows:
+                    st.info(
+                        "No completed goal tasks with non-empty current_output for this filter."
+                    )
+                else:
+                    for r in rows:
+                        st.markdown("---")
+                        ms = r.get("mission_slug")
+                        head = f"**Task `{r['id']}`** · `{r['updated_at']}`"
+                        if ms:
+                            head += f" · mission `{html.escape(str(ms))}`"
+                        st.markdown(head)
+                        goal_text = str(r.get("goal") or "")
+                        if show_full_goal:
+                            st.text(goal_text)
+                        else:
+                            if len(goal_text) <= _goal_preview_len:
+                                st.text(goal_text)
+                            else:
+                                st.text(goal_text[:_goal_preview_len] + "…")
+                        out = str(r.get("current_output") or "")
+                        st.caption("current_output")
+                        safe = html.escape(out, quote=True)
+                        st.markdown(
+                            f'<div style="max-height:480px;overflow-y:auto;white-space:pre-wrap;'
+                            f'word-break:break-word;padding:0.75rem;border:1px solid rgba(128,128,128,0.35);'
+                            f'border-radius:6px;font-family:system-ui,sans-serif;font-size:0.95rem;">'
+                            f"{safe}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+        with sub[3]:
             st.subheader("Pending / failed tasks (sanitized)")
             try:
                 rows = tasks_pending_failed(conn, limit=200)
@@ -685,7 +750,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
             if "obs_alog" in st.session_state:
                 st.dataframe(st.session_state.obs_alog, use_container_width=True)
 
-        with sub[3]:
+        with sub[4]:
             st.subheader("Usage rollups (UTC day)")
             try:
                 st.dataframe(
@@ -719,7 +784,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
             except Exception as e:
                 st.exception(e)
 
-        with sub[4]:
+        with sub[5]:
             st.subheader("Recent action_log (payloads sanitized)")
             try:
                 rows = action_log_recent(conn, limit=120)
@@ -740,7 +805,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
             except Exception as e:
                 st.exception(e)
 
-        with sub[5]:
+        with sub[6]:
             st.subheader("Effective caps (merged env + process)")
             st.caption(
                 "Merged from process environment and sidebar `.env` (dotenv override=False rules). "
