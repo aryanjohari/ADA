@@ -12,6 +12,71 @@ WORKFLOW_KINDS: frozenset[str] = frozenset(
 
 _KEYWORD_CLUSTER_MAX_CHARS = 160
 
+_PUBLISH_DELIVERY_MODES = frozenset({"isr_s3", "none", "wordpress_csv_s3"})
+
+
+def _normalize_publish_delivery(out: dict[str, Any]) -> None:
+    """Coalesce ``delivery_targets`` → ``delivery``, validate, replace with normalized dict."""
+    targets = out.pop("delivery_targets", None)
+    if out.get("delivery") is None and targets is not None:
+        out["delivery"] = targets
+    raw = out.get("delivery")
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        raise ValueError("delivery must be a JSON object")
+    if not raw:
+        del out["delivery"]
+        return
+    mode_raw = raw.get("mode")
+    if not isinstance(mode_raw, str) or not mode_raw.strip():
+        raise ValueError("delivery.mode is required when delivery is set")
+    mode = mode_raw.strip().lower()
+    if mode not in _PUBLISH_DELIVERY_MODES:
+        raise ValueError(
+            f"delivery.mode must be one of {sorted(_PUBLISH_DELIVERY_MODES)}"
+        )
+    normalized: dict[str, Any] = {"mode": mode}
+    if mode == "wordpress_csv_s3":
+        wps = raw.get("wordpress_csv_s3")
+        if not isinstance(wps, dict):
+            raise ValueError(
+                "delivery.wordpress_csv_s3 must be an object when mode is wordpress_csv_s3"
+            )
+        key_raw = wps.get("key")
+        pfx_raw = wps.get("prefix")
+        k_tr = str(key_raw).strip() if key_raw is not None else ""
+        p_tr = str(pfx_raw).strip() if pfx_raw is not None else ""
+        if bool(k_tr) == bool(p_tr):
+            raise ValueError(
+                "delivery.wordpress_csv_s3 requires exactly one of non-empty key or prefix"
+            )
+        bucket_raw = wps.get("bucket")
+        bucket_tr = str(bucket_raw).strip() if bucket_raw is not None else ""
+        sub: dict[str, Any] = {}
+        if bucket_tr:
+            sub["bucket"] = bucket_tr
+        if k_tr:
+            if ".." in k_tr or k_tr.startswith("/"):
+                raise ValueError("delivery.wordpress_csv_s3.key must be a relative key without '..'")
+            sub["key"] = k_tr
+        else:
+            sub["prefix"] = p_tr.strip().strip("/")
+        idem = wps.get("idempotency")
+        if idem is not None:
+            if not isinstance(idem, str) or not idem.strip():
+                raise ValueError(
+                    "delivery.wordpress_csv_s3.idempotency must be a non-empty string when set"
+                )
+            idem_s = idem.strip().lower()
+            if idem_s not in ("overwrite", "overwrite_only"):
+                raise ValueError(
+                    "delivery.wordpress_csv_s3.idempotency must be overwrite or overwrite_only"
+                )
+            sub["idempotency"] = idem_s
+        normalized["wordpress_csv_s3"] = sub
+    out["delivery"] = normalized
+
 
 def validate_target_keyword_cluster(value: Any) -> str:
     """Validate optional publish keyword targeting input."""
@@ -107,6 +172,7 @@ def validate_and_normalize_workflow_params(kind: str, params: dict[str, Any]) ->
         out["target_keyword_cluster"] = validate_target_keyword_cluster(
             out.get("target_keyword_cluster")
         )
+        _normalize_publish_delivery(out)
         return out
     if k == "publish_entity_v1":
         eid = out.get("entity_id")
@@ -123,6 +189,7 @@ def validate_and_normalize_workflow_params(kind: str, params: dict[str, Any]) ->
             out["target_keyword_cluster"] = validate_target_keyword_cluster(
                 out["target_keyword_cluster"]
             )
+        _normalize_publish_delivery(out)
         return out
     if k == "rss_fetch_then_graph_then_synth":
         lim_raw = out.get("recent_item_limit")
@@ -166,6 +233,7 @@ def expand_workflow_template(
                 "keyword_source",
                 "brand_name",
                 "vertical",
+                "delivery",
             ):
                 if key in params and params[key] is not None:
                     inp[key] = params[key]
@@ -194,6 +262,7 @@ def expand_workflow_template(
                 "page_profile",
                 "workflow_kind",
                 "keyword_source",
+                "delivery",
             ):
                 if key in params and params[key] is not None:
                     inp[key] = params[key]

@@ -12,16 +12,12 @@ from typing import Any
 
 from ada.config import Settings, load_dotenv_if_present
 from ada.profile_runtime import enforce_profile_identity
-from ada.query_engine import QueryEngine
-
-# Header must match a typical WordPress/CSV import (e.g. wordpress.csv).
-WORDPRESS_CSV_FIELDNAMES = (
-    "Title",
-    "Content",
-    "Slug",
-    "Meta_Description",
-    "Focus_Keyword",
+from ada.publish.wordpress_csv import (
+    WORDPRESS_CSV_FIELDNAMES,
+    page_to_wordpress_row,
+    resolve_focus_keyword,
 )
+from ada.query_engine import QueryEngine
 
 
 def _parse_json_object(raw: str | None) -> dict[str, Any]:
@@ -32,41 +28,6 @@ def _parse_json_object(raw: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return o if isinstance(o, dict) else {}
-
-
-def resolve_focus_keyword(
-    output_json: dict[str, Any],
-    step_input_json: dict[str, Any],
-    workflow_params_json: dict[str, Any],
-) -> str:
-    """1:1 with publish params: target_keyword_cluster, else niche."""
-    for src in (output_json, step_input_json, workflow_params_json):
-        t = src.get("target_keyword_cluster")
-        if isinstance(t, str) and t.strip():
-            return t.strip()
-    for src in (step_input_json, workflow_params_json):
-        n = src.get("niche")
-        if isinstance(n, str) and n.strip():
-            return n.strip()
-    return ""
-
-
-def page_to_wordpress_row(
-    page: dict[str, Any],
-    focus_keyword: str,
-) -> dict[str, str]:
-    """Map PageJsonV1 dump keys to WordPress column names."""
-    title = str(page.get("title", "") or "")
-    content = str(page.get("content", "") or "")
-    slug = str(page.get("slug", "") or "")
-    meta = str(page.get("meta_description", "") or "")
-    return {
-        "Title": title,
-        "Content": content,
-        "Slug": slug,
-        "Meta_Description": meta,
-        "Focus_Keyword": focus_keyword,
-    }
 
 
 SELECT_DRAFT_PAGES = """

@@ -13,6 +13,7 @@ Requires-Dist: pydantic>=2.0.0
 Requires-Dist: boto3>=1.34.0
 Provides-Extra: streamlit
 Requires-Dist: streamlit>=1.33; extra == "streamlit"
+Requires-Dist: python-dotenv>=1.0.0; extra == "streamlit"
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.24; extra == "dev"
@@ -309,7 +310,7 @@ Run **N** isolated tenants from one checkout by giving each process a distinct *
 |----------|------|
 | **`ADA_PROFILE`** | Slug (`^[a-z0-9][a-z0-9_-]{1,63}$`); runtime **`data_dir`** = `<ADA_PROFILE_DATA_ROOT>/<ADA_PROFILE>/` (SQLite **`state.db`**, **`artifacts/`**, **`audit/`**). |
 | **`ADA_PROFILE_DATA_ROOT`** | Absolute directory containing one subdirectory per profile slug. |
-| **`ADA_MEMORY_DIR`** | Optional. If unset in profile mode, defaults to **`<data_dir>/memory`** (per-tenant soul/master/intent/allowlist). Legacy **`ADA_DATA_DIR`** / default data layout still uses **`<repo>/memory`**. |
+| **`ADA_MEMORY_DIR`** | Optional. If unset in profile mode, defaults to **`ADA_PROFILE_DATA_ROOT/ADA_PROFILE`** (same as **`data_dir`** — soul/master/intent alongside `state.db`). Legacy **`ADA_DATA_DIR`** / default data layout still uses **`<repo>/memory`**. |
 | **`ADA_POLICY_ROOT`** | Optional. Directory that contains **`default.yaml`** (same shape as **`<repo>/policies/`**). In profile mode, if **`<data_dir>/policies/default.yaml`** exists, that directory is used; otherwise ADA falls back to **`<repo>/policies`** and prints one stderr line: **`policy_root_fallback profile=…`**. Operators who need **fail-closed** policy isolation should ship a **`default.yaml`** per profile (or set **`ADA_POLICY_ROOT`** to an absolute path outside the repo); a stricter startup mode may be added later. |
 | **`ADA_REQUIRE_PROFILE_ISOLATION`** | When **`1`**, requires profile env vars **and** rejects resolved **`ADA_MEMORY_DIR`** / **`ADA_POLICY_ROOT`** (or their defaults) if they lie **under the ADA project root** — use this in prod so tenants cannot accidentally share repo **`<repo>/memory`** or **`<repo>/policies`**. |
 
@@ -319,7 +320,8 @@ Run **N** isolated tenants from one checkout by giving each process a distinct *
 <ADA_PROFILE_DATA_ROOT>/
   <profile>/
     state.db
-    memory/           # soul.md, master.md, intent.md, …
+    soul.md, master.md, intent.md, wakeup.md, shell_allowlist.txt, …  # default memory_dir = this folder
+    backups/          # created by append tools / memory_io
     policies/
       default.yaml    # optional; omit ⇒ repo policies fallback + stderr hint
     artifacts/
@@ -353,7 +355,7 @@ Enable with **`systemctl enable --now ada-daemon@client_acme`**. Put **`ADA_PROF
 
 **Secrets:** **`load_dotenv_if_present()`** only fills keys missing from the process environment; a **shared** repo **`.env`** can still inject defaults (e.g. **`ADA_DATA_DIR`**) into the wrong tenant if a unit forgets to set overrides. Prefer **`EnvironmentFile=`** per instance and avoid committing real secrets.
 
-**Upgrade note:** existing profile users who kept persona files in **`<repo>/memory`** should copy them into **`<data_dir>/memory`** before switching, or set **`ADA_MEMORY_DIR=<repo>/memory`** until migrated.
+**Upgrade note:** existing profile users who kept persona files in **`<repo>/memory`** should copy them into **`ADA_PROFILE_DATA_ROOT/ADA_PROFILE`** (or set **`ADA_MEMORY_DIR`** explicitly) before switching.
 
 **Missions vs profiles:** **`ADA_PROFILE`** / **`ADA_PROFILE_DATA_ROOT`** (or legacy **`ADA_DATA_DIR`**) determine **which `state.db` file** a process uses. **Missions** are **rows in that same database** (`missions` table); goal tasks may set **`tasks.mission_id`** (CLI: **`ada mission init`**, **`ada goal add --mission <slug>`**). One profile therefore supports **many missions** in one SQLite file. Changing profile (or data dir) switches to a **different** database with its **own** missions and tasks—missions are **not** a substitute for profile isolation.
 
@@ -415,6 +417,12 @@ The **publish** pipeline is **deterministic** where possible: **`ENRICH`** write
 | **`rss_fetch_then_graph_then_synth`** | `FETCH` → `EXTRACT` → `SYNTHESIZE` | `topic?`, `recent_item_limit?` |
 | **`publish_entity_v1`** | `ENRICH` → `GATE` → `DRAFT` → `DEPLOY` | **`entity_id`**, **`project_id`**, **`campaign_id`**, **`niche`**, optional **`slug`**, optional **`target_keyword_cluster`** (string), optional **`keyword_source`** metadata; workflow-level **`idempotency` via `--idempotency-key` on enqueue** |
 | **`publish_keyword_v1`** | `ENRICH` → `DRAFT` → `DEPLOY` | **`target_keyword_cluster`**, **`project_id`**, **`campaign_id`**, **`niche`**; optional **`keyword_source`**, **`slug`**, **`brand_name`**, **`vertical`**. A **`keyword_landing`** subject entity is created/merged on first **ENRICH**; **`workflows.params_json`** is updated with **`entity_id`** (resume-safe). **No** graph fact **GATE**. |
+
+**Publish `delivery` (optional, both publish kinds):** Omit **`delivery`** and **`DEPLOY`** keeps the default **ISR** path (`page.json` + `manifest.json` on **`S3_BUCKET_NAME`** / **`ADA_S3_BUCKET`**). To override, set **`delivery`** in merged **`params_json`** (playbook allowlist + mission **`defaults_json`** + enqueue delta), for example:
+
+- **`{"delivery": {"mode": "isr_s3"}}`** — same as default (explicit).
+- **`{"delivery": {"mode": "none"}}`** — **DRAFT** runs as today; **DEPLOY** skips remote S3, completes the workflow, and logs **`publish_delivery_skipped`** (approval rules unchanged when **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`** is on).
+- **`{"delivery": {"mode": "wordpress_csv_s3", "wordpress_csv_s3": {...}}}`** — **DEPLOY** writes a one-row WordPress-style CSV (**`Title`**, **`Content`**, **`Slug`**, **`Meta_Description`**, **`Focus_Keyword`**) to a **separate** bucket via **`PutObject`**. Provide exactly one of **`key`** (full object key) or **`prefix`** (directory prefix; object key = `prefix/{slug}.csv`). Bucket: set **`delivery.wordpress_csv_s3.bucket`**, or omit it and set **`ADA_WORDPRESS_CSV_S3_BUCKET`** as the default. Optional **`idempotency`**: **`overwrite`** / **`overwrite_only`** (default behavior is overwrite). Legacy alias **`delivery_targets`** is merged into **`delivery`** when **`delivery`** is absent (**`delivery`** wins if both are sent).
 
 **Full graph vs keyword-first (operator note):** Use **`publish_entity_v1`** when a **real graph subject** (matrix/ISR entity) is ready: **GATE** enforces **ADA_PUBLISH_MIN_UNIQUE_FACTS** on outgoing edges. Use **`publish_keyword_v1`** to ship a page **tied to a keyword** without selecting a matrix entity—the daemon **ENRICH** step uses the same web/graph rules as **`publish_entity_v1`** (e.g. connector ENRICH when live web is off) but **skips** **GATE**. **Enqueue and deploy** approval env vars (**`ADA_REQUIRE_APPROVAL_FOR_ENQUEUE`**, **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`**) are unchanged. **`ada matrix-scan`** only enqueues **`publish_entity_v1`**, not the keyword kind.
 

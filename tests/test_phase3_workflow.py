@@ -181,6 +181,73 @@ def test_expand_publish_keyword_v1_rejects_missing_target():
         )
 
 
+def test_validate_publish_delivery_invalid_mode():
+    with pytest.raises(ValueError, match="delivery.mode"):
+        validate_and_normalize_workflow_params(
+            "publish_keyword_v1",
+            {
+                "target_keyword_cluster": "roof repair auckland",
+                "project_id": "p",
+                "campaign_id": "c",
+                "niche": "n",
+                "delivery": {"mode": "ftp"},
+            },
+        )
+
+
+def test_validate_publish_delivery_coalesce_targets_alias():
+    p = validate_and_normalize_workflow_params(
+        "publish_keyword_v1",
+        {
+            "target_keyword_cluster": "roof repair auckland",
+            "project_id": "p",
+            "campaign_id": "c",
+            "niche": "n",
+            "delivery_targets": {"mode": "none"},
+        },
+    )
+    assert "delivery_targets" not in p
+    assert p.get("delivery") == {"mode": "none"}
+
+
+def test_validate_publish_delivery_wordpress_requires_key_xor_prefix():
+    with pytest.raises(ValueError, match="exactly one"):
+        validate_and_normalize_workflow_params(
+            "publish_keyword_v1",
+            {
+                "target_keyword_cluster": "roof repair auckland",
+                "project_id": "p",
+                "campaign_id": "c",
+                "niche": "n",
+                "delivery": {
+                    "mode": "wordpress_csv_s3",
+                    "wordpress_csv_s3": {"bucket": "b"},
+                },
+            },
+        )
+
+
+def test_expand_publish_merges_delivery_into_steps():
+    p = validate_and_normalize_workflow_params(
+        "publish_keyword_v1",
+        {
+            "target_keyword_cluster": "roof repair auckland",
+            "project_id": "p",
+            "campaign_id": "c",
+            "niche": "n",
+            "delivery": {
+                "mode": "wordpress_csv_s3",
+                "wordpress_csv_s3": {"bucket": "wp-bucket", "prefix": "exports"},
+            },
+        },
+    )
+    st = expand_workflow_template("publish_keyword_v1", p, max_steps=10)
+    for step in st:
+        inp = step.get("input_json") or {}
+        assert inp["delivery"]["mode"] == "wordpress_csv_s3"
+        assert inp["delivery"]["wordpress_csv_s3"]["bucket"] == "wp-bucket"
+
+
 def test_validate_dependency_rejects_forward_ref():
     steps = [
         {

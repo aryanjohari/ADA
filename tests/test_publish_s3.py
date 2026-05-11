@@ -13,10 +13,12 @@ from moto import mock_aws
 from ada.config import Settings
 from ada.publish.page_schema_v1 import LeadGenV1, PageJsonV1
 from ada.publish.s3_publish import (
+    CSV_UTF8,
     deploy_page_and_manifest,
     manifest_s3_key,
     normalize_manifest_to_entries,
     page_s3_key,
+    put_s3_object_bytes,
     upsert_route_entry,
 )
 
@@ -123,3 +125,31 @@ def test_deploy_requires_og_image():
         deploy_page_and_manifest(
             settings, page=page, project_id="p", campaign_id="c", niche="n"
         )
+
+
+@mock_aws
+def test_put_s3_object_bytes_csv_upload():
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+    bucket = "ada-test-csv-bucket-unique"
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.create_bucket(Bucket=bucket)
+    with mock.patch.dict(
+        os.environ,
+        {
+            "AWS_DEFAULT_REGION": "us-east-1",
+        },
+    ):
+        settings = Settings.load()
+    body = b"Title,Slug\nHello,my-slug\n"
+    out = put_s3_object_bytes(
+        settings,
+        bucket=bucket,
+        key="exports/my-slug.csv",
+        body=body,
+        content_type=CSV_UTF8,
+    )
+    assert out["bucket"] == bucket
+    assert out["key"] == "exports/my-slug.csv"
+    assert out["bytes_written"] == len(body)
+    obj = s3.get_object(Bucket=bucket, Key="exports/my-slug.csv")
+    assert obj["Body"].read() == body

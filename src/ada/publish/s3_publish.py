@@ -16,6 +16,7 @@ from ada.publish.page_schema_v1 import PageJsonV1
 log = logging.getLogger("ada.publish.s3")
 
 JSON_UTF8 = "application/json; charset=utf-8"
+CSV_UTF8 = "text/csv; charset=utf-8"
 
 
 def page_s3_key(project_id: str, campaign_id: str, slug: str) -> str:
@@ -88,7 +89,7 @@ def upsert_route_entry(
     return out
 
 
-def _s3_client(settings: Settings):
+def s3_client_for_settings(settings: Settings):
     extra: dict[str, Any] = {}
     if settings.aws_endpoint_url:
         extra["endpoint_url"] = settings.aws_endpoint_url
@@ -98,6 +99,26 @@ def _s3_client(settings: Settings):
         config=BotoConfig(retries={"max_attempts": 3, "mode": "standard"}),
         **extra,
     )
+
+
+def put_s3_object_bytes(
+    settings: Settings,
+    *,
+    bucket: str,
+    key: str,
+    body: bytes,
+    content_type: str,
+) -> dict[str, Any]:
+    """Single-object PutObject (e.g. WordPress CSV delivery). Returns output_json-friendly fields."""
+    b = str(bucket).strip()
+    k = str(key).strip().lstrip("/")
+    if not b:
+        raise ValueError("S3 bucket is required")
+    if not k or ".." in k:
+        raise ValueError("S3 key is required and must not contain '..'")
+    client = s3_client_for_settings(settings)
+    client.put_object(Bucket=b, Key=k, Body=body, ContentType=content_type)
+    return {"bucket": b, "key": k, "bytes_written": len(body)}
 
 
 def deploy_page_and_manifest(
@@ -122,7 +143,7 @@ def deploy_page_and_manifest(
     pkey = page_s3_key(project_id, campaign_id, page.slug)
     mkey = manifest_s3_key(project_id, campaign_id)
 
-    client = _s3_client(settings)
+    client = s3_client_for_settings(settings)
     b_page = page_body.encode("utf-8")
 
     client.put_object(

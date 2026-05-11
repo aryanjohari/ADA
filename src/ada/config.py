@@ -327,6 +327,8 @@ class Settings:
     graph_lite_extract_model: str
     # B2B pSEO / S3 publisher
     s3_bucket_name: str
+    # Optional default bucket for publish delivery mode wordpress_csv_s3 when params omit bucket.
+    wordpress_csv_s3_bucket_default: str
     aws_region: str
     aws_endpoint_url: str | None
     ada_publish_min_unique_facts: int
@@ -674,6 +676,9 @@ class Settings:
         s3_raw = os.environ.get("S3_BUCKET_NAME", "").strip() or os.environ.get(
             "ADA_S3_BUCKET", ""
         ).strip()
+        wordpress_csv_s3_bucket_default = os.environ.get(
+            "ADA_WORDPRESS_CSV_S3_BUCKET", ""
+        ).strip()
         aws_region = os.environ.get("AWS_REGION", "us-east-1").strip() or "us-east-1"
         aws_ep = os.environ.get("AWS_ENDPOINT_URL", "").strip() or None
         try:
@@ -931,6 +936,7 @@ class Settings:
             graph_lite_token_cap_per_job=graph_lite_token_cap_per_job,
             graph_lite_extract_model=graph_lite_extract_model,
             s3_bucket_name=s3_raw,
+            wordpress_csv_s3_bucket_default=wordpress_csv_s3_bucket_default,
             aws_region=aws_region,
             aws_endpoint_url=aws_ep,
             ada_publish_min_unique_facts=ada_publish_min,

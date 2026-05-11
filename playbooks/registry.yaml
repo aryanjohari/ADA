@@ -36,6 +36,8 @@ playbooks:
       - workflow_kind
       - keyword_source
       - target_keyword_cluster
+      - delivery
+      - delivery_targets
     risk_tier: medium
 
   publish_keyword_v1:
@@ -58,4 +60,6 @@ playbooks:
       - brand_name
       - vertical
       - workflow_kind
+      - delivery
+      - delivery_targets
     risk_tier: medium

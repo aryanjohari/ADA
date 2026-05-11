@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import aiosqlite
+from typing import Any
 from unittest import mock
 
+import aiosqlite
+import boto3
 import pytest
+from moto import mock_aws
 
 from ada.config import Settings
 from ada.query_engine import TASK_KIND_GOAL, QueryEngine
+from ada.publish.s3_publish import deploy_page_and_manifest
 from ada.workflow.runner import run_workflow_for_parent_task
 from ada.workflow.templates import expand_workflow_template
 
@@ -296,3 +300,265 @@ async def test_publish_keyword_v1_provisions_entity_and_draft_gets_id(
         assert call_kw.get("params", {}).get("target_keyword_cluster")
     finally:
         await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_deploy_delivery_none_skips_to_thread_and_completes(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_PUBLISH_MIN_UNIQUE_FACTS", "0")
+    db = tmp_path / "del_none.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        sub = await qe.upsert_entity(type="service", name="Sn", payload_json={})
+        eid = int(sub["entity_id"])
+        tid = await qe.insert_task("del none", status="pending", task_kind=TASK_KIND_GOAL)
+        wf_id, _ = await qe.enqueue_workflow(
+            kind="t_del_none",
+            goal_text="del none",
+            params_json={"entity_id": eid},
+            parent_task_id=tid,
+            idempotency_key=None,
+            steps=[
+                {
+                    "step_index": 0,
+                    "step_type": "DRAFT",
+                    "input_json": {
+                        "entity_id": eid,
+                        "project_id": "p",
+                        "campaign_id": "c",
+                        "niche": "n",
+                        "delivery": {"mode": "none"},
+                    },
+                },
+                {
+                    "step_index": 1,
+                    "step_type": "DEPLOY",
+                    "input_json": {
+                        "entity_id": eid,
+                        "project_id": "p",
+                        "campaign_id": "c",
+                        "niche": "n",
+                        "delivery": {"mode": "none"},
+                    },
+                },
+            ],
+        )
+        s = Settings.load()
+        page = {
+            "slug": "my-page",
+            "title": "t",
+            "meta_description": "m",
+            "content": "<p>x</p>",
+            "lead_gen": {
+                "form_fields": [],
+                "form_action_url": "https://example.com/contact",
+                "call_display_phone": "",
+                "call_tel_link": "tel:+1",
+            },
+            "json_ld": {"@context": "https://schema.org", "@type": "WebPage"},
+        }
+        with mock.patch(
+            "ada.workflow.runner.run_publish_draft",
+            new=mock.AsyncMock(return_value={"page": page}),
+        ):
+            with mock.patch(
+                "ada.workflow.runner.asyncio.to_thread",
+                new=mock.AsyncMock(
+                    side_effect=AssertionError("to_thread must not run for delivery none")
+                ),
+            ):
+                await run_workflow_for_parent_task(
+                    qe, parent_task_id=tid, goal="del none", **_wf_kwargs(s)
+                )
+        w = await qe.get_workflow_by_id(wf_id)
+        assert w and str(w.get("status")) == "completed"
+        steps = await qe.list_workflow_steps(wf_id)
+        dep = steps[1].get("output_json") or {}
+        assert dep.get("delivery") == "none"
+        assert dep.get("skipped_remote") is True
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_deploy_default_calls_isr_deploy_via_to_thread(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_PUBLISH_MIN_UNIQUE_FACTS", "0")
+    db = tmp_path / "del_isr.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    try:
+        sub = await qe.upsert_entity(type="service", name="Si", payload_json={})
+        eid = int(sub["entity_id"])
+        tid = await qe.insert_task("del isr", status="pending", task_kind=TASK_KIND_GOAL)
+        wf_id, _ = await qe.enqueue_workflow(
+            kind="t_del_isr",
+            goal_text="del isr",
+            params_json={"entity_id": eid},
+            parent_task_id=tid,
+            idempotency_key=None,
+            steps=[
+                {
+                    "step_index": 0,
+                    "step_type": "DRAFT",
+                    "input_json": {
+                        "entity_id": eid,
+                        "project_id": "p",
+                        "campaign_id": "c",
+                        "niche": "n",
+                    },
+                },
+                {
+                    "step_index": 1,
+                    "step_type": "DEPLOY",
+                    "input_json": {
+                        "entity_id": eid,
+                        "project_id": "p",
+                        "campaign_id": "c",
+                        "niche": "n",
+                    },
+                },
+            ],
+        )
+        s = Settings.load()
+        page = {
+            "slug": "my-page",
+            "title": "t",
+            "meta_description": "m",
+            "content": "<p>x</p>",
+            "og_image": "https://img.test/1.png",
+            "lead_gen": {
+                "form_fields": [],
+                "form_action_url": "https://example.com/contact",
+                "call_display_phone": "",
+                "call_tel_link": "tel:+1",
+            },
+            "json_ld": {"@context": "https://schema.org", "@type": "WebPage"},
+        }
+        captured: list[Any] = []
+
+        async def _to_thread(fn, *args, **kwargs):
+            captured.append(fn)
+            if fn is deploy_page_and_manifest:
+                return {"page_s3_key": "p/c/my-page/page.json", "manifest_s3_key": "p/c/manifest.json", "bytes_written": {"page": 1, "manifest": 2}}
+            return await asyncio.to_thread(fn, *args, **kwargs)
+
+        with mock.patch(
+            "ada.workflow.runner.run_publish_draft",
+            new=mock.AsyncMock(return_value={"page": page}),
+        ):
+            with mock.patch("ada.workflow.runner.asyncio.to_thread", new=_to_thread):
+                await run_workflow_for_parent_task(
+                    qe, parent_task_id=tid, goal="del isr", **_wf_kwargs(s)
+                )
+        assert deploy_page_and_manifest in captured
+        w = await qe.get_workflow_by_id(wf_id)
+        assert w and str(w.get("status")) == "completed"
+    finally:
+        await qe.close()
+
+
+@pytest.mark.asyncio
+async def test_deploy_wordpress_csv_s3_writes_object(
+    tmp_path, schema_sql_path, monkeypatch
+):
+    monkeypatch.setenv("ADA_PUBLISH_MIN_UNIQUE_FACTS", "0")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    db = tmp_path / "del_wp.csv.db"
+    qe = QueryEngine(db, schema_sql_path, debounce_ms=2)
+    await qe.connect()
+    bucket = "ada-wp-csv-runner-bucket"
+    with mock_aws():
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket=bucket)
+        try:
+            sub = await qe.upsert_entity(type="service", name="Swp", payload_json={})
+            eid = int(sub["entity_id"])
+            tid = await qe.insert_task("wp csv", status="pending", task_kind=TASK_KIND_GOAL)
+            wf_id, _ = await qe.enqueue_workflow(
+                kind="t_wp_csv",
+                goal_text="wp csv",
+                params_json={"entity_id": eid},
+                parent_task_id=tid,
+                idempotency_key=None,
+                steps=[
+                    {
+                        "step_index": 0,
+                        "step_type": "DRAFT",
+                        "input_json": {
+                            "entity_id": eid,
+                            "project_id": "p",
+                            "campaign_id": "c",
+                            "niche": "niche-focus",
+                            "target_keyword_cluster": "roof repair",
+                            "delivery": {
+                                "mode": "wordpress_csv_s3",
+                                "wordpress_csv_s3": {
+                                    "bucket": bucket,
+                                    "key": "exports/one.csv",
+                                },
+                            },
+                        },
+                    },
+                    {
+                        "step_index": 1,
+                        "step_type": "DEPLOY",
+                        "input_json": {
+                            "entity_id": eid,
+                            "project_id": "p",
+                            "campaign_id": "c",
+                            "niche": "niche-focus",
+                            "target_keyword_cluster": "roof repair",
+                            "delivery": {
+                                "mode": "wordpress_csv_s3",
+                                "wordpress_csv_s3": {
+                                    "bucket": bucket,
+                                    "key": "exports/one.csv",
+                                },
+                            },
+                        },
+                    },
+                ],
+            )
+            s = Settings.load()
+            page = {
+                "slug": "my-page",
+                "title": "T1",
+                "meta_description": "M1",
+                "content": "<p>body</p>",
+                "lead_gen": {
+                    "form_fields": [],
+                    "form_action_url": "https://example.com/contact",
+                    "call_display_phone": "",
+                    "call_tel_link": "tel:+1",
+                },
+                "json_ld": {"@context": "https://schema.org", "@type": "WebPage"},
+            }
+            with mock.patch(
+                "ada.workflow.runner.run_publish_draft",
+                new=mock.AsyncMock(
+                    return_value={
+                        "page": page,
+                        "target_keyword_cluster": "roof repair",
+                    }
+                ),
+            ):
+                await run_workflow_for_parent_task(
+                    qe, parent_task_id=tid, goal="wp csv", **_wf_kwargs(s)
+                )
+            w = await qe.get_workflow_by_id(wf_id)
+            assert w and str(w.get("status")) == "completed"
+            steps = await qe.list_workflow_steps(wf_id)
+            dep = steps[1].get("output_json") or {}
+            assert dep.get("delivery") == "wordpress_csv_s3"
+            assert dep.get("bucket") == bucket
+            assert dep.get("key") == "exports/one.csv"
+            raw = s3.get_object(Bucket=bucket, Key="exports/one.csv")["Body"].read().decode(
+                "utf-8"
+            )
+            assert "T1" in raw and "my-page" in raw and "roof repair" in raw
+        finally:
+            await qe.close()

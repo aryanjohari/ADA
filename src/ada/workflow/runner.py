@@ -18,10 +18,26 @@ from ada.publish.facts import count_unique_local_facts
 from ada.workflow.publish_enrich_step import run_publish_entity_enrich
 from ada.workflow.templates import validate_target_keyword_cluster
 from ada.publish.page_schema_v1 import PageJsonV1
-from ada.publish.s3_publish import deploy_page_and_manifest
+from ada.publish.s3_publish import CSV_UTF8, deploy_page_and_manifest, put_s3_object_bytes
+from ada.publish.wordpress_csv import (
+    page_to_wordpress_row,
+    resolve_focus_keyword,
+    wordpress_csv_single_row_bytes,
+    wordpress_csv_s3_object_key,
+)
 from ada.query_engine import QueryEngine
 from ada.tools.registry import KNOWLEDGE_TOOLS_EXTRACT, KNOWLEDGE_TOOLS_SYNTHESIZE
 log = logging.getLogger("ada.workflow.runner")
+
+
+def _publish_delivery_mode(merged: dict[str, Any]) -> str:
+    d = merged.get("delivery")
+    if not isinstance(d, dict):
+        return "isr_s3"
+    m = d.get("mode")
+    if isinstance(m, str) and m.strip().lower() in ("isr_s3", "none", "wordpress_csv_s3"):
+        return m.strip().lower()
+    return "isr_s3"
 
 
 async def _resolve_workflow_keyword_target(
@@ -128,6 +144,8 @@ async def run_workflow_for_parent_task(
     prior_bits: list[str] = []
     last_final = ""
     draft_page_dict: dict[str, Any] | None = None
+    draft_output_json: dict[str, Any] | None = None
+    draft_merged_for_focus: dict[str, Any] | None = None
 
     for st in steps:
         sid = int(st["id"])
@@ -135,9 +153,13 @@ async def run_workflow_for_parent_task(
         if str(st["status"]) == "completed":
             if stype == "DRAFT":
                 oj = st.get("output_json") or {}
-                p = oj.get("page")
-                if isinstance(p, dict):
-                    draft_page_dict = p
+                if isinstance(oj, dict):
+                    draft_output_json = dict(oj)
+                    p = oj.get("page")
+                    if isinstance(p, dict):
+                        draft_page_dict = p
+                merged_d = {**params, **(st.get("input_json") or {})}
+                draft_merged_for_focus = merged_d
             prior_bits.append(f"{stype}: skipped (already completed)")
             continue
         await qe.update_workflow_step_row(sid, status="running", increment_attempt=True)
@@ -295,6 +317,8 @@ async def run_workflow_for_parent_task(
                 out["keyword_cluster_used"] = bool(keyword_cluster)
                 out["keyword_source"] = keyword_source
                 out["fallback_reason"] = fallback_reason
+                draft_output_json = dict(out)
+                draft_merged_for_focus = dict(merged)
                 draft_page_dict = out.get("page")
                 if not isinstance(draft_page_dict, dict):
                     raise ValueError("DRAFT: missing page in output")
@@ -350,25 +374,104 @@ async def run_workflow_for_parent_task(
                             "DEPLOY blocked: approval status=approved required for publish_deploy artifact"
                         )
                 page = PageJsonV1.model_validate(draft_page_dict)
-                if not str(page.og_image or "").strip():
-                    raise ValueError("DEPLOY: missing og_image on draft page")
                 nich = str(merged.get("niche") or "").strip()
                 pr = str(merged.get("project_id") or "").strip()
                 camp = str(merged.get("campaign_id") or "").strip()
                 if not (nich and pr and camp):
                     raise ValueError("DEPLOY requires project_id, campaign_id, niche in params")
-                dep = await asyncio.to_thread(
-                    deploy_page_and_manifest,
-                    settings,
-                    page=page,
-                    project_id=pr,
-                    campaign_id=camp,
-                    niche=nich,
-                )
-                await qe.update_workflow_step_row(
-                    sid, status="completed", output_json=dep, error=""
-                )
-                prior_bits.append(f"DEPLOY: {dep}")
+                mode = _publish_delivery_mode(merged)
+                if mode == "none":
+                    await qe.append_action_log(
+                        "publish_delivery_skipped",
+                        {
+                            "workflow_id": wf_id,
+                            "step_id": sid,
+                            "delivery": "none",
+                        },
+                        session_id=parent_task_id,
+                    )
+                    dep_none: dict[str, Any] = {
+                        "delivery": "none",
+                        "skipped_remote": True,
+                    }
+                    await qe.update_workflow_step_row(
+                        sid, status="completed", output_json=dep_none, error=""
+                    )
+                    prior_bits.append("DEPLOY: skipped remote (delivery none)")
+                elif mode == "wordpress_csv_s3":
+                    dcfg = merged.get("delivery")
+                    wps = (
+                        dcfg.get("wordpress_csv_s3")
+                        if isinstance(dcfg, dict) and isinstance(dcfg.get("wordpress_csv_s3"), dict)
+                        else {}
+                    )
+                    bucket = str(wps.get("bucket") or "").strip() or str(
+                        settings.wordpress_csv_s3_bucket_default or ""
+                    ).strip()
+                    if not bucket:
+                        raise ValueError(
+                            "DEPLOY wordpress_csv_s3: bucket is required "
+                            "(delivery.wordpress_csv_s3.bucket or ADA_WORDPRESS_CSV_S3_BUCKET)"
+                        )
+                    oj_f = draft_output_json if isinstance(draft_output_json, dict) else {}
+                    sinp_f = (
+                        draft_merged_for_focus
+                        if isinstance(draft_merged_for_focus, dict)
+                        else {}
+                    )
+                    focus = resolve_focus_keyword(oj_f, sinp_f, params)
+                    row = page_to_wordpress_row(draft_page_dict, focus)
+                    body = wordpress_csv_single_row_bytes(row)
+                    ek = wps.get("key")
+                    ek_str = str(ek).strip() if ek is not None else None
+                    pfx = wps.get("prefix")
+                    obj_key = wordpress_csv_s3_object_key(
+                        slug=page.slug,
+                        explicit_key=ek_str if ek_str else None,
+                        prefix=str(pfx).strip() if pfx is not None else None,
+                    )
+                    try:
+                        dep_csv = await asyncio.to_thread(
+                            put_s3_object_bytes,
+                            settings,
+                            bucket=bucket,
+                            key=obj_key,
+                            body=body,
+                            content_type=CSV_UTF8,
+                        )
+                    except Exception as e:
+                        await qe.append_action_log(
+                            "publish_delivery_csv_s3_failed",
+                            {
+                                "workflow_id": wf_id,
+                                "step_id": sid,
+                                "bucket": bucket,
+                                "key": obj_key,
+                                "error": str(e)[:2000],
+                            },
+                            session_id=parent_task_id,
+                        )
+                        raise
+                    dep_out = {**dep_csv, "delivery": "wordpress_csv_s3"}
+                    await qe.update_workflow_step_row(
+                        sid, status="completed", output_json=dep_out, error=""
+                    )
+                    prior_bits.append(f"DEPLOY: wordpress_csv_s3 {dep_out}")
+                else:
+                    if not str(page.og_image or "").strip():
+                        raise ValueError("DEPLOY: missing og_image on draft page")
+                    dep = await asyncio.to_thread(
+                        deploy_page_and_manifest,
+                        settings,
+                        page=page,
+                        project_id=pr,
+                        campaign_id=camp,
+                        niche=nich,
+                    )
+                    await qe.update_workflow_step_row(
+                        sid, status="completed", output_json=dep, error=""
+                    )
+                    prior_bits.append(f"DEPLOY: {dep}")
             elif stype == "SYNTHESIZE":
                 user_txt = _build_synthesize_user_text(
                     goal_text=str(wf.get("goal_text") or goal),
