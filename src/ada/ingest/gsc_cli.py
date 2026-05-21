@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+UTC = timezone.utc
 from pathlib import Path
 
 from ada.config import Settings
 from ada.ingest.gsc_service import ingest_gsc_search_analytics, parse_date
+from ada.mission_defaults_resolve import (
+    effective_gsc_site_url,
+    mission_defaults_for_slug,
+)
 from ada.profile_runtime import enforce_profile_identity
 from ada.query_engine import QueryEngine
 
@@ -26,6 +32,12 @@ def build_ingest_gsc_parser(subparsers: argparse._SubParsersAction[argparse.Argu
     gsc.add_argument("--dimensions", default="date,query,page,country,device", metavar="CSV")
     gsc.add_argument("--row-limit", type=int, default=25000, metavar="N")
     gsc.add_argument("--dry-run", action="store_true")
+    gsc.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help="Resolve GSC site URL from mission defaults_json over env",
+    )
     verify = gsc_sub.add_parser("verify", help="Validate auth + fetch one day")
     verify.add_argument("--site", default=None, metavar="SITE")
     verify.add_argument("--date", required=True, metavar="YYYY-MM-DD")
@@ -40,9 +52,17 @@ async def run_ingest_gsc_cli(settings: Settings, args: argparse.Namespace) -> in
     qe = QueryEngine(settings.state_db_path, schema_path, debounce_ms=settings.persist_debounce_ms)
     await qe.connect()
     await enforce_profile_identity(qe, settings)
+    mission_slug = getattr(args, "mission", None)
+    mdefaults = await mission_defaults_for_slug(qe, mission_slug)
     try:
         if getattr(args, "gsc_cmd", None) == "verify":
-            site = (args.site or settings.gsc_site_url or "").strip()
+            site = (
+                args.site
+                or effective_gsc_site_url(
+                    mission_defaults=mdefaults, env_site=settings.gsc_site_url
+                )
+                or ""
+            ).strip()
             if not site:
                 print("ingest-gsc verify: --site or GSC_SITE_URL required", flush=True)
                 return 2
@@ -64,7 +84,13 @@ async def run_ingest_gsc_cli(settings: Settings, args: argparse.Namespace) -> in
             print(json.dumps({"ok": True, "rows_seen": result.rows_seen}, indent=2))
             return 0
 
-        site = (getattr(args, "site", None) or settings.gsc_site_url or "").strip()
+        site = (
+            getattr(args, "site", None)
+            or effective_gsc_site_url(
+                mission_defaults=mdefaults, env_site=settings.gsc_site_url
+            )
+            or ""
+        ).strip()
         if not site:
             print("ingest-gsc: --site or GSC_SITE_URL required", flush=True)
             return 2

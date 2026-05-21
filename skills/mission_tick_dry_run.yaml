@@ -1,0 +1,10 @@
+id: mission_tick_dry_run
+description: Dry-run mission tick (prints due jobs only).
+risk_tier: low
+ring: 2
+motor_type: ada_argv
+op_command_id: mission_tick_dry_run
+allowed_params: []
+required_params: []
+mission_required: true
+require_approval: false

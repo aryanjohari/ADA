@@ -143,6 +143,11 @@ class StreamingToolExecutor:
         workflow_enqueue: WorkflowToolHandler | None = None,
         workflow_get_status: WorkflowToolHandler | None = None,
         gsc_read: GSCReadToolHandler | None = None,
+        mission_control_snapshot: Callable[[], Awaitable[dict[str, Any]]]
+        | None = None,
+        run_skill_handler: WorkflowToolHandler | None = None,
+        propose_programme_handler: WorkflowToolHandler | None = None,
+        apply_programme_handler: WorkflowToolHandler | None = None,
     ) -> None:
         self._allowlist = allowlist_exact
         self._max_output_bytes = max_output_bytes
@@ -167,6 +172,10 @@ class StreamingToolExecutor:
         self._workflow_enqueue = workflow_enqueue
         self._workflow_get_status = workflow_get_status
         self._gsc_read = gsc_read
+        self._mission_control_snapshot = mission_control_snapshot
+        self._run_skill_fn = run_skill_handler
+        self._propose_programme_fn = propose_programme_handler
+        self._apply_programme_fn = apply_programme_handler
         self.discarded = False
 
     def discard(self) -> None:
@@ -212,6 +221,14 @@ class StreamingToolExecutor:
             return await self._write_task_plan(call)
         if call.name == "check_token_usage":
             return await self._check_token_usage()
+        if call.name == "get_mission_control_snapshot":
+            return await self._mission_control_snapshot()
+        if call.name == "run_skill":
+            return await self._run_skill(call)
+        if call.name == "propose_programme":
+            return await self._propose_programme(call)
+        if call.name == "apply_programme":
+            return await self._apply_programme(call)
         if call.name == "read_workspace_file":
             return await self._read_workspace_file(call)
         if call.name == "write_workspace_file":
@@ -348,6 +365,42 @@ class StreamingToolExecutor:
         try:
             return await self._token_usage()
         except Exception as e:
+            return {"error": str(e)}
+
+    async def _mission_control_snapshot(self) -> dict[str, Any]:
+        if self._mission_control_snapshot is None:
+            return {"error": "get_mission_control_snapshot not configured"}
+        try:
+            return await self._mission_control_snapshot()
+        except Exception as e:
+            log.warning("get_mission_control_snapshot failed: %s", e)
+            return {"error": str(e)}
+
+    async def _run_skill(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._run_skill_fn is None:
+            return {"error": "run_skill not configured"}
+        try:
+            return await self._run_skill_fn(call)
+        except Exception as e:
+            log.warning("run_skill failed: %s", e)
+            return {"error": str(e)}
+
+    async def _propose_programme(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._propose_programme_fn is None:
+            return {"error": "propose_programme not configured"}
+        try:
+            return await self._propose_programme_fn(call)
+        except Exception as e:
+            log.warning("propose_programme failed: %s", e)
+            return {"error": str(e)}
+
+    async def _apply_programme(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._apply_programme_fn is None:
+            return {"error": "apply_programme not configured"}
+        try:
+            return await self._apply_programme_fn(call)
+        except Exception as e:
+            log.warning("apply_programme failed: %s", e)
             return {"error": str(e)}
 
     async def _search_knowledge(self, call: CompletedFunctionCall) -> dict[str, Any]:

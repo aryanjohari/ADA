@@ -25,6 +25,10 @@ from ada.publish.wordpress_csv import (
     wordpress_csv_single_row_bytes,
     wordpress_csv_s3_object_key,
 )
+from ada.programme.mission_brief import (
+    load_mission_brief_for_workflow,
+    programme_brief_block,
+)
 from ada.query_engine import QueryEngine
 from ada.tools.registry import KNOWLEDGE_TOOLS_EXTRACT, KNOWLEDGE_TOOLS_SYNTHESIZE
 log = logging.getLogger("ada.workflow.runner")
@@ -73,6 +77,7 @@ def _build_extract_user_text(
     goal_text: str,
     item_ids: list[int],
     params: dict[str, Any],
+    programme_brief: str = "",
 ) -> str:
     lines = [
         "[WORKFLOW_STEP:EXTRACT]",
@@ -84,7 +89,7 @@ def _build_extract_user_text(
         "(prefer the article link from the cited knowledge item payload, e.g. link/title URL).",
         f"Extra params: {json.dumps(params, ensure_ascii=False)}",
     ]
-    return "\n".join(lines)
+    return programme_brief_block(programme_brief) + "\n".join(lines)
 
 
 def _build_synthesize_user_text(
@@ -92,6 +97,7 @@ def _build_synthesize_user_text(
     goal_text: str,
     params: dict[str, Any],
     prior_summary: str,
+    programme_brief: str = "",
 ) -> str:
     topic = str(params.get("topic") or "Summarize recent ingested knowledge.").strip()
     lines = [
@@ -101,7 +107,7 @@ def _build_synthesize_user_text(
         "Use search_knowledge then record_synthesis with ref_item_ids from search results.",
         f"Prior step summary: {prior_summary}",
     ]
-    return "\n".join(lines)
+    return programme_brief_block(programme_brief) + "\n".join(lines)
 
 
 async def run_workflow_for_parent_task(
@@ -141,6 +147,7 @@ async def run_workflow_for_parent_task(
     params = wf.get("params_json") if isinstance(wf.get("params_json"), dict) else {}
     wf_mid = wf.get("mission_id")
     wf_mission_scope = int(wf_mid) if wf_mid is not None else None
+    programme_brief = await load_mission_brief_for_workflow(qe, wf_mission_scope)
     prior_bits: list[str] = []
     last_final = ""
     draft_page_dict: dict[str, Any] | None = None
@@ -189,6 +196,7 @@ async def run_workflow_for_parent_task(
                     goal_text=str(wf.get("goal_text") or goal),
                     item_ids=item_ids,
                     params=params,
+                    programme_brief=programme_brief,
                 )
                 final = await orchestrate_turn(
                     qe,
@@ -260,6 +268,7 @@ async def run_workflow_for_parent_task(
                     entity=ent,
                     merged_params=merged,
                     goal_text=str(wf.get("goal_text") or goal),
+                    programme_brief=programme_brief,
                     system_instruction=system_instruction,
                     session_id=parent_task_id,
                     max_tool_rounds=max_tool_rounds,
@@ -477,6 +486,7 @@ async def run_workflow_for_parent_task(
                     goal_text=str(wf.get("goal_text") or goal),
                     params=params,
                     prior_summary="; ".join(prior_bits)[-6000:],
+                    programme_brief=programme_brief,
                 )
                 final = await orchestrate_turn(
                     qe,

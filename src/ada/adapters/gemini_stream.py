@@ -237,6 +237,35 @@ def chain_rows_to_contents(rows: list[dict[str, Any]]) -> list[types.Content]:
     return contents
 
 
+def apply_turn_harness_appendix_to_contents(
+    contents: list[types.Content],
+    appendix: str,
+) -> list[types.Content]:
+    """Prepend repo-owned harness text to the last user turn (API-only; not persisted)."""
+    appendix_s = (appendix or "").strip()
+    if not appendix_s or not contents:
+        return contents
+    out: list[types.Content] = []
+    last_user_idx: int | None = None
+    for i, content in enumerate(contents):
+        if content.role == "user":
+            last_user_idx = i
+    if last_user_idx is None:
+        return contents
+    for i, content in enumerate(contents):
+        if i != last_user_idx:
+            out.append(content)
+            continue
+        parts = list(content.parts or [])
+        user_text = ""
+        for p in parts:
+            if p.text:
+                user_text += p.text
+        merged = f"{appendix_s}\n\n{user_text}".strip() if user_text else appendix_s
+        out.append(types.Content(role="user", parts=[types.Part.from_text(text=merged)]))
+    return out
+
+
 def _fc_to_completed(fc: types.FunctionCall) -> CompletedFunctionCall:
     args = fc.args
     if args is None:

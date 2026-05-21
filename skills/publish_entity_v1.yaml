@@ -1,0 +1,19 @@
+id: publish_entity_v1
+description: Enrich entity, gate, draft, deploy (publish_entity_v1 playbook).
+risk_tier: high
+ring: 2
+motor_type: workflow_enqueue
+playbook_id: publish_entity_v1
+workflow_kind: publish_entity_v1
+allowed_params:
+  - goal_text
+  - entity_id
+  - project_id
+  - campaign_id
+  - niche
+  - params_json
+  - idempotency_key
+required_params:
+  - entity_id
+mission_required: true
+require_approval: true

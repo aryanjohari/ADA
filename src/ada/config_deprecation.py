@@ -1,4 +1,7 @@
-"""Single source of truth for programme-shaped env vars deprecated in favour of ``missions.defaults_json``."""
+"""Single source of truth for programme-shaped env vars deprecated in favour of ``missions.defaults_json``.
+
+See docs/ENV_MIGRATION.md. Phase A read-path preference (tick/matrix only): mission_defaults_resolve.
+"""
 
 from __future__ import annotations
 

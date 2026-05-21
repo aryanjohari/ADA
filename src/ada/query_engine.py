@@ -14,6 +14,7 @@ from ada.persistent.store import (
     GRAPH_EDGE_SUPERSEDED,
     TASK_KIND_CHAT,
     TASK_KIND_GOAL,
+    TASK_KIND_SYSTEM,
     KnowledgeItemInsertResult,
     KnowledgeKind,
     PersistentState,
@@ -38,6 +39,7 @@ __all__ = [
     "ROLE_USER",
     "TASK_KIND_CHAT",
     "TASK_KIND_GOAL",
+    "TASK_KIND_SYSTEM",
     "TaskKind",
     "GRAPH_EDGE_ACTIVE",
     "GRAPH_EDGE_SUPERSEDED",
@@ -260,6 +262,11 @@ class QueryEngine:
             goal, status, task_kind=task_kind, mission_id=mission_id
         )
 
+    async def attach_task_to_mission(
+        self, task_id: int, mission_id: int | None
+    ) -> None:
+        await self._store.attach_task_to_mission(task_id, mission_id)
+
     async def fetch_pending_task(self) -> PendingGoalTask | None:
         raw = await self._store.fetch_pending_task()
         if raw is None:
@@ -312,6 +319,9 @@ class QueryEngine:
     async def get_mission_by_slug(self, slug: str) -> dict[str, Any] | None:
         return await self._store.get_mission_by_slug(slug)
 
+    async def get_mission_by_id(self, mission_id: int) -> dict[str, Any] | None:
+        return await self._store.get_mission_by_id(mission_id)
+
     async def update_mission_defaults_json(
         self,
         slug: str,
@@ -321,6 +331,21 @@ class QueryEngine:
     ) -> dict[str, Any]:
         return await self._store.update_mission_defaults_json(
             slug, patch, force=force
+        )
+
+    async def update_mission_meta(
+        self,
+        slug: str,
+        *,
+        title: str | None = None,
+        brief_md: str | None = None,
+        schedule_hint_json: dict[str, Any] | None = None,
+    ) -> None:
+        await self._store.update_mission_meta(
+            slug,
+            title=title,
+            brief_md=brief_md,
+            schedule_hint_json=schedule_hint_json,
         )
 
     async def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
@@ -825,6 +850,7 @@ class QueryEngine:
         max_excerpt_items: int = 15,
         excerpt_max_chars: int = 800,
         max_total_json_chars: int = 60_000,
+        mission_scope: int | None = None,
     ) -> dict[str, Any]:
         return await self._store.load_subject_subgraph_context_pack(
             entity_id,
@@ -832,6 +858,7 @@ class QueryEngine:
             max_excerpt_items=max_excerpt_items,
             excerpt_max_chars=excerpt_max_chars,
             max_total_json_chars=max_total_json_chars,
+            mission_scope=mission_scope,
         )
 
     async def list_enrichment_excerpts_for_entity(
@@ -992,3 +1019,93 @@ class QueryEngine:
         return await self._store.list_recent_knowledge_item_ids(
             limit=limit, mission_scope=mission_scope
         )
+
+    async def get_task_goal_dispatch_generation(self, task_id: int) -> int:
+        return await self._store.get_task_goal_dispatch_generation(task_id)
+
+    async def insert_system_job(
+        self,
+        *,
+        kind: str,
+        payload_json: dict[str, Any],
+        mission_id: int | None = None,
+        idempotency_key: str | None = None,
+        run_after: str | None = None,
+        priority: int = 0,
+        max_attempts: int = 8,
+        correlation_id: str | None = None,
+    ) -> int:
+        return await self._store.insert_system_job(
+            kind=kind,
+            payload_json=payload_json,
+            mission_id=mission_id,
+            idempotency_key=idempotency_key,
+            run_after=run_after,
+            priority=priority,
+            max_attempts=max_attempts,
+            correlation_id=correlation_id,
+        )
+
+    async def try_enqueue_goal_run_turn(self, task_id: int) -> int | None:
+        return await self._store.try_enqueue_goal_run_turn(task_id)
+
+    async def try_enqueue_ingest_run(
+        self, ingest_job_id: int, *, mission_id: int | None = None
+    ) -> int | None:
+        return await self._store.try_enqueue_ingest_run(
+            ingest_job_id, mission_id=mission_id
+        )
+
+    async def ensure_pending_goal_system_jobs(self) -> int:
+        return await self._store.ensure_pending_goal_system_jobs()
+
+    async def reclaim_expired_system_jobs(self) -> int:
+        return await self._store.reclaim_expired_system_jobs()
+
+    async def claim_next_system_job(
+        self, worker_id: str, *, lease_seconds: int | None = None
+    ) -> dict[str, Any] | None:
+        ls = lease_seconds if lease_seconds is not None else 300
+        return await self._store.claim_next_system_job(worker_id, lease_seconds=ls)
+
+    async def get_system_job(self, job_id: int) -> dict[str, Any] | None:
+        return await self._store.get_system_job(job_id)
+
+    async def heartbeat_system_job(
+        self, job_id: int, worker_id: str, *, lease_seconds: int | None = None
+    ) -> bool:
+        ls = lease_seconds if lease_seconds is not None else 300
+        return await self._store.heartbeat_system_job(
+            job_id, worker_id, lease_seconds=ls
+        )
+
+    async def complete_system_job(self, job_id: int, worker_id: str) -> bool:
+        return await self._store.complete_system_job(job_id, worker_id)
+
+    async def fail_system_job(
+        self, job_id: int, worker_id: str, error: str, *, terminal: bool = True
+    ) -> bool:
+        return await self._store.fail_system_job(
+            job_id, worker_id, error, terminal=terminal
+        )
+
+    async def cancel_system_job(self, job_id: int) -> bool:
+        return await self._store.cancel_system_job(job_id)
+
+    async def retry_system_job_clone(self, job_id: int) -> int | None:
+        return await self._store.retry_system_job_clone(job_id)
+
+    async def list_system_jobs(
+        self,
+        *,
+        limit: int = 100,
+        status: str | None = None,
+        mission_id: int | None = None,
+        kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_system_jobs(
+            limit=limit, status=status, mission_id=mission_id, kind=kind
+        )
+
+    async def get_ingest_job_row(self, job_id: int) -> dict[str, Any] | None:
+        return await self._store.get_ingest_job_row(job_id)

@@ -124,3 +124,56 @@ def action_payload_safe(kind: str, payload_json: str | None) -> dict[str, Any]:
     if len(out2) <= 1:
         return {"kind": kind, "payload_redacted": _redact_unknown(payload)}
     return out2
+
+
+_SECRET_KEY_RE = re.compile(
+    r"(api[_-]?key|secret|password|token|authorization|credential|private)",
+    re.IGNORECASE,
+)
+
+
+def system_job_payload_safe(payload_json: str | None) -> dict[str, Any]:
+    """Operator-safe summary of system_jobs.payload_json: digest + top-level keys only."""
+    raw = (payload_json or "").strip() or "{}"
+    digest = json_blob_digest(raw)
+    try:
+        parsed: Any = json.loads(raw)
+    except json.JSONDecodeError:
+        return {
+            "payload_digest": digest,
+            "payload_keys": [],
+            "payload_redacted": {"_parse_error": True},
+        }
+    if not isinstance(parsed, dict):
+        return {
+            "payload_digest": digest,
+            "payload_keys": [],
+            "payload_redacted": _redact_unknown(parsed),
+        }
+    keys = sorted(str(k) for k in parsed.keys())
+    redacted: dict[str, Any] = {}
+    for k, v in parsed.items():
+        sk = str(k)
+        if _SECRET_KEY_RE.search(sk):
+            if isinstance(v, str) and v:
+                redacted[sk] = {
+                    "len": len(v),
+                    "sha256_prefix": field_digest(v)["sha256_prefix"],
+                }
+            else:
+                redacted[sk] = "[redacted]"
+            continue
+        if isinstance(v, str) and len(v) > 128:
+            redacted[sk] = {
+                "len": len(v),
+                "sha256_prefix": field_digest(v)["sha256_prefix"],
+            }
+        elif isinstance(v, (dict, list)):
+            redacted[sk] = _redact_unknown(v)
+        else:
+            redacted[sk] = v
+    return {
+        "payload_digest": digest,
+        "payload_keys": keys,
+        "payload_redacted": redacted,
+    }

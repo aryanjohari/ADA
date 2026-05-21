@@ -34,6 +34,9 @@ Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
 - [`docs/OPERATOR_SQLITE_BACKUP.md`](docs/OPERATOR_SQLITE_BACKUP.md) — `state.db` backup / restore drill  
 - [`docs/OPERATOR_LOGGING.md`](docs/OPERATOR_LOGGING.md) — systemd / file logging for daemon on Pi  
 - [`docs/operator-publish-gate.md`](docs/operator-publish-gate.md) — GATE vs ENRICH vs DRAFT (distinct `source_url` facts), diagnosis (`ada workflow status`, `ada gate-failures`, logs)
+- [`docs/JOB_QUEUE_SINGLE_OWNER.md`](docs/JOB_QUEUE_SINGLE_OWNER.md) — one job plane per `state.db` (`legacy` vs `system_jobs`)
+- [`docs/mission-control-flags.md`](docs/mission-control-flags.md) — deterministic HUD flags from SQLite
+- [`docs/mission-control-setup-assist.md`](docs/mission-control-setup-assist.md) — `ada chat --setup` contract
 
 **GATE** (`ADA_PUBLISH_MIN_UNIQUE_FACTS`, distinct `source_url` on graph edges) applies only to **`publish_entity_v1`**, not **`publish_keyword_v1`**. **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`** gates **`DEPLOY`** for **both** publish kinds when enabled.
 
@@ -578,7 +581,10 @@ Suggested **next planning** items (prioritize as you like):
 
 ## 12. Further reading
 
-- [`docs/claude_logic.md`](docs/claude_logic.md) — transcript / security pointers (stub linking into `store.py`, `query_engine.py`, `orchestrator.py`)  
+- [`docs/ADA_CORE.md`](docs/ADA_CORE.md) — local Jarvis architecture (Phase A)
+- [`docs/ADA_PHASE_A_CONTRACT.md`](docs/ADA_PHASE_A_CONTRACT.md) — Phase A boundaries and non-goals
+- [`docs/GREENFIELD_PROFILE.md`](docs/GREENFIELD_PROFILE.md) — new profile checklist (`jarvis` + `jarvis-ops`)
+- [`docs/claude_logic.md`](docs/claude_logic.md) — transcript / security pointers (index into `store.py`, `query_engine.py`, `orchestrator.py`)  
 - [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — Raspberry Pi single-profile runbook  
 - [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — ISR `page.json` v1 + S3 layout  
 - [`docs/system_architecure.md`](docs/system_architecure.md) — early phase-1 system view (partially superseded by this README)  

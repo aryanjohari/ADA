@@ -190,7 +190,16 @@ async def run_triage_cli(
         triage_system = resolve_triage_system_instruction(settings)
         client = client_cls(api_key=settings.gemini_api_key)
         model = settings.triage_model
-        lead_cap = max(0, int(settings.triage_lead_daily_cap))
+        from ada.mission_defaults_resolve import (
+            effective_triage_lead_daily_cap,
+            mission_defaults_for_slug,
+        )
+
+        mdefaults = await mission_defaults_for_slug(qe, mission_slug)
+        lead_cap = effective_triage_lead_daily_cap(
+            mission_defaults=mdefaults,
+            env_cap=int(settings.triage_lead_daily_cap),
+        )
         trigger_min = max(1, min(10, int(settings.triage_deep_dive_min_score)))
         lead_day_key = _today_key_local("triage.lead_enqueued")
         raw_lead_count = await qe.state_get(lead_day_key)

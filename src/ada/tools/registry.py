@@ -27,6 +27,101 @@ def _check_token_usage_declaration() -> types.FunctionDeclaration:
     )
 
 
+def _mission_control_snapshot_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="get_mission_control_snapshot",
+        description=(
+            "Read-only: return SQLite-derived mission control snapshot (flags, counts, tick state). "
+            "Use for setup assist status — do not invent job or workflow state without calling this."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    )
+
+
+def _run_skill_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="run_skill",
+        description=(
+            "Execute a registered motor skill by id (workflow enqueue, goal add, or dry-run ada argv). "
+            "Params must match the skill spec; high-risk skills need approved=true after operator confirm."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "skill_id": {"type": "string", "description": "Skill id from motor registry."},
+                "params_json": {
+                    "type": "string",
+                    "description": "JSON object of skill parameters.",
+                },
+                "mission_slug": {
+                    "type": "string",
+                    "description": "Mission slug (defaults to session mission when bound).",
+                },
+                "approved": {
+                    "type": "boolean",
+                    "description": "Operator approved high-risk / require_approval skills.",
+                },
+            },
+            "required": ["skill_id"],
+        },
+    )
+
+
+def _propose_programme_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="propose_programme",
+        description=(
+            "Validate and return a canonical ProgrammePacket JSON (read-only — does not write SQLite). "
+            "Use in programme design mode before operator runs apply."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "packet_json": {
+                    "type": "string",
+                    "description": (
+                        "Programme packet JSON object string, e.g. "
+                        '{"mission_slug":"my-mission","title":"…","brief_md":"Operator intent…",'
+                        '"skills_enabled":["ingest_rss_mission"],"defaults_json":{}}.'
+                    ),
+                },
+            },
+            "required": ["packet_json"],
+        },
+    )
+
+
+def _apply_programme_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="apply_programme",
+        description=(
+            "Apply a validated ProgrammePacket to SQLite (missions, sources, cron snippet). "
+            "Requires approved=true after operator confirmation; approved=false performs no DB writes."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "packet_json": {
+                    "type": "string",
+                    "description": (
+                        "Full programme packet JSON including brief_md (programme intent), "
+                        "skills_enabled, defaults_json, schedule_hint_json, knowledge_sources."
+                    ),
+                },
+                "approved": {
+                    "type": "boolean",
+                    "description": "Operator approved apply (Y/n gate).",
+                },
+            },
+            "required": ["packet_json", "approved"],
+        },
+    )
+
+
 def _memory_function_declarations() -> list[types.FunctionDeclaration]:
     return [
         types.FunctionDeclaration(
@@ -578,49 +673,19 @@ def frozen_tool_declaration_names(tool: types.Tool) -> frozenset[str]:
     return frozenset(d.name for d in decls if getattr(d, "name", None))
 
 
-def _workflow_function_declarations() -> list[types.FunctionDeclaration]:
-    return [
-        types.FunctionDeclaration(
-            name="enqueue_workflow",
-            description=(
-                "Create a pending goal task and attach a Phase 3 workflow (FETCH/EXTRACT/SYNTHESIZE). "
-                "Requires a registered workflow kind; see operator docs. Idempotent when idempotency_key is set."
-            ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "kind": {
-                        "type": "string",
-                        "description": "Template kind, e.g. rss_fetch_then_graph_then_synth.",
-                    },
-                    "goal_text": {
-                        "type": "string",
-                        "description": "Human-readable goal stored on the new tasks row.",
-                    },
-                    "params_json": {
-                        "type": "string",
-                        "description": "JSON object string merged into template params (e.g. topic).",
-                    },
-                    "idempotency_key": {
-                        "type": "string",
-                        "description": "Optional; duplicate (kind, key) returns existing workflow_id without new rows.",
-                    },
-                },
-                "required": ["kind", "goal_text"],
+def _workflow_status_declaration() -> types.FunctionDeclaration:
+    """Read-only workflow status (H2: enqueue_workflow is not a chat tool)."""
+    return types.FunctionDeclaration(
+        name="get_workflow_status",
+        description="Read-only: return workflow row and all workflow_steps for a workflow id.",
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "workflow_id": {"type": "integer", "description": "workflows.id"},
             },
-        ),
-        types.FunctionDeclaration(
-            name="get_workflow_status",
-            description="Read-only: return workflow row and all workflow_steps for a workflow id.",
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "workflow_id": {"type": "integer", "description": "workflows.id"},
-                },
-                "required": ["workflow_id"],
-            },
-        ),
-    ]
+            "required": ["workflow_id"],
+        },
+    )
 
 
 def _list_session_web_sources_declaration() -> types.FunctionDeclaration:
@@ -687,8 +752,20 @@ def build_agent_tools(
     include_knowledge_tools: bool = False,
     knowledge_tool_subset: frozenset[str] | None = None,
     include_workflow_tools: bool = False,
+    include_mission_control_snapshot: bool = False,
+    include_run_skill: bool = False,
+    include_propose_programme: bool = False,
+    include_apply_programme: bool = False,
 ) -> types.Tool:
     decls: list[types.FunctionDeclaration] = [_check_token_usage_declaration()]
+    if include_mission_control_snapshot:
+        decls.append(_mission_control_snapshot_declaration())
+    if include_run_skill:
+        decls.append(_run_skill_declaration())
+    if include_propose_programme:
+        decls.append(_propose_programme_declaration())
+    if include_apply_programme:
+        decls.append(_apply_programme_declaration())
     decls.extend(build_shell_declarations(allowed_exact_commands=allowed_exact_commands))
     if include_memory_tools:
         decls.extend(_memory_function_declarations())
@@ -713,7 +790,7 @@ def build_agent_tools(
     elif include_knowledge_tools:
         decls.extend(_knowledge_function_declarations())
     if include_workflow_tools:
-        decls.extend(_workflow_function_declarations())
+        decls.append(_workflow_status_declaration())
     return types.Tool(function_declarations=decls)
 
 

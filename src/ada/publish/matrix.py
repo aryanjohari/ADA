@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ada.config import Settings
+from ada.mission_defaults_resolve import resolve_programme_str
 from ada.query_engine import QueryEngine
 from ada.workflow.enqueue import enqueue_workflow_via_tool
 
@@ -22,22 +23,22 @@ async def resolve_matrix_isr_ids(
     qe: QueryEngine, mission_slug: str | None
 ) -> tuple[str, str]:
     """Prefer mission.defaults_json keys over env ISR IDs."""
-    pid = os.environ.get("ADA_PROJECT_ID", "default").strip() or "default"
-    cid = os.environ.get("ADA_CAMPAIGN_ID", "main").strip() or "main"
+    env_pid = os.environ.get("ADA_PROJECT_ID", "default").strip() or "default"
+    env_cid = os.environ.get("ADA_CAMPAIGN_ID", "main").strip() or "main"
     ms = str(mission_slug).strip() if mission_slug else ""
     if not ms:
-        return pid, cid
+        return env_pid, env_cid
     row = await qe.get_mission_by_slug(ms)
     if row is None:
-        return pid, cid
+        return env_pid, env_cid
     raw = row.get("defaults_json")
     d = dict(raw) if isinstance(raw, dict) else {}
-    pj = str(d.get("project_id") or "").strip()
-    cj = str(d.get("campaign_id") or "").strip()
-    if pj:
-        pid = pj
-    if cj:
-        cid = cj
+    pid = resolve_programme_str(
+        mission_defaults=d, key="project_id", env_value=env_pid
+    ) or env_pid
+    cid = resolve_programme_str(
+        mission_defaults=d, key="campaign_id", env_value=env_cid
+    ) or env_cid
     return pid, cid
 
 

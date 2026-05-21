@@ -1,0 +1,22 @@
+id: publish_keyword_v1
+description: Keyword-targeted publish pipeline (publish_keyword_v1 playbook).
+risk_tier: high
+ring: 2
+motor_type: workflow_enqueue
+playbook_id: publish_keyword_v1
+workflow_kind: publish_keyword_v1
+allowed_params:
+  - goal_text
+  - project_id
+  - campaign_id
+  - niche
+  - target_keyword_cluster
+  - params_json
+  - idempotency_key
+required_params:
+  - project_id
+  - campaign_id
+  - niche
+  - target_keyword_cluster
+mission_required: true
+require_approval: true

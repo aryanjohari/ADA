@@ -16,10 +16,11 @@ from typing import Any, Literal
 
 import aiosqlite
 
-TaskKind = Literal["chat", "goal"]
+TaskKind = Literal["chat", "goal", "system"]
 KnowledgeKind = Literal["api", "rss", "web", "brand"]
 TASK_KIND_CHAT: TaskKind = "chat"
 TASK_KIND_GOAL: TaskKind = "goal"
+TASK_KIND_SYSTEM: TaskKind = "system"
 
 
 @dataclass(frozen=True)
@@ -268,6 +269,8 @@ class PersistentState:
         await self._ensure_missions_schema()
         await self._ensure_knowledge_sources_mission_id()
         await self._ensure_entities_mission_scope()
+        await self._ensure_job_plane_schema()
+        await self._ensure_graph_edges_mission_id()
 
     async def _ensure_knowledge_sources_mission_id(self) -> None:
         """Mission-scoped knowledge sources (nullable = legacy global pool)."""
@@ -432,6 +435,109 @@ class PersistentState:
                 )
             await self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflows_mission_id ON workflows(mission_id)"
+            )
+        await self._conn.commit()
+
+    async def _ensure_job_plane_schema(self) -> None:
+        """system_jobs queue + tasks.goal_dispatch_generation for idempotent goal.run_turn."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='system_jobs'"
+        )
+        if await cur.fetchone() is None:
+            await self._conn.execute(
+                """
+                CREATE TABLE system_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind TEXT NOT NULL,
+                    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    idempotency_key TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending' CHECK (
+                        status IN ('pending', 'running', 'completed', 'failed', 'dead', 'cancelled')
+                    ),
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 8,
+                    error TEXT NOT NULL DEFAULT '',
+                    lease_owner TEXT NOT NULL DEFAULT '',
+                    lease_expires_at TEXT,
+                    run_after TEXT,
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    correlation_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    started_at TEXT
+                )
+                """
+            )
+            await self._conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_system_jobs_status_run
+                    ON system_jobs(status, run_after, priority DESC, id)
+                """
+            )
+            await self._conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_system_jobs_idempotency
+                    ON system_jobs(idempotency_key)
+                    WHERE idempotency_key IS NOT NULL
+                """
+            )
+        cur = await self._conn.execute("PRAGMA table_info(tasks)")
+        tcols = {str(row[1]) for row in await cur.fetchall()}
+        if "goal_dispatch_generation" not in tcols:
+            await self._conn.execute(
+                """
+                ALTER TABLE tasks ADD COLUMN goal_dispatch_generation
+                    INTEGER NOT NULL DEFAULT 0
+                """
+            )
+        await self._conn.commit()
+
+    async def _ensure_graph_edges_mission_id(self) -> None:
+        """Mission scope on graph_edges (P0); nullable until backfill for ambiguous rows."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='graph_edges'"
+        )
+        if await cur.fetchone() is None:
+            return
+        cur = await self._conn.execute("PRAGMA table_info(graph_edges)")
+        gcols = {str(row[1]) for row in await cur.fetchall()}
+        if "mission_id" not in gcols:
+            await self._conn.execute(
+                """
+                ALTER TABLE graph_edges ADD COLUMN mission_id INTEGER
+                    REFERENCES missions(id) ON DELETE SET NULL
+                """
+            )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_edges_mission_src "
+            "ON graph_edges(mission_id, src_entity_id)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_edges_mission_dst "
+            "ON graph_edges(mission_id, dst_entity_id)"
+        )
+        cur_ent = await self._conn.execute("PRAGMA table_info(entities)")
+        ent_cols = {str(row[1]) for row in await cur_ent.fetchall()}
+        if "mission_id" in ent_cols:
+            # Backfill when both endpoints share the same non-null mission.
+            await self._conn.execute(
+                """
+                UPDATE graph_edges
+                SET mission_id = (
+                    SELECT e.mission_id FROM entities e WHERE e.id = graph_edges.src_entity_id
+                )
+                WHERE mission_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM entities s, entities d
+                    WHERE s.id = graph_edges.src_entity_id
+                      AND d.id = graph_edges.dst_entity_id
+                      AND s.mission_id IS NOT NULL
+                      AND s.mission_id IS d.mission_id
+                  )
+                """
             )
         await self._conn.commit()
 
@@ -2225,7 +2331,7 @@ class PersistentState:
         task_kind: TaskKind = TASK_KIND_GOAL,
         mission_id: int | None = None,
     ) -> int:
-        if task_kind not in ("chat", "goal"):
+        if task_kind not in ("chat", "goal", "system"):
             raise ValueError(f"invalid task_kind: {task_kind!r}")
         assert self._conn is not None
         cur = await self._conn.execute(
@@ -2343,6 +2449,64 @@ class PersistentState:
         )
         await self._conn.commit()
         return merged
+
+    async def get_mission_by_id(self, mission_id: int) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, slug, title, niche, topic, defaults_json, brief_md,
+                   brief_md_path, schedule_hint_json, created_at, updated_at
+            FROM missions WHERE id = ? LIMIT 1
+            """,
+            (int(mission_id),),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": int(row[0]),
+            "slug": str(row[1]),
+            "title": str(row[2]),
+            "niche": row[3],
+            "topic": row[4],
+            "defaults_json": json.loads(str(row[5] or "{}")),
+            "brief_md": str(row[6] or ""),
+            "brief_md_path": row[7],
+            "schedule_hint_json": json.loads(row[8])
+            if row[8] not in (None, "")
+            else None,
+            "created_at": str(row[9]),
+            "updated_at": str(row[10]),
+        }
+
+    async def update_mission_meta(
+        self,
+        slug: str,
+        *,
+        title: str | None = None,
+        brief_md: str | None = None,
+        schedule_hint_json: dict[str, Any] | None = None,
+    ) -> None:
+        assert self._conn is not None
+        sets: list[str] = ["updated_at = datetime('now')"]
+        args: list[Any] = []
+        if title is not None and title.strip():
+            sets.append("title = ?")
+            args.append(title.strip())
+        if brief_md is not None:
+            sets.append("brief_md = ?")
+            args.append(brief_md)
+        if schedule_hint_json is not None:
+            sets.append("schedule_hint_json = ?")
+            args.append(json.dumps(schedule_hint_json, ensure_ascii=False))
+        if len(sets) == 1:
+            return
+        args.append(slug)
+        await self._conn.execute(
+            f"UPDATE missions SET {', '.join(sets)} WHERE slug = ?",
+            args,
+        )
+        await self._conn.commit()
 
     async def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
         assert self._conn is not None
@@ -3872,6 +4036,7 @@ class PersistentState:
         superseded_by: int | None = None,
         source_url: str | None = None,
     ) -> int:
+        """Insert edge; mission_id from matching endpoints (see docs/GRAPH_MISSION_SCOPE.md)."""
         assert self._conn is not None
         etype = str(edge_type).strip().lower()
         if not etype:
@@ -3887,15 +4052,53 @@ class PersistentState:
             su = str(source_url).strip()
         else:
             su = None
-        cur = await self._conn.execute(
-            """
-            INSERT INTO graph_edges (
-                src_entity_id, dst_entity_id, edge_type, confidence, status,
-                superseded_by, source_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (src_entity_id, dst_entity_id, etype, conf, st, superseded_by, su),
-        )
+        src_e = await self.get_entity_by_id(int(src_entity_id))
+        dst_e = await self.get_entity_by_id(int(dst_entity_id))
+        if src_e is None or dst_e is None:
+            raise ValueError("unknown src_entity_id or dst_entity_id")
+        sm = src_e.get("mission_id")
+        dm = dst_e.get("mission_id")
+        st_src = str(src_e.get("type") or "").strip().lower()
+        st_dst = str(dst_e.get("type") or "").strip().lower()
+        mission_id: int | None
+        if sm == dm:
+            mission_id = int(sm) if sm is not None else None
+        elif etype == "classified_as":
+            if sm is not None and dm is None and st_dst == "category":
+                mission_id = int(sm)
+            elif dm is not None and sm is None and st_src == "category":
+                mission_id = int(dm)
+            else:
+                raise ValueError(
+                    "record_edge: src/dst mission_id mismatch for classified_as"
+                )
+        else:
+            raise ValueError(
+                "record_edge: src_entity and dst_entity must share the same "
+                "mission_id (or triage category bridge for classified_as)"
+            )
+        cur_ge = await self._conn.execute("PRAGMA table_info(graph_edges)")
+        ge_cols = {str(row[1]) for row in await cur_ge.fetchall()}
+        if "mission_id" in ge_cols:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO graph_edges (
+                    src_entity_id, dst_entity_id, edge_type, confidence, status,
+                    superseded_by, source_url, mission_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (src_entity_id, dst_entity_id, etype, conf, st, superseded_by, su, mission_id),
+            )
+        else:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO graph_edges (
+                    src_entity_id, dst_entity_id, edge_type, confidence, status,
+                    superseded_by, source_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (src_entity_id, dst_entity_id, etype, conf, st, superseded_by, su),
+            )
         await self._conn.commit()
         return int(cur.lastrowid)
 
@@ -4064,10 +4267,13 @@ class PersistentState:
         max_excerpt_items: int = 15,
         excerpt_max_chars: int = 800,
         max_total_json_chars: int = 60_000,
+        mission_scope: int | None = None,
     ) -> dict[str, Any]:
         """
         Bounded JSON pack: subject entity, active outgoing edges + dst summaries,
         and knowledge excerpts (via edge_evidence) deduped by knowledge_id.
+        When ``mission_scope`` is set, only edges whose ``mission_id`` matches or
+        is legacy NULL (pre-backfill) are included.
         """
         assert self._conn is not None
         eid = int(entity_id)
@@ -4083,6 +4289,26 @@ class PersistentState:
                 "outgoing_edges": [],
                 "linked_knowledge_excerpts": [],
             }
+        subj_mid = subj.get("mission_id")
+        cur_ge = await self._conn.execute("PRAGMA table_info(graph_edges)")
+        has_ge_mission = "mission_id" in {str(r[1]) for r in await cur_ge.fetchall()}
+        if mission_scope is not None:
+            mid = int(mission_scope)
+            if has_ge_mission:
+                edge_mission_filter = (
+                    " AND (ge.mission_id IS NULL OR ge.mission_id = ?) "
+                )
+                edge_args: tuple[int, ...] = (eid, GRAPH_EDGE_ACTIVE, mid, me)
+            else:
+                edge_mission_filter = ""
+                edge_args = (eid, GRAPH_EDGE_ACTIVE, me)
+        elif subj_mid is not None and has_ge_mission:
+            mid = int(subj_mid)
+            edge_mission_filter = " AND (ge.mission_id IS NULL OR ge.mission_id = ?) "
+            edge_args = (eid, GRAPH_EDGE_ACTIVE, mid, me)
+        else:
+            edge_mission_filter = ""
+            edge_args = (eid, GRAPH_EDGE_ACTIVE, me)
 
         cur = await self._conn.execute(
             f"""
@@ -4090,11 +4316,11 @@ class PersistentState:
                    e.id, e.type, e.name, e.normalized_name, e.payload_json, e.last_enriched_at
             FROM graph_edges ge
             INNER JOIN entities e ON e.id = ge.dst_entity_id
-            WHERE ge.src_entity_id = ? AND ge.status = ?
+            WHERE ge.src_entity_id = ? AND ge.status = ?{edge_mission_filter}
             ORDER BY ge.id DESC
             LIMIT ?
             """,
-            (eid, GRAPH_EDGE_ACTIVE, me),
+            edge_args,
         )
         edge_rows = await cur.fetchall()
         edges_out: list[dict[str, Any]] = []
@@ -4834,3 +5060,550 @@ class PersistentState:
         )
         rows = await cur.fetchall()
         return [int(r[0]) for r in rows]
+
+    # --- system_jobs (job plane) ---
+
+    SYSTEM_JOB_KIND_GOAL_RUN_TURN = "goal.run_turn"
+    SYSTEM_JOB_KIND_NOOP_PING = "noop.ping"
+    SYSTEM_JOB_KIND_WORKFLOW_START = "workflow.start"
+    SYSTEM_JOB_KIND_INGEST_RUN = "ingest.run"
+    SYSTEM_JOB_KIND_TICK_GSC_KEYWORD = "tick.gsc_keyword_publish"
+    SYSTEM_JOB_KIND_MATRIX_SCAN = "matrix.scan"
+
+    async def get_task_goal_dispatch_generation(self, task_id: int) -> int:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            "SELECT IFNULL(goal_dispatch_generation, 0) FROM tasks WHERE id = ?",
+            (int(task_id),),
+        )
+        row = await cur.fetchone()
+        return int(row[0]) if row is not None else 0
+
+    async def insert_system_job(
+        self,
+        *,
+        kind: str,
+        payload_json: dict[str, Any],
+        mission_id: int | None = None,
+        idempotency_key: str | None = None,
+        run_after: str | None = None,
+        priority: int = 0,
+        max_attempts: int = 8,
+        correlation_id: str | None = None,
+    ) -> int:
+        """Insert a pending system job. On idempotency conflict returns existing id."""
+        assert self._conn is not None
+        payload_s = json.dumps(payload_json, ensure_ascii=False)
+        key = idempotency_key.strip() if idempotency_key else None
+        try:
+            cur = await self._conn.execute(
+                """
+                INSERT INTO system_jobs (
+                    kind, mission_id, payload_json, idempotency_key, status,
+                    max_attempts, run_after, priority, correlation_id
+                )
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (
+                    str(kind).strip(),
+                    mission_id,
+                    payload_s,
+                    key,
+                    int(max_attempts),
+                    run_after,
+                    int(priority),
+                    correlation_id,
+                ),
+            )
+            await self._conn.commit()
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError:
+            if not key:
+                raise
+            cur2 = await self._conn.execute(
+                "SELECT id FROM system_jobs WHERE idempotency_key = ? LIMIT 1",
+                (key,),
+            )
+            row = await cur2.fetchone()
+            if row is None:
+                raise
+            return int(row[0])
+
+    async def _goal_run_turn_inflight_exists(self, task_id: int) -> bool:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT 1 FROM system_jobs
+            WHERE kind = ?
+              AND json_extract(payload_json, '$.task_id') = ?
+              AND status IN ('pending', 'running')
+            LIMIT 1
+            """,
+            (self.SYSTEM_JOB_KIND_GOAL_RUN_TURN, int(task_id)),
+        )
+        return await cur.fetchone() is not None
+
+    async def try_enqueue_goal_run_turn(self, task_id: int) -> int | None:
+        """
+        If task is a pending goal with no in-flight goal.run_turn job, enqueue one.
+        Returns new system_jobs.id or None if nothing to do.
+        """
+        assert self._conn is not None
+        tid = int(task_id)
+        try:
+            await self._conn.execute("BEGIN IMMEDIATE")
+            if await self._goal_run_turn_inflight_exists(tid):
+                await self._conn.commit()
+                return None
+            cur = await self._conn.execute(
+                """
+                SELECT id, mission_id, goal, status, task_kind
+                FROM tasks WHERE id = ?
+                """,
+                (tid,),
+            )
+            row = await cur.fetchone()
+            if row is None or str(row[4]) != TASK_KIND_GOAL or str(row[3]) != "pending":
+                await self._conn.commit()
+                return None
+            mid_raw = row[1]
+            goal = str(row[2] or "")
+            curu = await self._conn.execute(
+                """
+                UPDATE tasks SET
+                    goal_dispatch_generation = IFNULL(goal_dispatch_generation, 0) + 1,
+                    updated_at = datetime('now')
+                WHERE id = ? AND status = 'pending' AND task_kind = ?
+                """,
+                (tid, TASK_KIND_GOAL),
+            )
+            if curu.rowcount != 1:
+                await self._conn.rollback()
+                return None
+            curg = await self._conn.execute(
+                "SELECT IFNULL(goal_dispatch_generation, 0) FROM tasks WHERE id = ?",
+                (tid,),
+            )
+            grow = await curg.fetchone()
+            gen = int(grow[0]) if grow is not None else 1
+            mid = int(mid_raw) if mid_raw is not None else None
+            payload = {
+                "task_id": tid,
+                "turn_generation": gen,
+                "goal_preview": goal[:500],
+            }
+            idem = f"goal.run_turn:{tid}:{gen}"
+            cur2 = await self._conn.execute(
+                """
+                INSERT INTO system_jobs (
+                    kind, mission_id, payload_json, idempotency_key, status, max_attempts
+                )
+                VALUES (?, ?, ?, ?, 'pending', 8)
+                """,
+                (
+                    self.SYSTEM_JOB_KIND_GOAL_RUN_TURN,
+                    mid,
+                    json.dumps(payload, ensure_ascii=False),
+                    idem,
+                ),
+            )
+            jid = int(cur2.lastrowid)
+            await self._conn.commit()
+            return jid
+        except Exception:
+            await self._conn.rollback()
+            raise
+
+    async def _ingest_run_inflight_exists(self, ingest_job_id: int) -> bool:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT 1 FROM system_jobs
+            WHERE kind = ?
+              AND json_extract(payload_json, '$.ingest_job_id') = ?
+              AND status IN ('pending', 'running')
+            LIMIT 1
+            """,
+            (self.SYSTEM_JOB_KIND_INGEST_RUN, int(ingest_job_id)),
+        )
+        return await cur.fetchone() is not None
+
+    async def try_enqueue_ingest_run(
+        self, ingest_job_id: int, *, mission_id: int | None = None
+    ) -> int | None:
+        """
+        Enqueue ``ingest.run`` for a pending/failed ingest_jobs row (not completed).
+        At most one pending/running ``ingest.run`` per ``ingest_job_id``.
+        Returns new ``system_jobs.id`` or ``None`` if nothing to enqueue.
+        """
+        assert self._conn is not None
+        iid = int(ingest_job_id)
+        try:
+            await self._conn.execute("BEGIN IMMEDIATE")
+            if await self._ingest_run_inflight_exists(iid):
+                await self._conn.commit()
+                return None
+            row = await self.get_ingest_job_row(iid)
+            if row is None:
+                await self._conn.commit()
+                return None
+            st = str(row.get("status") or "")
+            if st == "completed":
+                await self._conn.commit()
+                return None
+            payload = {"ingest_job_id": iid}
+            cur2 = await self._conn.execute(
+                """
+                INSERT INTO system_jobs (
+                    kind, mission_id, payload_json, idempotency_key, status, max_attempts
+                )
+                VALUES (?, ?, ?, NULL, 'pending', 8)
+                """,
+                (
+                    self.SYSTEM_JOB_KIND_INGEST_RUN,
+                    mission_id,
+                    json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            jid = int(cur2.lastrowid)
+            await self._conn.commit()
+            return jid
+        except Exception:
+            await self._conn.rollback()
+            raise
+
+    async def ensure_pending_goal_system_jobs(self) -> int:
+        """Enqueue goal.run_turn for every pending goal task missing one. Returns insert count."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id FROM tasks
+            WHERE task_kind = ? AND status = 'pending'
+            ORDER BY id ASC
+            """,
+            (TASK_KIND_GOAL,),
+        )
+        rows = await cur.fetchall()
+        n = 0
+        for (tid,) in rows:
+            jid = await self.try_enqueue_goal_run_turn(int(tid))
+            if jid is not None:
+                n += 1
+        return n
+
+    async def reclaim_expired_system_jobs(self) -> int:
+        """
+        Expired leases: increment attempt_count; requeue as pending or mark dead.
+        Returns number of rows updated.
+        """
+        assert self._conn is not None
+        await self._conn.execute("BEGIN IMMEDIATE")
+        cur = await self._conn.execute(
+            """
+            UPDATE system_jobs SET
+                attempt_count = attempt_count + 1,
+                status = CASE
+                    WHEN attempt_count + 1 >= max_attempts THEN 'dead'
+                    ELSE 'pending'
+                END,
+                error = CASE
+                    WHEN attempt_count + 1 >= max_attempts
+                        THEN 'lease_expired_worker_lost'
+                    ELSE COALESCE(error, '')
+                END,
+                lease_owner = '',
+                lease_expires_at = NULL,
+                updated_at = datetime('now')
+            WHERE status = 'running'
+              AND lease_expires_at IS NOT NULL
+              AND datetime(lease_expires_at) < datetime('now')
+            """
+        )
+        n = cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
+        await self._conn.commit()
+        return int(n)
+
+    async def claim_next_system_job(
+        self,
+        worker_id: str,
+        *,
+        lease_seconds: int = 300,
+    ) -> dict[str, Any] | None:
+        """Atomically reclaim stale leases, then claim one pending job (compare-and-set)."""
+        assert self._conn is not None
+        wid = (worker_id or "worker").strip() or "worker"
+        lease = max(30, int(lease_seconds))
+        await self._conn.execute("BEGIN IMMEDIATE")
+        await self._conn.execute(
+            """
+            UPDATE system_jobs SET
+                attempt_count = attempt_count + 1,
+                status = CASE
+                    WHEN attempt_count + 1 >= max_attempts THEN 'dead'
+                    ELSE 'pending'
+                END,
+                error = CASE
+                    WHEN attempt_count + 1 >= max_attempts
+                        THEN 'lease_expired_worker_lost'
+                    ELSE COALESCE(error, '')
+                END,
+                lease_owner = '',
+                lease_expires_at = NULL,
+                updated_at = datetime('now')
+            WHERE status = 'running'
+              AND lease_expires_at IS NOT NULL
+              AND datetime(lease_expires_at) < datetime('now')
+            """
+        )
+        cur = await self._conn.execute(
+            """
+            SELECT id FROM system_jobs
+            WHERE status = 'pending'
+              AND (run_after IS NULL OR trim(run_after) = ''
+                   OR datetime(run_after) <= datetime('now'))
+            ORDER BY priority DESC, id ASC
+            LIMIT 1
+            """
+        )
+        row = await cur.fetchone()
+        if row is None:
+            await self._conn.commit()
+            return None
+        jid = int(row[0])
+        cur2 = await self._conn.execute(
+            f"""
+            UPDATE system_jobs SET
+                status = 'running',
+                lease_owner = ?,
+                lease_expires_at = datetime('now', '+{lease} seconds'),
+                updated_at = datetime('now'),
+                started_at = COALESCE(started_at, datetime('now'))
+            WHERE id = ? AND status = 'pending'
+            """,
+            (wid, jid),
+        )
+        if cur2.rowcount != 1:
+            await self._conn.commit()
+            return None
+        cur3 = await self._conn.execute(
+            """
+            SELECT id, kind, mission_id, payload_json, idempotency_key, status,
+                   attempt_count, max_attempts, error, lease_owner, lease_expires_at,
+                   run_after, priority, correlation_id, created_at, updated_at, started_at
+            FROM system_jobs WHERE id = ?
+            """,
+            (jid,),
+        )
+        r = await cur3.fetchone()
+        await self._conn.commit()
+        if r is None:
+            return None
+        return self._system_job_row_to_dict(r)
+
+    def _system_job_row_to_dict(self, r: Any) -> dict[str, Any]:
+        raw = str(r[3] or "{}")
+        try:
+            payload: dict[str, Any] = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = {}
+        return {
+            "id": int(r[0]),
+            "kind": str(r[1]),
+            "mission_id": int(r[2]) if r[2] is not None else None,
+            "payload_json": payload,
+            "idempotency_key": str(r[4]) if r[4] is not None else None,
+            "status": str(r[5]),
+            "attempt_count": int(r[6]),
+            "max_attempts": int(r[7]),
+            "error": str(r[8] or ""),
+            "lease_owner": str(r[9] or ""),
+            "lease_expires_at": str(r[10]) if r[10] is not None else None,
+            "run_after": str(r[11]) if r[11] is not None else None,
+            "priority": int(r[12]),
+            "correlation_id": str(r[13]) if r[13] is not None else None,
+            "created_at": str(r[14]),
+            "updated_at": str(r[15]),
+            "started_at": str(r[16]) if r[16] is not None else None,
+        }
+
+    async def get_system_job(self, job_id: int) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, kind, mission_id, payload_json, idempotency_key, status,
+                   attempt_count, max_attempts, error, lease_owner, lease_expires_at,
+                   run_after, priority, correlation_id, created_at, updated_at, started_at
+            FROM system_jobs WHERE id = ?
+            """,
+            (int(job_id),),
+        )
+        row = await cur.fetchone()
+        return None if row is None else self._system_job_row_to_dict(row)
+
+    async def heartbeat_system_job(
+        self,
+        job_id: int,
+        worker_id: str,
+        *,
+        lease_seconds: int = 300,
+    ) -> bool:
+        assert self._conn is not None
+        wid = (worker_id or "").strip()
+        lease = max(30, int(lease_seconds))
+        cur = await self._conn.execute(
+            f"""
+            UPDATE system_jobs SET
+                lease_expires_at = datetime('now', '+{lease} seconds'),
+                updated_at = datetime('now')
+            WHERE id = ? AND status = 'running' AND lease_owner = ?
+            """,
+            (int(job_id), wid),
+        )
+        await self._conn.commit()
+        return cur.rowcount == 1
+
+    async def complete_system_job(self, job_id: int, worker_id: str) -> bool:
+        assert self._conn is not None
+        wid = (worker_id or "").strip()
+        cur = await self._conn.execute(
+            """
+            UPDATE system_jobs SET
+                status = 'completed',
+                lease_owner = '',
+                lease_expires_at = NULL,
+                error = '',
+                updated_at = datetime('now')
+            WHERE id = ? AND status = 'running' AND lease_owner = ?
+            """,
+            (int(job_id), wid),
+        )
+        await self._conn.commit()
+        return cur.rowcount == 1
+
+    async def fail_system_job(
+        self,
+        job_id: int,
+        worker_id: str,
+        error: str,
+        *,
+        terminal: bool = True,
+    ) -> bool:
+        assert self._conn is not None
+        wid = (worker_id or "").strip()
+        err = str(error or "")[:4000]
+        st = "failed" if terminal else "pending"
+        cur = await self._conn.execute(
+            f"""
+            UPDATE system_jobs SET
+                status = ?,
+                error = ?,
+                lease_owner = '',
+                lease_expires_at = NULL,
+                updated_at = datetime('now')
+            WHERE id = ? AND status = 'running' AND lease_owner = ?
+            """,
+            (st, err, int(job_id), wid),
+        )
+        await self._conn.commit()
+        return cur.rowcount == 1
+
+    async def cancel_system_job(self, job_id: int) -> bool:
+        """Cancel a pending job (operator)."""
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            UPDATE system_jobs SET
+                status = 'cancelled',
+                updated_at = datetime('now'),
+                lease_owner = '',
+                lease_expires_at = NULL
+            WHERE id = ? AND status = 'pending'
+            """,
+            (int(job_id),),
+        )
+        await self._conn.commit()
+        return cur.rowcount == 1
+
+    async def retry_system_job_clone(self, job_id: int) -> int | None:
+        """Insert a new pending job with same kind/payload; new idempotency suffix."""
+        assert self._conn is not None
+        row = await self.get_system_job(int(job_id))
+        if row is None:
+            return None
+        base = row.get("idempotency_key") or f"retry:{job_id}"
+        new_key = f"{base}:retry:{int(datetime.now().timestamp())}"
+        return await self.insert_system_job(
+            kind=str(row["kind"]),
+            payload_json=dict(row.get("payload_json") or {}),
+            mission_id=row.get("mission_id"),
+            idempotency_key=new_key,
+            priority=int(row.get("priority") or 0),
+            max_attempts=int(row.get("max_attempts") or 8),
+        )
+
+    async def list_system_jobs(
+        self,
+        *,
+        limit: int = 100,
+        status: str | None = None,
+        mission_id: int | None = None,
+        kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        lim = max(1, min(int(limit), 500))
+        where: list[str] = ["1=1"]
+        args: list[Any] = []
+        if status is not None:
+            where.append("status = ?")
+            args.append(str(status).strip().lower())
+        if mission_id is not None:
+            where.append("mission_id = ?")
+            args.append(int(mission_id))
+        if kind is not None:
+            where.append("kind = ?")
+            args.append(str(kind).strip())
+        wsql = " AND ".join(where)
+        cur = await self._conn.execute(
+            f"""
+            SELECT id, kind, mission_id, payload_json, idempotency_key, status,
+                   attempt_count, max_attempts, error, lease_owner, lease_expires_at,
+                   run_after, priority, correlation_id, created_at, updated_at, started_at
+            FROM system_jobs
+            WHERE {wsql}
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (*args, lim),
+        )
+        rows = await cur.fetchall()
+        return [self._system_job_row_to_dict(r) for r in rows]
+
+    async def get_ingest_job_row(self, job_id: int) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT id, kind, params_json, idempotency_key, status, error,
+                   started_at, completed_at, created_at
+            FROM ingest_jobs WHERE id = ?
+            """,
+            (int(job_id),),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        raw = str(row[2] or "{}")
+        try:
+            params: dict[str, Any] = json.loads(raw)
+        except json.JSONDecodeError:
+            params = {}
+        return {
+            "id": int(row[0]),
+            "kind": str(row[1]),
+            "params_json": params,
+            "idempotency_key": str(row[3]) if row[3] is not None else None,
+            "status": str(row[4]),
+            "error": str(row[5] or ""),
+            "started_at": str(row[6]) if row[6] is not None else None,
+            "completed_at": str(row[7]) if row[7] is not None else None,
+            "created_at": str(row[8]),
+        }

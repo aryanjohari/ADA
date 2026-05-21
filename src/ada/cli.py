@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -17,30 +18,15 @@ from ada.extract.graph_lite import (
 from ada.policy.load import clamp_graph_lite_job_limits, load_merged_policy_for
 from ada.publish.batch_enrich_context import resolve_batch_enrich_system_instruction
 from ada.workflow.publish_enrich_step import run_publish_entity_enrich
-from ada.orchestrator import (
-    SessionTokenLimitExceeded,
-    file_guard_audit_hook,
-    orchestrate_turn,
-)
-from ada.prompt import (
-    build_system_instruction,
-    format_allowlist_summary,
-    format_file_tools_note,
-    format_knowledge_tools_note,
-    format_schema_digest_note,
-    format_session_web_sources_list_note,
-    format_web_tools_note,
-    read_soul_text,
-    read_text_file,
-)
+from ada.chat_ingress import ChatIngressMode, ChatSurfaceMode, surface_operator_label
+from ada.chat_session import ChatSession, chat_setup_mode_enabled
+from ada.orchestrator import SessionTokenLimitExceeded
 from ada.profile_runtime import enforce_profile_identity
-from ada.query_engine import TASK_KIND_CHAT, QueryEngine
+from ada.query_engine import QueryEngine
 from ada.tool_executor import (
     FileToolConfig,
     MemoryToolConfig,
-    build_web_tool_config,
 )
-from ada.tools.shell_allowlist import load_allowlist_exact_lines
 
 
 def _memory_tool_config(settings: Settings) -> MemoryToolConfig | None:
@@ -71,132 +57,81 @@ def _file_tool_config(settings: Settings) -> FileToolConfig | None:
     )
 
 
-def _boot_state_key(task_id: int) -> str:
-    return f"session.{task_id}.boot_complete"
+from ada.chat_session import mission_control_snapshot_fn as _mission_control_snapshot_fn
 
 
-async def run_chat(settings: Settings, *, new_session: bool) -> None:
-    settings.ensure_data_dir()
-    schema_path = Path(__file__).resolve().parent / "db" / "schema.sql"
-    qe = QueryEngine(
-        settings.state_db_path,
-        schema_path,
-        debounce_ms=settings.persist_debounce_ms,
-    )
-    await qe.connect()
-    await enforce_profile_identity(qe, settings)
-    try:
-        if new_session:
-            task_id = await qe.insert_task(
-                "Interactive session", status="executing", task_kind=TASK_KIND_CHAT
+async def run_chat(
+    settings: Settings,
+    *,
+    new_session: bool,
+    mission_slug: str | None = None,
+    setup_mode: bool = False,
+    plan_mode: bool = False,
+    agent_mode: bool = False,
+    programme_mode: bool = False,
+) -> None:
+    setup_mode = chat_setup_mode_enabled(setup_mode)
+    if programme_mode and not plan_mode:
+        plan_mode = True
+    if os.environ.get("ADA_REQUIRE_CHAT_MISSION", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        slug_check = (mission_slug or os.environ.get("ADA_CHAT_DEFAULT_MISSION", "")).strip()
+        if not slug_check and agent_mode:
+            print(
+                "ADA_REQUIRE_CHAT_MISSION=1: set --mission or ADA_CHAT_DEFAULT_MISSION "
+                "for Agent mode.",
+                file=sys.stderr,
             )
-        else:
-            existing = await qe.latest_cli_session_task_id()
-            if existing is not None:
-                task_id = existing
-                await qe.update_task(task_id, status="executing")
-            else:
-                task_id = await qe.insert_task(
-                    "Interactive session",
-                    status="executing",
-                    task_kind=TASK_KIND_CHAT,
-                )
+            raise SystemExit(2)
 
-        allow = load_allowlist_exact_lines(settings.allowlist_path)
-        soul = read_soul_text(settings.soul_path)
-        master = read_text_file(settings.master_path)
-        wakeup = read_text_file(settings.wakeup_path)
-        file_note = (
-            format_file_tools_note(settings)
-            if settings.enable_file_tools
-            else None
-        )
-        web_note = (
-            format_web_tools_note(settings)
-            if settings.enable_web_tools
-            else None
-        )
-        digest_note = format_schema_digest_note(
-            read_text_file(settings.memory_dir / "schema_digest.md")
-        )
-        ws_list_note = format_session_web_sources_list_note(settings)
-        knowledge_note = format_knowledge_tools_note(settings)
-        sys_instr = build_system_instruction(
-            soul_text=soul,
-            master_text=master,
-            state_db_display_path=str(settings.state_db_path),
-            allowlist_summary=format_allowlist_summary(allow),
-            file_tools_note=file_note,
-            web_tools_note=web_note,
-            schema_digest_note=digest_note,
-            session_web_sources_list_note=ws_list_note,
-            knowledge_tools_note=knowledge_note,
-            worker_mode=False,
-        )
-        file_cfg = _file_tool_config(settings)
-        web_cfg = build_web_tool_config(settings)
-
+    explicit_mission = mission_slug is not None or agent_mode
+    session = await ChatSession.open(
+        settings,
+        new_session=new_session,
+        mission_slug=mission_slug,
+        setup_mode=setup_mode,
+        plan_mode=plan_mode,
+        agent_mode=agent_mode,
+        programme_mode=programme_mode,
+        apply_env_default=explicit_mission and agent_mode,
+    )
+    try:
         if not settings.gemini_api_key:
             print("Set GEMINI_API_KEY (see .env.example).", file=sys.stderr)
             return
 
-        if await qe.state_get(_boot_state_key(task_id)) is None and wakeup.strip():
+        surface = session.surface
+        mission_id = session.mission_id
+
+        async def boot_on_delta(chunk: str) -> None:
+            print(chunk, end="", flush=True)
+
+        if session.wakeup.strip():
             print("Boot: running wakeup prompt once for this session…", flush=True)
             try:
-
-                async def boot_on_delta(chunk: str) -> None:
-                    print(chunk, end="", flush=True)
-
-                await orchestrate_turn(
-                    qe,
-                    session_id=task_id,
-                    user_text=wakeup.strip(),
-                    system_instruction=sys_instr,
-                    api_key=settings.gemini_api_key,
-                    model=settings.gemini_model,
-                    on_delta=boot_on_delta,
-                    shell_allowlist=allow,
-                    max_tool_rounds=settings.max_tool_rounds,
-                    shell_max_output_bytes=settings.shell_max_output_bytes,
-                    shell_timeout_sec=settings.shell_timeout_sec,
-                    stream_chunk_idle_timeout_sec=settings.stream_chunk_idle_timeout_sec,
-                    stream_leg_max_wall_sec=settings.stream_leg_max_wall_sec,
-                    rewire_after_tombstone=settings.rewire_after_tombstone,
-                    enable_memory_tools=settings.enable_memory_tools,
-                    memory_config=_memory_tool_config(settings),
-                    include_plan_tools=settings.enable_plan_tools,
-                    include_goal_recall_tool=settings.enable_goal_recall_tool,
-                    include_gsc_read_tools=settings.enable_gsc_read_tools,
-                    file_config=file_cfg,
-                    max_session_tokens=settings.max_session_tokens,
-                    on_file_guard_violation=file_guard_audit_hook(
-                        qe,
-                        task_id,
-                        enabled=settings.file_audit_denials,
-                    ),
-                    web_config=web_cfg,
-                    enable_list_session_web_sources=settings.enable_web_sources_tool,
-                    include_knowledge_tools=settings.enable_knowledge_tools,
-                    knowledge_feed_host_allowlist=settings.knowledge_feed_host_allowlist,
-                    knowledge_embeddings_enabled=settings.enable_knowledge_embeddings,
-                    knowledge_embedding_model=settings.knowledge_embedding_model,
-                    knowledge_embedding_dim=settings.knowledge_embedding_dim,
-                    knowledge_embedding_min_cosine=settings.knowledge_embedding_min_cosine,
-                    knowledge_tool_max_results=settings.knowledge_tool_max_results,
-                    knowledge_tool_excerpt_chars=settings.knowledge_tool_excerpt_chars,
-                    debug_stream=settings.debug_stream,
-                    include_workflow_tools=settings.enable_workflow_tools,
-                    workflow_max_steps=settings.ada_max_task_steps,
-                )
+                await session.run_boot_if_needed(on_delta=boot_on_delta)
                 print(flush=True)
-                await qe.state_set(_boot_state_key(task_id), "1")
             except SessionTokenLimitExceeded as e:
                 print(f"\n[boot error] {e}", file=sys.stderr)
-                await qe.update_task(task_id, status="failed", current_output=str(e))
             except Exception as e:
                 print(f"\n[boot error] {e}", file=sys.stderr)
 
-        print("ADA chat — empty line or Ctrl-D to exit.", flush=True)
+        mode_bits: list[str] = [surface_operator_label(surface)]
+        if session.default_mission_slug:
+            mode_bits.append(f"default_mission={session.default_mission_slug}")
+        if mission_id is not None:
+            mode_bits.append(f"mission_id={mission_id}")
+        if surface == ChatSurfaceMode.SETUP:
+            mode_bits.append("setup_assist")
+        if mode_bits:
+            print(f"ADA chat ({', '.join(mode_bits)}) — empty line or Ctrl-D to exit.", flush=True)
+        else:
+            print("ADA chat — empty line or Ctrl-D to exit.", flush=True)
+
         while True:
             try:
                 line = input("you> ").strip()
@@ -210,69 +145,19 @@ async def run_chat(settings: Settings, *, new_session: bool) -> None:
                 print(chunk, end="", flush=True)
 
             try:
-                final = await orchestrate_turn(
-                    qe,
-                    session_id=task_id,
-                    user_text=line,
-                    system_instruction=sys_instr,
-                    api_key=settings.gemini_api_key,
-                    model=settings.gemini_model,
-                    on_delta=on_delta,
-                    shell_allowlist=allow,
-                    max_tool_rounds=settings.max_tool_rounds,
-                    shell_max_output_bytes=settings.shell_max_output_bytes,
-                    shell_timeout_sec=settings.shell_timeout_sec,
-                    stream_chunk_idle_timeout_sec=settings.stream_chunk_idle_timeout_sec,
-                    stream_leg_max_wall_sec=settings.stream_leg_max_wall_sec,
-                    rewire_after_tombstone=settings.rewire_after_tombstone,
-                    enable_memory_tools=settings.enable_memory_tools,
-                    memory_config=_memory_tool_config(settings),
-                    include_plan_tools=settings.enable_plan_tools,
-                    include_goal_recall_tool=settings.enable_goal_recall_tool,
-                    include_gsc_read_tools=settings.enable_gsc_read_tools,
-                    file_config=file_cfg,
-                    max_session_tokens=settings.max_session_tokens,
-                    on_file_guard_violation=file_guard_audit_hook(
-                        qe,
-                        task_id,
-                        enabled=settings.file_audit_denials,
-                    ),
-                    web_config=web_cfg,
-                    enable_list_session_web_sources=settings.enable_web_sources_tool,
-                    include_knowledge_tools=settings.enable_knowledge_tools,
-                    knowledge_feed_host_allowlist=settings.knowledge_feed_host_allowlist,
-                    knowledge_embeddings_enabled=settings.enable_knowledge_embeddings,
-                    knowledge_embedding_model=settings.knowledge_embedding_model,
-                    knowledge_embedding_dim=settings.knowledge_embedding_dim,
-                    knowledge_embedding_min_cosine=settings.knowledge_embedding_min_cosine,
-                    knowledge_tool_max_results=settings.knowledge_tool_max_results,
-                    knowledge_tool_excerpt_chars=settings.knowledge_tool_excerpt_chars,
-                    debug_stream=settings.debug_stream,
-                    include_workflow_tools=settings.enable_workflow_tools,
-                    workflow_max_steps=settings.ada_max_task_steps,
-                )
-                await qe.update_task(
-                    task_id,
-                    status="executing",
-                    current_output=final,
-                )
+                await session.send_message(line, on_delta=on_delta)
                 print()
             except SessionTokenLimitExceeded as e:
                 print(f"\n[error] {e}", file=sys.stderr)
-                await qe.update_task(
-                    task_id,
-                    status="failed",
-                    current_output=str(e),
-                )
             except Exception as e:
                 print(f"\n[error] {e}", file=sys.stderr)
-                await qe.update_task(
-                    task_id,
+                await session.qe.update_task(
+                    session.task_id,
                     status="executing",
                     current_output=f"Error: {e}",
                 )
     finally:
-        await qe.close()
+        await session.close()
 
 
 async def run_dream_cli(

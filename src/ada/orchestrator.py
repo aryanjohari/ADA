@@ -5,10 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
-from ada.adapters.gemini_stream import chain_rows_to_contents, stream_one_model_leg
+from ada.adapters.gemini_stream import (
+    apply_turn_harness_appendix_to_contents,
+    chain_rows_to_contents,
+    stream_one_model_leg,
+)
+from ada.config import Settings
 from ada.knowledge_urls import validate_knowledge_feed_url
 from ada.tools.web_runtime import validate_https_url
 from ada.stream_debug import is_stream_debug_on, log_stream
@@ -26,10 +31,7 @@ from ada.tools.registry import (
     build_agent_tools,
     frozen_tool_declaration_names,
 )
-from ada.workflow.enqueue import (
-    enqueue_workflow_via_tool,
-    get_workflow_status_via_tool,
-)
+from ada.workflow.enqueue import get_workflow_status_via_tool
 
 log = logging.getLogger("ada.orchestrator")
 
@@ -110,6 +112,14 @@ async def orchestrate_turn(
     workflow_max_steps: int | None = None,
     workflow_require_approval: bool = False,
     enrich_subject_entity_id: int | None = None,
+    mission_control_snapshot_fn: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+    include_run_skill: bool = False,
+    include_propose_programme: bool = False,
+    include_apply_programme: bool = False,
+    motor_settings: Settings | None = None,
+    chat_mission_slug: str | None = None,
+    effective_mission_id: int | None = None,
+    turn_harness_appendix: str | None = None,
 ) -> str:
     """
     Persist user once, then run one or more model legs with optional tool rounds.
@@ -142,6 +152,10 @@ async def orchestrate_turn(
         include_knowledge_tools=include_knowledge_tools and knowledge_tool_subset is None,
         knowledge_tool_subset=knowledge_tool_subset,
         include_workflow_tools=include_workflow_tools,
+        include_mission_control_snapshot=mission_control_snapshot_fn is not None,
+        include_run_skill=include_run_skill,
+        include_propose_programme=include_propose_programme,
+        include_apply_programme=include_apply_programme,
     )
     dispatch_allowlist = (
         frozen_tool_declaration_names(gemini_tool) if wf_strict else None
@@ -157,7 +171,9 @@ async def orchestrate_turn(
     )
     legs_cap = max(1, max_tool_rounds)
     memory = memory_config if eff_memory else None
-    knowledge_mission_scope = await qe.get_task_mission_id(session_id)
+    knowledge_mission_scope = effective_mission_id
+    if knowledge_mission_scope is None:
+        knowledge_mission_scope = await qe.get_task_mission_id(session_id)
 
     async def _read_plan_bound() -> str:
         return await qe.get_task_plan_json(session_id)
@@ -669,7 +685,9 @@ async def orchestrate_turn(
                 enrich_subject_entity_id
             ):
                 return {"error": "entity_id must match enrich subject"}
-            pack = await qe.load_subject_subgraph_context_pack(eid_arg)
+            pack = await qe.load_subject_subgraph_context_pack(
+                eid_arg, mission_scope=knowledge_mission_scope
+            )
             if pack.get("subject") is None:
                 return {"error": f"unknown entity_id={eid_arg}"}
             return pack
@@ -701,36 +719,6 @@ async def orchestrate_turn(
             if "get_entity_graph_context" not in knowledge_tool_subset:
                 knowledge_graph_context_fn = None
 
-    async def _enqueue_workflow_bound(
-        call: CompletedFunctionCall,
-    ) -> dict[str, Any]:
-        raw_params = call.args.get("params_json")
-        params_str: str | None
-        if raw_params is None:
-            params_str = None
-        elif isinstance(raw_params, str):
-            params_str = raw_params
-        elif isinstance(raw_params, dict):
-            params_str = json.dumps(raw_params, ensure_ascii=False)
-        else:
-            return {"error": "params_json must be a string or object"}
-        raw_key = call.args.get("idempotency_key")
-        idem: str | None
-        if raw_key is None:
-            idem = None
-        else:
-            idem = str(raw_key).strip() or None
-        return await enqueue_workflow_via_tool(
-            qe,
-            kind=str(call.args.get("kind") or ""),
-            goal_text=str(call.args.get("goal_text") or ""),
-            params_json=params_str,
-            idempotency_key=idem,
-            max_steps=workflow_max_steps,
-            require_approval=workflow_require_approval,
-            source_task_id=session_id,
-        )
-
     async def _workflow_status_bound(
         call: CompletedFunctionCall,
     ) -> dict[str, Any]:
@@ -741,8 +729,95 @@ async def orchestrate_turn(
             return {"error": "workflow_id must be integer"}
         return await get_workflow_status_via_tool(qe, workflow_id=wf_id)
 
-    wf_enqueue_h = _enqueue_workflow_bound if include_workflow_tools else None
+    wf_enqueue_h = None
     wf_status_h = _workflow_status_bound if include_workflow_tools else None
+
+    mot_settings = motor_settings
+    mot_slug = (chat_mission_slug or "").strip() or None
+
+    async def _run_skill_bound(call: CompletedFunctionCall) -> dict[str, Any]:
+        if mot_settings is None:
+            return {"error": "run_skill not configured"}
+        from ada.motor import MotorRequest, execute
+
+        raw_params = call.args.get("params_json")
+        params: dict[str, Any] = {}
+        if raw_params is not None:
+            if isinstance(raw_params, str):
+                try:
+                    params = json.loads(raw_params)
+                except json.JSONDecodeError as e:
+                    return {"error": f"params_json invalid: {e}"}
+            elif isinstance(raw_params, dict):
+                params = raw_params
+            else:
+                return {"error": "params_json must be string or object"}
+        slug = str(call.args.get("mission_slug") or mot_slug or "").strip() or None
+        req = MotorRequest(
+            layer="skill",
+            id=str(call.args.get("skill_id") or "").strip(),
+            params=params,
+            mission_slug=slug,
+            session_id=session_id,
+            approved=bool(call.args.get("approved")),
+        )
+        result = await execute(req, settings=mot_settings, qe=qe)
+        if result.pending_approval:
+            return {
+                "pending_approval": True,
+                "error": result.error,
+                "skill_id": req.id,
+            }
+        if not result.ok:
+            return {"error": result.error or "motor failed"}
+        return {"ok": True, "output": result.output, "action_log_id": result.action_log_id}
+
+    async def _propose_programme_bound(call: CompletedFunctionCall) -> dict[str, Any]:
+        from ada.programme.propose import propose_packet
+
+        raw = call.args.get("packet_json")
+        if raw is None:
+            return {"error": "packet_json required"}
+        if isinstance(raw, dict):
+            return propose_packet(raw)
+        return propose_packet(str(raw))
+
+    async def _apply_programme_bound(call: CompletedFunctionCall) -> dict[str, Any]:
+        from ada.programme.apply import confirm_and_apply
+        from ada.programme.packet import validate_packet_dict
+
+        if mot_settings is None:
+            return {"error": "apply_programme not configured"}
+        approved = bool(call.args.get("approved"))
+        raw = call.args.get("packet_json")
+        if raw is None:
+            return {"error": "packet_json required"}
+        if isinstance(raw, str):
+            import json
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as e:
+                return {"error": f"invalid JSON: {e}"}
+        elif isinstance(raw, dict):
+            data = raw
+        else:
+            return {"error": "packet_json must be string or object"}
+        try:
+            packet = validate_packet_dict(data)
+        except Exception as e:
+            return {"error": str(e)}
+        return await confirm_and_apply(
+            qe,
+            mot_settings,
+            packet,
+            approved=approved,
+            session_id=session_id,
+        )
+
+    run_skill_h = _run_skill_bound if include_run_skill else None
+    propose_h = _propose_programme_bound if include_propose_programme else None
+    apply_h = _apply_programme_bound if include_apply_programme else None
 
     last_err: Exception | None = None
     for attempt in range(max_retries + 1):
@@ -778,6 +853,10 @@ async def orchestrate_turn(
             workflow_enqueue=wf_enqueue_h,
             workflow_get_status=wf_status_h,
             gsc_read=gsc_read_fn,
+            mission_control_snapshot=mission_control_snapshot_fn,
+            run_skill_handler=run_skill_h,
+            propose_programme_handler=propose_h,
+            apply_programme_handler=apply_h,
         )
         try:
             return await _agentic_loop(
@@ -808,6 +887,7 @@ async def orchestrate_turn(
                 workflow_tools_configured=include_workflow_tools,
                 max_session_tokens=max_session_tokens,
                 debug_stream=dbg,
+                turn_harness_appendix=turn_harness_appendix,
             )
         except SessionTokenLimitExceeded:
             executor.discard()
@@ -853,6 +933,7 @@ async def _agentic_loop(
     workflow_tools_configured: bool,
     max_session_tokens: int,
     debug_stream: bool,
+    turn_harness_appendix: str | None = None,
 ) -> str:
     parent = user_parent_uuid
 
@@ -870,6 +951,10 @@ async def _agentic_loop(
         for empty_try in range(_EMPTY_MODEL_STREAM_RETRIES):
             chain = await qe.load_chain_for_api(session_id)
             gemini_contents = chain_rows_to_contents(chain)
+            if turn_harness_appendix:
+                gemini_contents = apply_turn_harness_appendix_to_contents(
+                    gemini_contents, turn_harness_appendix
+                )
             assistant_uuid = await qe.persist_assistant_begin(session_id, parent)
 
             async def _td(s: str) -> None:
@@ -1067,8 +1152,7 @@ async def _agentic_loop(
             )
 
         needs_workflow_tool = any(
-            c.name in ("enqueue_workflow", "get_workflow_status")
-            for c in leg.function_calls
+            c.name == "get_workflow_status" for c in leg.function_calls
         )
         if needs_workflow_tool and not workflow_tools_configured:
             raise StreamFailed(

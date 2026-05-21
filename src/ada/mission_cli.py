@@ -9,9 +9,14 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from ada.config import Settings
+import yaml
+
+from ada.config import Settings, _find_project_root
 from ada.config_deprecation import DEPRECATED_ENVS, env_patch_from_current_process
+from ada.mission_control.audit_scope import audit_mission_scope
+from ada.mission_control.snapshot import build_snapshot_from_settings
 from ada.mission_tick import run_mission_tick
+from ada.observability.queries import open_readonly_connection
 from ada.query_engine import QueryEngine
 from ada.profile_runtime import enforce_profile_identity
 
@@ -108,6 +113,34 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         metavar="ENV,...",
         help="Comma-separated deprecated env var names (default: all set in the environment)",
+    )
+
+    status_p = sub.add_parser(
+        "status",
+        help="Read-only mission control snapshot + flags (JSON)",
+    )
+    status_p.add_argument("slug", metavar="SLUG")
+
+    audit_p = sub.add_parser(
+        "audit-scope",
+        help="Read-only graph/knowledge scope audit for a mission (JSON)",
+    )
+    audit_p.add_argument("slug", metavar="SLUG")
+
+    tmpl_p = sub.add_parser(
+        "apply-template",
+        help="Build ProgrammePacket from templates/missions/<name>.yaml",
+    )
+    tmpl_p.add_argument("name", metavar="NAME", help="Template name (without .yaml)")
+    tmpl_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned packet JSON only (no DB writes)",
+    )
+    tmpl_p.add_argument(
+        "--yes",
+        action="store_true",
+        help="Apply without interactive confirm",
     )
 
     return p.parse_args(argv)
@@ -233,6 +266,57 @@ async def _run_tick(
     )
 
 
+async def _run_status(settings: Settings, args: argparse.Namespace) -> int:
+    slug = str(args.slug).strip()
+    if not _validate_slug(slug):
+        print(
+            "mission status: slug must match ^[a-z0-9][a-z0-9_-]{1,63}$",
+            file=sys.stderr,
+        )
+        return 2
+    conn = open_readonly_connection(settings.state_db_path)
+    try:
+        cur = conn.execute("SELECT id FROM missions WHERE slug = ?", (slug,))
+        row = cur.fetchone()
+        if row is None:
+            print(f"mission status: no mission with slug {slug!r}", file=sys.stderr)
+            return 2
+        mid = int(row[0])
+    finally:
+        conn.close()
+    snap = build_snapshot_from_settings(
+        settings,
+        mission_id=mid,
+        mission_slug=slug,
+        profile_scope=True,
+    )
+    print(json.dumps(snap, ensure_ascii=False, indent=2))
+    return 0
+
+
+async def _run_audit_scope(settings: Settings, args: argparse.Namespace) -> int:
+    slug = str(args.slug).strip()
+    if not _validate_slug(slug):
+        print(
+            "mission audit-scope: slug must match ^[a-z0-9][a-z0-9_-]{1,63}$",
+            file=sys.stderr,
+        )
+        return 2
+    conn = open_readonly_connection(settings.state_db_path)
+    try:
+        cur = conn.execute("SELECT id FROM missions WHERE slug = ?", (slug,))
+        row = cur.fetchone()
+        if row is None:
+            print(f"mission audit-scope: no mission with slug {slug!r}", file=sys.stderr)
+            return 2
+        mid = int(row[0])
+        report = audit_mission_scope(conn, mission_id=mid, mission_slug=slug)
+    finally:
+        conn.close()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
 async def _run_migrate_env(qe: QueryEngine, args: argparse.Namespace) -> int:
     slug = str(args.slug).strip()
     if not _validate_slug(slug):
@@ -290,6 +374,84 @@ async def _run_migrate_env(qe: QueryEngine, args: argparse.Namespace) -> int:
     return 0
 
 
+def list_mission_template_names() -> list[str]:
+    """Stem names of templates/missions/*.yaml (for Plan harness)."""
+    root = _find_project_root()
+    folder = root / "templates" / "missions"
+    if not folder.is_dir():
+        return []
+    return sorted(p.stem for p in folder.glob("*.yaml") if p.is_file())
+
+
+def load_mission_template(name: str) -> dict:
+    """Load templates/missions/<name>.yaml as a programme packet dict (HUD/CLI)."""
+    return _load_mission_template(name)
+
+
+def _load_mission_template(name: str) -> dict:
+    root = _find_project_root()
+    path = (root / "templates" / "missions" / f"{name.strip()}.yaml").resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"template not found: {path}")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("template must be a YAML mapping")
+    slug = str(raw.get("slug") or raw.get("name") or name).strip()
+    defaults = dict(raw.get("defaults_json") or {})
+    pack = raw.get("pack")
+    if pack is not None and str(pack).strip():
+        defaults["pack"] = str(pack).strip()
+    brief = raw.get("brief_md")
+    brief_md = str(brief).strip() if brief is not None else ""
+    return {
+        "mission_slug": slug,
+        "title": str(raw.get("title") or slug),
+        "defaults_json": defaults,
+        "schedule_hint_json": raw.get("schedule_hint_json"),
+        "knowledge_sources": list(raw.get("knowledge_sources") or []),
+        "recommended_cron": list(raw.get("recommended_cron") or []),
+        "skills_enabled": list(raw.get("skills_enabled") or []),
+        "risk_summary": str(
+            raw.get("risk_summary")
+            or f"Mission template {name!r} — review before apply."
+        ),
+        "brief_md": brief_md,
+    }
+
+
+async def _run_apply_template(
+    qe: QueryEngine, settings: Settings, args: argparse.Namespace
+) -> int:
+    from ada.programme.apply import confirm_and_apply
+    from ada.programme.packet import ProgrammePacket
+
+    try:
+        data = _load_mission_template(args.name)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"apply-template: {e}", file=sys.stderr)
+        return 2
+    try:
+        packet = ProgrammePacket.model_validate(data)
+    except Exception as e:
+        print(f"apply-template: invalid packet: {e}", file=sys.stderr)
+        return 2
+    if args.dry_run:
+        print(json.dumps(packet.model_dump(mode="json"), indent=2))
+        return 0
+    approved = bool(args.yes)
+    if not approved:
+        ans = input(f"Apply template {args.name!r} to mission {packet.mission_slug!r}? [y/N] ")
+        approved = ans.strip().lower() in ("y", "yes")
+    out = await confirm_and_apply(qe, settings, packet, approved=approved)
+    if out.get("denied"):
+        return 1
+    if not out.get("ok"):
+        print(json.dumps(out), file=sys.stderr)
+        return 1
+    print(json.dumps(out, indent=2))
+    return 0
+
+
 async def async_main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     settings = Settings.load()
@@ -313,6 +475,12 @@ async def async_main(argv: list[str] | None = None) -> int:
             return await _run_show(qe, args)
         if args.subcmd == "migrate-env":
             return await _run_migrate_env(qe, args)
+        if args.subcmd == "status":
+            return await _run_status(settings, args)
+        if args.subcmd == "audit-scope":
+            return await _run_audit_scope(settings, args)
+        if args.subcmd == "apply-template":
+            return await _run_apply_template(qe, settings, args)
     finally:
         await qe.close()
     return 2

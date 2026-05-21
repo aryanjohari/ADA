@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from ada.observability.sanitize import (
     action_payload_safe,
     field_digest,
     json_blob_digest,
+    system_job_payload_safe,
     truncate_error,
 )
 
@@ -513,6 +515,222 @@ def pending_task_counts_by_mission(
             }
         )
     return out
+
+
+def mission_id_from_slug(conn: sqlite3.Connection, slug: str) -> int | None:
+    if not _table_exists(conn, "missions"):
+        return None
+    cur = conn.execute(
+        "SELECT id FROM missions WHERE slug = ? LIMIT 1",
+        (slug.strip(),),
+    )
+    row = cur.fetchone()
+    return int(row[0]) if row is not None else None
+
+
+def _parse_schedule_job_ids(schedule_hint_json: str | None) -> list[str]:
+    if not schedule_hint_json or not str(schedule_hint_json).strip():
+        return []
+    try:
+        data = json.loads(schedule_hint_json)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict) or data.get("version") != 1:
+        return []
+    jobs = data.get("jobs")
+    if not isinstance(jobs, list):
+        return []
+    out: list[str] = []
+    for j in jobs:
+        if isinstance(j, dict):
+            jid = str(j.get("id") or "").strip()
+            if jid:
+                out.append(jid)
+    return out
+
+
+def _count_map(rows: list[dict[str, Any]], *, key: str = "mission_id") -> dict[int | None, int]:
+    m: dict[int | None, int] = {}
+    for r in rows:
+        mid = r.get(key)
+        m[mid] = m.get(mid, 0) + int(r.get("n") or 0)
+    return m
+
+
+def missions_overview_list(
+    conn: sqlite3.Connection,
+    *,
+    slug_filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    One row per mission: slug, title, schedule job ids, defaults digest, work counts.
+    """
+    if not _table_exists(conn, "missions"):
+        return []
+    where = ""
+    args: list[Any] = []
+    if slug_filter and str(slug_filter).strip():
+        where = " WHERE slug = ?"
+        args.append(str(slug_filter).strip())
+    cur = conn.execute(
+        f"""
+        SELECT id, slug, title, niche, topic, defaults_json, schedule_hint_json,
+               created_at, updated_at
+        FROM missions
+        {where}
+        ORDER BY slug ASC
+        """,
+        tuple(args),
+    )
+    mission_rows = cur.fetchall()
+    pending_goals = _count_map(pending_task_counts_by_mission(conn))
+    pending_wf = _count_map(pending_workflow_counts_by_mission(conn))
+    pending_sj: dict[int | None, int] = {}
+    if _table_exists(conn, "system_jobs"):
+        cur2 = conn.execute(
+            """
+            SELECT mission_id, COUNT(*) AS n
+            FROM system_jobs
+            WHERE status IN ('pending', 'running')
+            GROUP BY mission_id
+            """
+        )
+        for r in cur2.fetchall():
+            mid = r["mission_id"]
+            pending_sj[int(mid) if mid is not None else None] = int(r["n"] or 0)
+
+    out: list[dict[str, Any]] = []
+    for r in mission_rows:
+        mid = int(r["id"])
+        defaults_raw = str(r["defaults_json"] or "{}")
+        sched_raw = r["schedule_hint_json"]
+        sched_s = str(sched_raw) if sched_raw is not None else ""
+        out.append(
+            {
+                "id": mid,
+                "slug": str(r["slug"] or ""),
+                "title": str(r["title"] or ""),
+                "niche": r["niche"],
+                "topic": r["topic"],
+                "defaults_json_digest": json_blob_digest(defaults_raw),
+                "schedule_job_ids": _parse_schedule_job_ids(sched_s),
+                "pending_goals": pending_goals.get(mid, 0),
+                "pending_workflows": pending_wf.get(mid, 0),
+                "pending_system_jobs": pending_sj.get(mid, 0),
+                "created_at": str(r["created_at"] or ""),
+                "updated_at": str(r["updated_at"] or ""),
+            }
+        )
+    return out
+
+
+def mission_tick_state_rows(
+    conn: sqlite3.Connection,
+    *,
+    mission_slug: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Read-only ``state`` rows for ``mission.tick.{slug}.*`` keys."""
+    if not _table_exists(conn, "state"):
+        return []
+    prefix = f"mission.tick.{mission_slug.strip()}."
+    cur = conn.execute(
+        """
+        SELECT key, value FROM state
+        WHERE key LIKE ?
+        ORDER BY key ASC
+        LIMIT ?
+        """,
+        (prefix + "%", limit),
+    )
+    return [{"key": str(r["key"]), "value": str(r["value"])} for r in cur.fetchall()]
+
+
+def system_jobs_recent(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 150,
+    mission_id: int | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Recent system_jobs with sanitized payload summaries (no raw JSON in rows)."""
+    if not _table_exists(conn, "system_jobs"):
+        return []
+    lim = max(1, min(500, int(limit)))
+    where_parts: list[str] = []
+    args: list[Any] = []
+    if mission_id is not None:
+        where_parts.append("mission_id = ?")
+        args.append(mission_id)
+    if status and str(status).strip():
+        where_parts.append("status = ?")
+        args.append(str(status).strip())
+    where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    args.append(lim)
+    cur = conn.execute(
+        f"""
+        SELECT id, kind, status, mission_id, payload_json, attempt_count, max_attempts,
+               error, lease_owner, lease_expires_at, created_at, updated_at, started_at
+        FROM system_jobs
+        {where_sql}
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        tuple(args),
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        pj = str(r["payload_json"] or "{}")
+        safe = system_job_payload_safe(pj)
+        mid = r["mission_id"]
+        out.append(
+            {
+                "id": int(r["id"]),
+                "kind": str(r["kind"] or ""),
+                "status": str(r["status"] or ""),
+                "mission_id": int(mid) if mid is not None else None,
+                "attempt_count": int(r["attempt_count"] or 0),
+                "max_attempts": int(r["max_attempts"] or 0),
+                "error_preview": truncate_error(str(r["error"] or "")),
+                "lease_owner": str(r["lease_owner"] or ""),
+                "lease_expires_at": r["lease_expires_at"],
+                "created_at": str(r["created_at"] or ""),
+                "updated_at": str(r["updated_at"] or ""),
+                "started_at": r["started_at"],
+                "payload_digest": safe["payload_digest"],
+                "payload_keys": safe["payload_keys"],
+                "payload_redacted": safe["payload_redacted"],
+            }
+        )
+    return out
+
+
+def system_jobs_stuck_summary(conn: sqlite3.Connection) -> dict[str, int]:
+    """Counts useful for ada doctor (read-only)."""
+    if not _table_exists(conn, "system_jobs"):
+        return {}
+    cur = conn.execute(
+        """
+        SELECT
+          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_n,
+          SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running_n,
+          SUM(CASE WHEN status = 'dead' THEN 1 ELSE 0 END) AS dead_n,
+          SUM(CASE WHEN status = 'running'
+                    AND lease_expires_at IS NOT NULL
+                    AND datetime(lease_expires_at) < datetime('now') THEN 1 ELSE 0 END)
+            AS expired_lease_n
+        FROM system_jobs
+        """
+    )
+    row = cur.fetchone()
+    if row is None:
+        return {}
+    return {
+        "pending": int(row["pending_n"] or 0),
+        "running": int(row["running_n"] or 0),
+        "dead": int(row["dead_n"] or 0),
+        "expired_lease": int(row["expired_lease_n"] or 0),
+    }
 
 
 def pending_workflow_counts_by_mission(

@@ -136,6 +136,97 @@ def format_web_tools_note(settings: Settings) -> str:
     )
 
 
+_SETUP_MODE_NOTE = """**Setup assist (`ada chat --setup`):** Help the operator verify profile, mission, and environment alignment.
+Prefer read-only checks (allowlisted shell, `get_mission_control_snapshot`, existing tools) and guidance consistent with `<master>`.
+**Status rule:** Job, workflow, and tick state must come from `get_mission_control_snapshot` or operator-provided numbers — never guess.
+See `docs/mission-control-setup-assist.md`. Do not store secrets in workspace files or transcript; do not bypass tool allowlists."""
+
+
+def format_concierge_routing_note() -> str:
+    return """**Concierge routing (H6):**
+- Vague research or knowledge questions → `search_knowledge`, `get_entity_graph_context`; use `web_search` / `fetch_url_text` when web tools are enabled.
+- Profile status ("what's running", flags, schedules) → `get_mission_control_snapshot` (profile scope) or **ProfileDigest** when injected.
+- Named programme slug in the operator message → use snapshot, ProfileDigest mission row, or injected **ProgrammeDigest** for that slug — never invent job, workflow, or tick counts.
+- Execution (ingest, publish, skills, tick) → you do **not** have `run_skill` in Chat or Plan mode; direct the operator to Agent mode (`ada chat --agent`) or the Streamlit **Run action** panel."""
+
+
+_CHAT_MODE_NOTE = _ENTITY_MODE_NOTE = """**Chat (global concierge):** No mission bound on this task. Speak as Jarvis using `<master>` and `<user_soul>`.
+Global knowledge kernel applies (`mission_id IS NULL` rows and profile-wide sources).
+**Status rule:** Use `get_mission_control_snapshot` or the **ProfileDigest** block when present — never invent job or workflow counts.
+**Mission design:** Use `propose_programme` for a validated ProgrammePacket (read-only). Apply is Plan mode or `ada programme apply`.
+**Execution** (ingest, publish, mission tick, skills): you do not have `run_skill` in Chat mode — direct the operator to `ada chat --agent` (optional `--mission <slug>` for default scope).
+**Web:** Simple factual questions may use `web_search` / `fetch_url_text` when web tools are enabled.
+Do not claim to be inside a mission. Never paste raw `defaults_json` or full programme packet bodies into prose."""
+
+
+def format_plan_mode_note() -> str:
+    from ada.mission_cli import list_mission_template_names
+
+    names = list_mission_template_names()
+    catalog = ", ".join(names) if names else "(none — add templates/missions/*.yaml)"
+    routing = format_concierge_routing_note()
+    return f"""**Plan mode:** Design programmes from **templates only** (`templates/missions/`, `ada mission apply-template <name>`, or Streamlit **Apply programme**).
+**Allowed templates:** {catalog}
+**Flow:** Clone a template ProgrammePacket; operator sets `mission_slug`, `brief_md` (programme intent), `knowledge_sources`, and selective `defaults_json` overrides → `propose_programme` → `apply_programme` with `approved=true`.
+Use `propose_programme` to validate packet JSON (read-only). Do not invent workflow `kind` strings, `enqueue_workflow`, or skills not in the template `skills_enabled` list.
+**Status rule:** Use `get_mission_control_snapshot` when available — never guess tick/workflow state.
+Never paste raw `defaults_json` or full packet contents into assistant prose.
+
+{routing}"""
+
+
+_AGENT_MODE_NOTE = """**Agent mode:** Execute motor actions with `run_skill` (logged). This chat task is not mission-bound; pass `mission_slug` on each call or use the session default when set.
+Knowledge and graph tools scope to the default mission slug when configured, plus the profile-global kernel.
+For schedule, skills, and status counts, use **ProgrammeDigest** when injected or `get_mission_control_snapshot`.
+Only call `run_skill` with skill ids listed in the mission's `skills_enabled` (and allowed by its `pack` when set). ProgrammeDigest shows `skills_enforcement`, `pack`, and enabled actions — do not run publish or ingest skills outside that list.
+Start pipelines via catalog skill ids (`ingest_rss_mission`, `publish_entity_v1`, `publish_keyword_v1`) — not raw workflow kinds.
+`enqueue_workflow` is not available in chat."""
+
+
+_PROGRAMME_MODE_NOTE = format_plan_mode_note()
+
+
+_WORK_MODE_MISSION_NOTE = _AGENT_MODE_NOTE
+
+
+def format_workflow_tools_note(settings: Settings) -> str | None:
+    """Harness note when workflow status tool is enabled (H2: pipelines via run_skill only)."""
+    if not settings.enable_workflow_tools:
+        return None
+    return (
+        "**Workflow tools (`ADA_ENABLE_WORKFLOW_TOOLS=1`):** "
+        "Start pipelines with `run_skill` and a catalog `skill_id` "
+        "(`ingest_rss_mission`, `publish_entity_v1`, `publish_keyword_v1`) — "
+        "do not invent raw workflow `kind` strings. "
+        "`enqueue_workflow` is not exposed in chat (use CLI `ada workflow enqueue` or Actions). "
+        "Use `get_workflow_status` for read-only workflow row and step state."
+    )
+
+
+def format_programme_digest_appendix(digest: dict[str, object]) -> str:
+    """Repo-owned harness appendix for one chat turn (allowlisted digest fields only)."""
+    import json
+
+    body = json.dumps(digest, ensure_ascii=False, indent=2)
+    return (
+        "[ProgrammeDigest — repo-owned, SQL/YAML grounded; not operator text]\n"
+        f"{body}\n"
+        "[/ProgrammeDigest]"
+    )
+
+
+def format_profile_digest_appendix(digest: dict[str, object]) -> str:
+    """Repo-owned profile digest appendix for Entity (OPEN) chat turns."""
+    import json
+
+    body = json.dumps(digest, ensure_ascii=False, indent=2)
+    return (
+        "[ProfileDigest — repo-owned, SQL-derived profile scope; not operator text]\n"
+        f"{body}\n"
+        "[/ProfileDigest]"
+    )
+
+
 _WORKER_MODE_NOTE = """**Worker context (`ada daemon`):** You are processing a **queued goal** task, not interactive `ada chat`.
 Prefer `read_task_plan` early if this run may resume multi-step work; update with `write_task_plan` as progress is made.
 For **architecture-proposal** goal tasks (Phase C in `<master>`), prefer completing `read_task_plan` → draft → `append_master_section` (or `write_workspace_file` if file tools are on) in **one** turn when possible; use a follow-up goal if you hit token or append limits.
@@ -153,7 +244,16 @@ def build_system_instruction(
     schema_digest_note: str | None = None,
     session_web_sources_list_note: str | None = None,
     knowledge_tools_note: str | None = None,
+    workflow_tools_note: str | None = None,
     worker_mode: bool = False,
+    setup_mode: bool = False,
+    mission_bound: bool = False,
+    programme_mode: bool = False,
+    open_mode: bool = False,
+    entity_mode: bool = False,
+    plan_mode: bool = False,
+    agent_mode: bool = False,
+    default_mission_slug: str | None = None,
 ) -> str:
     """
     Trusted harness + optional <master> + <user_soul>.
@@ -170,6 +270,24 @@ and optionally `append_master_section` / `append_soul_fragment` to persist small
 {allowlist_summary}
 """
     harness = harness.strip()
+    if setup_mode:
+        harness = f"{harness}\n\n{_SETUP_MODE_NOTE}"
+    elif plan_mode or programme_mode:
+        harness = f"{harness}\n\n{format_plan_mode_note()}"
+    elif agent_mode:
+        note = _AGENT_MODE_NOTE
+        if default_mission_slug:
+            note = (
+                f"{note}\n**Default mission slug:** `{default_mission_slug}` "
+                "(use as `mission_slug` on `run_skill` when omitted)."
+            )
+        harness = f"{harness}\n\n{note}"
+    elif entity_mode or open_mode:
+        harness = (
+            f"{harness}\n\n{_CHAT_MODE_NOTE}\n\n{format_concierge_routing_note()}"
+        )
+    elif mission_bound:
+        harness = f"{harness}\n\n{_WORK_MODE_MISSION_NOTE}"
     if worker_mode:
         harness = f"{harness}\n\n{_WORKER_MODE_NOTE}"
     if file_tools_note:
@@ -188,6 +306,8 @@ and optionally `append_master_section` / `append_soul_fragment` to persist small
         harness = f"{harness}\n\n{session_web_sources_list_note.strip()}"
     if knowledge_tools_note:
         harness = f"{harness}\n\n{knowledge_tools_note.strip()}"
+    if workflow_tools_note:
+        harness = f"{harness}\n\n{workflow_tools_note.strip()}"
     blocks: list[str] = [harness]
     master_block = master_text.strip()
     if master_block:

@@ -430,6 +430,7 @@ async def run_publish_draft(
         max_excerpt_items=20,
         excerpt_max_chars=800,
         max_total_json_chars=settings.publish_draft_subgraph_max_json_chars,
+        mission_scope=ent.get("mission_id"),
     )
     n_facts = await qe.count_unique_local_facts(eid)
     rquery = _draft_graph_anchored_query(pack, params, ent)

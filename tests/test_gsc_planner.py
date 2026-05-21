@@ -12,7 +12,7 @@ from ada.analytics.planner import (
     opportunity_score,
     ranking_gap,
 )
-from ada.main import _maybe_generate_gsc_plan_for_goal
+from ada.daemon_goal import maybe_generate_gsc_plan_for_goal
 from ada.query_engine import TASK_KIND_GOAL, QueryEngine
 from ada.stream_types import CompletedFunctionCall
 from ada.tool_executor import StreamingToolExecutor
@@ -120,7 +120,7 @@ async def test_e2e_gsc_plan_generation_populates_required_shape(tmp_path, schema
             gsc_plan_default_lookback_days=180,
             gsc_plan_max_items=10,
         )
-        await _maybe_generate_gsc_plan_for_goal(
+        await maybe_generate_gsc_plan_for_goal(
             qe, settings=settings, task_id=tid, goal="grow organic traffic"
         )
         payload = json.loads(await qe.get_task_plan_json(tid))

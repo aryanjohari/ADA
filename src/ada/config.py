@@ -339,6 +339,7 @@ class Settings:
     enrich_suff_mode: str
     enrich_suff_force_web: bool
     enrich_suff_graph_refine: bool
+    ada_enrich_staged_passes: int
     # DRAFT: subject subgraph in prompt; graph-anchored knowledge_items RAG (lexical / embedding)
     publish_draft_graph_anchored_knowledge: bool
     publish_draft_subgraph_max_json_chars: int
@@ -392,6 +393,12 @@ class Settings:
     # Approval gates
     require_approval_for_enqueue: bool
     require_approval_for_publish: bool
+    # Job plane: ``legacy`` = poll pending tasks (default). ``system_jobs`` = durable queue;
+    # do not run a second legacy daemon on the same DB (double-run). See docs/JOB_QUEUE_SINGLE_OWNER.md.
+    ada_job_queue: str
+    system_job_lease_seconds: int
+    # Optional: ``interactive_fast`` caps web/GSC + tool rounds for goal turns (legacy daemon).
+    ada_interaction_profile: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -709,6 +716,12 @@ class Settings:
         enrich_suff_graph_refine = os.environ.get(
             "ADA_ENRICH_SUFF_GRAPH_REFINE", "0"
         ).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            ada_enrich_staged_passes = max(
+                1, int(os.environ.get("ADA_ENRICH_STAGED_PASSES", "1"))
+            )
+        except ValueError:
+            ada_enrich_staged_passes = 1
         publish_draft_graph_anchored_knowledge = os.environ.get(
             "ADA_PUBLISH_DRAFT_GRAPH_ANCHORED", "1"
         ).strip().lower() in ("1", "true", "yes", "on")
@@ -842,6 +855,11 @@ class Settings:
         require_approval_for_publish = os.environ.get(
             "ADA_REQUIRE_APPROVAL_FOR_PUBLISH", "0"
         ).strip().lower() in ("1", "true", "yes", "on")
+        ada_job_queue = os.environ.get("ADA_JOB_QUEUE", "legacy").strip().lower()
+        if ada_job_queue not in ("legacy", "system_jobs"):
+            raise ValueError("ADA_JOB_QUEUE must be 'legacy' or 'system_jobs'")
+        system_job_lease_seconds = max(30, int(os.environ.get("ADA_SYSTEM_JOB_LEASE_SEC", "300")))
+        ada_interaction_profile = os.environ.get("ADA_INTERACTION_PROFILE", "").strip().lower()
 
         _warn_deprecated_envs()
         return cls(
@@ -946,6 +964,7 @@ class Settings:
             enrich_suff_mode=enrich_suff_mode,
             enrich_suff_force_web=enrich_suff_force_web,
             enrich_suff_graph_refine=enrich_suff_graph_refine,
+            ada_enrich_staged_passes=ada_enrich_staged_passes,
             publish_draft_graph_anchored_knowledge=publish_draft_graph_anchored_knowledge,
             publish_draft_subgraph_max_json_chars=publish_draft_subgraph_max_json_chars,
             publish_draft_knowledge_retrieval=publish_draft_knowledge_retrieval,
@@ -991,6 +1010,9 @@ class Settings:
             gsc_plan_max_items=gsc_plan_max_items,
             require_approval_for_enqueue=require_approval_for_enqueue,
             require_approval_for_publish=require_approval_for_publish,
+            ada_job_queue=ada_job_queue,
+            system_job_lease_seconds=system_job_lease_seconds,
+            ada_interaction_profile=ada_interaction_profile,
         )
 
     def ensure_data_dir(self) -> None:

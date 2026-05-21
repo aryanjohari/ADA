@@ -322,6 +322,7 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'superseded', 'invalid')),
     source_url TEXT,
+    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     superseded_by INTEGER REFERENCES graph_edges(id)
 );
@@ -332,6 +333,8 @@ CREATE INDEX IF NOT EXISTS idx_graph_edges_dst
     ON graph_edges(dst_entity_id);
 CREATE INDEX IF NOT EXISTS idx_graph_edges_type
     ON graph_edges(edge_type);
+-- Mission indexes on graph_edges: created in PersistentState._ensure_graph_edges_mission_id
+-- so legacy DBs get ALTER COLUMN before CREATE INDEX.
 
 CREATE TABLE IF NOT EXISTS edge_evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -432,3 +435,33 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflow_steps_workflow ON workflow_steps(workflow_id, step_index);
+
+-- Job plane: durable queue (single ingress). See docs/JOB_QUEUE_SINGLE_OWNER.md.
+CREATE TABLE IF NOT EXISTS system_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    idempotency_key TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        status IN ('pending', 'running', 'completed', 'failed', 'dead', 'cancelled')
+    ),
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 8,
+    error TEXT NOT NULL DEFAULT '',
+    lease_owner TEXT NOT NULL DEFAULT '',
+    lease_expires_at TEXT,
+    run_after TEXT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    correlation_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_jobs_status_run
+    ON system_jobs(status, run_after, priority DESC, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_system_jobs_idempotency
+    ON system_jobs(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;

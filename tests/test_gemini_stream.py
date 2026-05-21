@@ -162,23 +162,25 @@ async def test_stream_one_model_leg_retries_503_exponential(monkeypatch) -> None
 
         function_calls = None
 
-    async def ok_stream():
-        yield Chunk()
+    attempts = {"n": 0}
 
-    async def unavailable():
-        raise ServerError(
-            503,
-            {"error": {"status": "UNAVAILABLE", "message": "slow"}},
-            None,
-        )
+    async def stream_side_effect(*_a: object, **_k: object):
+        attempts["n"] += 1
+        if attempts["n"] <= 2:
+            raise ServerError(
+                503,
+                {"error": {"status": "UNAVAILABLE", "message": "slow"}},
+                None,
+            )
+
+        async def ok_chunks():
+            yield Chunk()
+
+        return ok_chunks()
 
     mock_client = MagicMock()
     mock_client.aio.models.generate_content_stream = AsyncMock(
-        side_effect=[
-            unavailable(),
-            unavailable(),
-            ok_stream(),
-        ]
+        side_effect=stream_side_effect
     )
 
     deltas: list[str] = []
@@ -214,7 +216,7 @@ async def test_stream_one_model_leg_retries_503_exponential(monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_stream_one_model_leg_non_transient_no_retry() -> None:
-    async def boom() -> None:
+    async def boom(*_a: object, **_k: object) -> None:
         raise ClientError(
             400,
             {"error": {"status": "INVALID_ARGUMENT", "message": "bad"}},

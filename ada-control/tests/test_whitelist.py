@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from lib.whitelist import build_argv  # noqa: E402
+from ada.observability.operator_whitelist import build_argv  # noqa: E402
 
 
 def test_mission_list():

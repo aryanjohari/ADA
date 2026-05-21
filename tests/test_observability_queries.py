@@ -12,14 +12,21 @@ from ada.observability.queries import (
     action_log_recent,
     gate_failed_steps_recent,
     gate_failure_buckets,
+    missions_overview_list,
     open_readonly_connection,
+    system_jobs_recent,
     tasks_pending_failed,
     usage_rollup_by_utc_day,
     usage_today_month_totals,
     workflow_steps_recent,
     workflows_recent,
 )
-from ada.observability.sanitize import action_payload_safe, field_digest, truncate_error
+from ada.observability.sanitize import (
+    action_payload_safe,
+    field_digest,
+    system_job_payload_safe,
+    truncate_error,
+)
 
 
 def _schema_sql() -> str:
@@ -187,6 +194,68 @@ def test_gate_failed_steps_no_goal_leak_and_buckets(tmp_path: Path) -> None:
     assert any(
         b["bucket"] == "below_min_unique_facts" and b["count"] >= 1 for b in buckets
     )
+
+
+def test_system_job_payload_safe_redacts_fake_api_key() -> None:
+    raw = '{"task_id": 1, "api_key": "fake-secret-key-12345", "mission_slug": "x"}'
+    safe = system_job_payload_safe(raw)
+    assert "fake-secret-key" not in str(safe)
+    assert "api_key" in safe["payload_keys"]
+    red = safe["payload_redacted"]
+    assert isinstance(red, dict)
+    assert "sha256_prefix" in str(red.get("api_key"))
+
+
+def test_system_jobs_recent_no_raw_payload_in_rows(obs_db: Path) -> None:
+    conn_w = sqlite3.connect(obs_db)
+    try:
+        conn_w.execute(
+            """
+            INSERT INTO system_jobs (kind, status, payload_json, mission_id)
+            VALUES ('noop.ping', 'pending', '{"api_key":"fake-test-key"}', NULL)
+            """
+        )
+        conn_w.commit()
+    finally:
+        conn_w.close()
+    conn = open_readonly_connection(obs_db)
+    with conn:
+        rows = system_jobs_recent(conn, limit=5)
+    assert rows
+    row = rows[0]
+    assert "payload_json" not in row
+    assert "fake-test-key" not in str(row)
+    assert row.get("payload_keys")
+
+
+def test_missions_overview_list_counts(tmp_path: Path) -> None:
+    db_path = tmp_path / "mo.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(_schema_sql())
+        conn.execute(
+            "INSERT INTO missions (slug, title, schedule_hint_json) VALUES (?, ?, ?)",
+            (
+                "pub",
+                "Publish",
+                '{"version":1,"jobs":[{"id":"daily","action":{"type":"noop"}}]}',
+            ),
+        )
+        mid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "INSERT INTO tasks (goal, status, task_kind, mission_id) VALUES (?, 'pending', 'goal', ?)",
+            ("g", mid),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    ro = open_readonly_connection(db_path)
+    with ro:
+        rows = missions_overview_list(ro)
+    assert len(rows) == 1
+    assert rows[0]["slug"] == "pub"
+    assert rows[0]["pending_goals"] == 1
+    assert rows[0]["schedule_job_ids"] == ["daily"]
 
 
 def test_resolve_state_db_path_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

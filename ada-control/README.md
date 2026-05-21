@@ -27,7 +27,8 @@ Set **ADA repo root** in the sidebar when it differs from the detected project r
 ## Legend
 
 - **`[dashboard only]`** — no ADA code changes; introspection and safe subprocesses only.
-- **`[needs ADA change]`** — features called out in tabs (e.g. `ada chat --mission`) require work in `src/ada/`.
+- **`ada chat --mission`** and **`ada chat --setup`** are implemented in `src/ada/cli.py` (mission-scoped knowledge tools + setup assist snapshot).
+- **Control plane** flags: Streamlit Observability → **Control plane** tab (`src/ada/mission_control/`).
 
 ## Security
 
@@ -35,6 +36,12 @@ Set **ADA repo root** in the sidebar when it differs from the detected project r
 - **`state.db`** is opened **`mode=ro`** (URI). The app does not write the database.
 - The SQL sandbox allows a **single** `SELECT` / `WITH … SELECT` plus a block list (no `INSERT`, `UPDATE`, `ATTACH`, etc.).
 - Optional **audit** rows: operator actions may append `action_log` kind **`operator_ui_bootstrap`** (see `docs/OPERATOR_LOGGING.md`).
+
+## Whitelist source of truth
+
+Canonical closed argv map: **`src/ada/observability/operator_whitelist.py`** (documented in [`docs/ALLOWLIST_MANIFEST.md`](../docs/ALLOWLIST_MANIFEST.md)).
+
+`ada-control/lib/whitelist.py` is a **deprecated re-export** for older tests only — do not extend it.
 
 ## Whitelisted `ada` commands
 

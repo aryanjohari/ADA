@@ -5,8 +5,9 @@ from __future__ import annotations
 import io
 import json
 from contextlib import redirect_stdout
-from datetime import UTC, datetime, timedelta
-from unittest import mock
+from datetime import datetime, timedelta, timezone
+
+UTC = timezone.utc
 
 import pytest
 
@@ -131,9 +132,10 @@ async def test_mission_tick_unknown_mission(tmp_path, schema_sql_path, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_mission_tick_gsc_bump_after_success(
+async def test_mission_tick_gsc_enqueues_system_job(
     tmp_path, schema_sql_path, monkeypatch
 ):
+    """GSC tick enqueues ``tick.gsc_keyword_publish``; tick state bumps in the worker."""
     monkeypatch.setenv("ADA_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("ADA_ENABLE_GSC_INGEST", "1")
     monkeypatch.setenv("GSC_SITE_URL", "https://example.com/")
@@ -167,54 +169,30 @@ async def test_mission_tick_gsc_bump_after_success(
                 ],
             },
         )
+        mrow = await qe.get_mission_by_slug("ms-kw")
+        assert mrow is not None
+        mid = int(mrow["id"])
 
-        ingest_res = mock.Mock(error="", job_id=1, provider_id=2, snapshots=1, rows_seen=3, rows_written=3)
-
-        async def fake_ingest(*a, **k):
-            _ = k
-            return ingest_res
-
-        sel = mock.Mock(
-            keyword_cluster="hello widgets",
-            keyword_source={"kind": "gsc"},
-            fallback_reason=None,
+        rc = await run_mission_tick(
+            qe,
+            Settings.load(),
+            mission_slug="ms-kw",
+            dry_run=False,
+            force=True,
         )
+        assert rc == 0
 
-        async def fake_sel(*a, **k):
-            _ = k
-            return sel
+        key = tick_state_key("ms-kw", "g1")
+        assert await qe.state_get(key) is None
 
-        wf_out = {"workflow_id": 99, "task_id": 100, "created_new": True}
-
-        async def fake_wf(*a, **k):
-            _ = k
-            return wf_out
-
-        with (
-            mock.patch(
-                "ada.mission_tick.ingest_gsc_search_analytics",
-                new=fake_ingest,
-            ),
-            mock.patch(
-                "ada.mission_tick.select_keyword_cluster",
-                new=fake_sel,
-            ),
-            mock.patch(
-                "ada.mission_tick.enqueue_workflow_via_tool",
-                new=fake_wf,
-            ),
-        ):
-            rc = await run_mission_tick(
-                qe,
-                Settings.load(),
-                mission_slug="ms-kw",
-                dry_run=False,
-                force=True,
-            )
-            assert rc == 0
-
-        stored = await qe.state_get(tick_state_key("ms-kw", "g1"))
-        assert stored is not None and "2026" in stored
+        jobs = await qe.list_system_jobs(
+            mission_id=mid, kind="tick.gsc_keyword_publish", limit=5
+        )
+        assert len(jobs) == 1
+        assert jobs[0]["status"] == "pending"
+        payload = jobs[0].get("payload_json") or {}
+        assert payload.get("tick_state_key") == key
+        assert payload.get("mission_slug") == "ms-kw"
     finally:
         await qe.close()
 

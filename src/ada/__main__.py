@@ -31,6 +31,10 @@ from ada.workflow_cli import (
     run_workflow_retry_cli,
     run_workflow_status_cli,
 )
+from ada.system_jobs_cli import main as system_jobs_main
+from ada.brief_cli import build_brief_parser, run_brief_cli
+from ada.profile_brief_cli import build_profile_parser, run_profile_brief_cli
+from ada.jarvis_cli import run_jarvis_launch
 
 
 def main() -> None:
@@ -47,8 +51,71 @@ def main() -> None:
         action="store_true",
         help="Create a new task / session_id instead of reusing the latest",
     )
+    chat_p.add_argument(
+        "--plan",
+        action="store_true",
+        help="Plan mode: propose + apply programme (templates only)",
+    )
+    chat_p.add_argument(
+        "--agent",
+        action="store_true",
+        help="Agent mode: run_skill and executor tools (NULL task mission)",
+    )
+    chat_p.add_argument(
+        "--mission",
+        default=None,
+        metavar="SLUG",
+        help="Default mission slug for Agent (--agent) or bind for Setup (--setup)",
+    )
+    chat_p.add_argument(
+        "--setup",
+        action="store_true",
+        help="Setup assist: tighter tool profile (or ADA_CHAT_SETUP_MODE=1)",
+    )
+    chat_p.add_argument(
+        "--programme",
+        action="store_true",
+        help="Deprecated: use `ada chat --plan`",
+    )
+
+    programme_p = sub.add_parser(
+        "programme",
+        help="Apply a validated ProgrammePacket after operator confirm",
+    )
+    programme_sub = programme_p.add_subparsers(dest="programme_cmd", required=True)
+    prog_apply = programme_sub.add_parser(
+        "apply",
+        help="Apply packet from JSON file (Y/n unless --yes)",
+    )
+    prog_apply.add_argument(
+        "packet_file",
+        metavar="PATH",
+        help="JSON file with ProgrammePacket fields",
+    )
+    prog_apply.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip interactive confirm (use with care)",
+    )
 
     sub.add_parser("daemon", help="Poll pending tasks in SQLite")
+
+    doctor_p = sub.add_parser(
+        "doctor",
+        help="Read-only health checks (profile, job queue, system_jobs)",
+    )
+
+    build_brief_parser(sub)
+    build_profile_parser(sub)
+
+    sub.add_parser(
+        "jarvis",
+        help="Launch Streamlit HUD (operator UI) + print ada chat hint",
+    )
+    sub.add_parser(
+        "hud",
+        help="Alias for ada jarvis",
+    )
 
     _mission_help = (
         "Mission slug; ingest/list uses global sources plus that mission "
@@ -377,10 +444,97 @@ def main() -> None:
     )
     build_approval_parser(sub)
 
+    jobs_p = sub.add_parser(
+        "jobs",
+        help="List / inspect / retry / cancel system_jobs (job plane)",
+    )
+    jobs_sub = jobs_p.add_subparsers(dest="jobs_cmd", required=True)
+    jobs_list = jobs_sub.add_parser("list", help="Recent jobs as JSON")
+    jobs_list.add_argument("--limit", type=int, default=50)
+    jobs_list.add_argument("--status", default=None)
+    jobs_list.add_argument("--mission-id", type=int, default=None, dest="mission_id")
+    jobs_list.add_argument("--kind", default=None)
+    jobs_st = jobs_sub.add_parser("status", help="One job JSON")
+    jobs_st.add_argument("job_id", type=int)
+    jobs_r = jobs_sub.add_parser("retry", help="Clone job as new pending row")
+    jobs_r.add_argument("job_id", type=int)
+    jobs_c = jobs_sub.add_parser("cancel", help="Cancel pending job")
+    jobs_c.add_argument("job_id", type=int)
+
     args = p.parse_args()
     if args.cmd == "chat":
+        mode_flags = sum(
+            1
+            for f in (
+                bool(getattr(args, "setup", False)),
+                bool(getattr(args, "plan", False)),
+                bool(getattr(args, "agent", False)),
+            )
+            if f
+        )
+        if mode_flags > 1:
+            p.error("use at most one of --setup, --plan, --agent")
+        mission = getattr(args, "mission", None)
+        if mission and not (
+            getattr(args, "agent", False) or getattr(args, "setup", False)
+        ):
+            import sys
+
+            print(
+                "ada chat --mission without --agent is deprecated; "
+                "treating as `ada chat --agent --mission` (task stays unbound).",
+                file=sys.stderr,
+            )
         settings = Settings.load()
-        asyncio.run(run_chat(settings, new_session=args.new_session))
+        asyncio.run(
+            run_chat(
+                settings,
+                new_session=args.new_session,
+                mission_slug=mission,
+                setup_mode=bool(getattr(args, "setup", False)),
+                plan_mode=bool(getattr(args, "plan", False)),
+                agent_mode=bool(getattr(args, "agent", False)) or bool(mission),
+                programme_mode=bool(getattr(args, "programme", False)),
+            )
+        )
+    elif args.cmd == "programme":
+        from ada.programme_cli import run_programme_apply
+
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_programme_apply(
+                    settings,
+                    packet_path=args.packet_file,
+                    skip_confirm=bool(args.yes),
+                )
+            )
+        )
+    elif args.cmd == "doctor":
+        from ada.doctor import format_doctor_report, run_doctor
+
+        settings = Settings.load()
+        report = run_doctor(settings)
+        print(format_doctor_report(report))
+        raise SystemExit(report.exit_code)
+    elif args.cmd == "brief":
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_brief_cli(
+                    settings,
+                    mission_slug=getattr(args, "mission", None),
+                    enqueue=bool(getattr(args, "enqueue", False)),
+                )
+            )
+        )
+    elif args.cmd == "profile":
+        settings = Settings.load()
+        if args.profile_cmd == "brief":
+            raise SystemExit(asyncio.run(run_profile_brief_cli(settings)))
+        raise SystemExit(2)
+    elif args.cmd in ("jarvis", "hud"):
+        raise SystemExit(run_jarvis_launch())
     elif args.cmd == "daemon":
         main_daemon()
     elif args.cmd == "ingest-rss":
@@ -583,6 +737,10 @@ def main() -> None:
     elif args.cmd == "approval":
         settings = Settings.load()
         raise SystemExit(asyncio.run(run_approval_cli(settings, args)))
+    elif args.cmd == "jobs":
+        idx = next((i for i, x in enumerate(sys.argv) if x == "jobs"), None)
+        sub_argv = sys.argv[idx + 1 :] if idx is not None else []
+        raise SystemExit(system_jobs_main(sub_argv))
     else:
         p.print_help()
         sys.exit(2)

@@ -14,6 +14,7 @@ from ada.query_engine import QueryEngine
 from ada.tool_executor import build_web_tool_config
 from ada.workflow.enrich_sufficiency import evaluate_enrich_graph_sufficiency
 from ada.workflow.enrich_verify import enrich_postcondition_met
+from ada.programme.mission_brief import programme_brief_block
 from ada.workflow.steps import KNOWLEDGE_TOOLS_ENRICH
 
 
@@ -62,6 +63,7 @@ def build_enrich_user_text(
     merged_params: dict[str, Any],
     min_unique_facts: int,
     subgraph_pack: dict[str, Any] | None = None,
+    programme_brief: str = "",
 ) -> str:
     niche = str(merged_params.get("niche") or "").strip()
     hints = {k: merged_params[k] for k in merged_params if k != "entity_id"}
@@ -95,7 +97,7 @@ def build_enrich_user_text(
                 json.dumps(subgraph_pack, ensure_ascii=False, indent=2),
             ]
         )
-    return "\n".join(lines)
+    return programme_brief_block(programme_brief) + "\n".join(lines)
 
 
 def build_enrich_graph_only_user_text(
@@ -106,6 +108,7 @@ def build_enrich_graph_only_user_text(
     merged_params: dict[str, Any],
     min_unique_facts: int,
     subgraph_pack: dict[str, Any] | None = None,
+    programme_brief: str = "",
 ) -> str:
     """ENRICH without web_search / fetch_url_text (DB + prior knowledge only)."""
     niche = str(merged_params.get("niche") or "").strip()
@@ -133,7 +136,7 @@ def build_enrich_graph_only_user_text(
                 json.dumps(subgraph_pack, ensure_ascii=False, indent=2),
             ]
         )
-    return "\n".join(lines)
+    return programme_brief_block(programme_brief) + "\n".join(lines)
 
 
 async def run_publish_entity_enrich(
@@ -144,6 +147,7 @@ async def run_publish_entity_enrich(
     entity: dict[str, Any],
     merged_params: dict[str, Any],
     goal_text: str,
+    programme_brief: str = "",
     system_instruction: str,
     session_id: int,
     max_tool_rounds: int,
@@ -214,7 +218,10 @@ async def run_publish_entity_enrich(
     if not graph_only and use_live and web_cfg is None:
         use_live = False
     if use_live and (graph_only or web_cfg is not None):
-        pack = await qe.load_subject_subgraph_context_pack(eid_int)
+        wf_mid = await qe.get_task_mission_id(session_id)
+        pack = await qe.load_subject_subgraph_context_pack(
+            eid_int, mission_scope=wf_mid
+        )
         if graph_only:
             user_txt = build_enrich_graph_only_user_text(
                 goal_text=goal_text,
@@ -223,6 +230,7 @@ async def run_publish_entity_enrich(
                 merged_params=merged_params,
                 min_unique_facts=settings.ada_publish_min_unique_facts,
                 subgraph_pack=pack,
+                programme_brief=programme_brief,
             )
             first_allow_web = False
         else:
@@ -233,54 +241,67 @@ async def run_publish_entity_enrich(
                 merged_params=merged_params,
                 min_unique_facts=settings.ada_publish_min_unique_facts,
                 subgraph_pack=pack,
+                programme_brief=programme_brief,
             )
             first_allow_web = True
         active_web_cfg = None if graph_only else web_cfg
         enrich_rounds = enrich_max_tool_rounds(max_tool_rounds)
         if enrich_tool_rounds_cap is not None:
             enrich_rounds = min(enrich_rounds, max(1, int(enrich_tool_rounds_cap)))
+        passes = max(1, min(4, int(settings.ada_enrich_staged_passes)))
+        rounds_each = max(1, enrich_rounds // passes) if passes > 1 else enrich_rounds
         snap_edge = await qe.max_graph_edge_id_for_src_entity(eid_int)
         snap_facts = await qe.count_unique_local_facts(eid_int)
         snap_seq = await qe.max_message_sequence(session_id)
-        final = await orchestrate_turn(
-            qe,
-            session_id=session_id,
-            user_text=user_txt,
-            system_instruction=system_instruction,
-            api_key=settings.gemini_api_key,
-            model=settings.gemini_model,
-            shell_allowlist=frozenset(),
-            max_tool_rounds=enrich_rounds,
-            shell_max_output_bytes=shell_max_output_bytes,
-            shell_timeout_sec=shell_timeout_sec,
-            stream_chunk_idle_timeout_sec=stream_chunk_idle_timeout_sec,
-            stream_leg_max_wall_sec=stream_leg_max_wall_sec,
-            rewire_after_tombstone=rewire_after_tombstone,
-            enable_memory_tools=False,
-            memory_config=None,
-            include_plan_tools=False,
-            include_goal_recall_tool=False,
-            file_config=None,
-            max_session_tokens=max_session_tokens,
-            on_file_guard_violation=None,
-            web_config=active_web_cfg,
-            enable_list_session_web_sources=False,
-            debug_stream=debug_stream,
-            include_knowledge_tools=False,
-            knowledge_feed_host_allowlist=knowledge_feed_host_allowlist,
-            knowledge_embeddings_enabled=knowledge_embeddings_enabled,
-            knowledge_embedding_model=knowledge_embedding_model,
-            knowledge_embedding_dim=knowledge_embedding_dim,
-            knowledge_embedding_min_cosine=knowledge_embedding_min_cosine,
-            knowledge_tool_max_results=knowledge_tool_max_results,
-            knowledge_tool_excerpt_chars=knowledge_tool_excerpt_chars,
-            knowledge_tool_subset=KNOWLEDGE_TOOLS_ENRICH,
-            workflow_strict=True,
-            workflow_strict_allow_web=first_allow_web,
-            include_workflow_tools=False,
-            workflow_max_steps=None,
-            enrich_subject_entity_id=eid_int,
-        )
+        final = ""
+        for pi in range(passes):
+            pass_suffix = (
+                ""
+                if pi == 0
+                else (
+                    f"\n\n[ENRICH pass {pi + 1}/{passes}] Continue with distinct https "
+                    "source_url values on new record_edge rows; do not repeat URLs already used."
+                )
+            )
+            final = await orchestrate_turn(
+                qe,
+                session_id=session_id,
+                user_text=user_txt + pass_suffix,
+                system_instruction=system_instruction,
+                api_key=settings.gemini_api_key,
+                model=settings.gemini_model,
+                shell_allowlist=frozenset(),
+                max_tool_rounds=rounds_each,
+                shell_max_output_bytes=shell_max_output_bytes,
+                shell_timeout_sec=shell_timeout_sec,
+                stream_chunk_idle_timeout_sec=stream_chunk_idle_timeout_sec,
+                stream_leg_max_wall_sec=stream_leg_max_wall_sec,
+                rewire_after_tombstone=rewire_after_tombstone,
+                enable_memory_tools=False,
+                memory_config=None,
+                include_plan_tools=False,
+                include_goal_recall_tool=False,
+                file_config=None,
+                max_session_tokens=max_session_tokens,
+                on_file_guard_violation=None,
+                web_config=active_web_cfg,
+                enable_list_session_web_sources=False,
+                debug_stream=debug_stream,
+                include_knowledge_tools=False,
+                knowledge_feed_host_allowlist=knowledge_feed_host_allowlist,
+                knowledge_embeddings_enabled=knowledge_embeddings_enabled,
+                knowledge_embedding_model=knowledge_embedding_model,
+                knowledge_embedding_dim=knowledge_embedding_dim,
+                knowledge_embedding_min_cosine=knowledge_embedding_min_cosine,
+                knowledge_tool_max_results=knowledge_tool_max_results,
+                knowledge_tool_excerpt_chars=knowledge_tool_excerpt_chars,
+                knowledge_tool_subset=KNOWLEDGE_TOOLS_ENRICH,
+                workflow_strict=True,
+                workflow_strict_allow_web=first_allow_web if pi == 0 else False,
+                include_workflow_tools=False,
+                workflow_max_steps=None,
+                enrich_subject_entity_id=eid_int,
+            )
         after_edge = await qe.max_graph_edge_id_for_src_entity(eid_int)
         after_facts = await qe.count_unique_local_facts(eid_int)
         chain_after = await qe.load_chain_for_api(session_id)

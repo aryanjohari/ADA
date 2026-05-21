@@ -1,0 +1,11 @@
+id: weekly_research_goal
+description: Enqueue a daemon goal for weekly research synthesis.
+risk_tier: medium
+ring: 2
+motor_type: goal_add
+allowed_params:
+  - goal_text
+required_params:
+  - goal_text
+mission_required: true
+require_approval: false

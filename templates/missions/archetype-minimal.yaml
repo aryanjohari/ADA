@@ -1,0 +1,19 @@
+name: archetype-minimal
+slug: archetype-example
+title: Minimal research archetype
+pack: generic-research
+brief_md: |
+  Operator intent: starter programme for unknown domain or job-hunt research.
+  Clone this template, set mission_slug and brief_md, add RSS knowledge_sources.
+defaults_json:
+  project_id: jarvis-main
+  campaign_id: research
+skills_enabled:
+  - ingest_rss_mission
+  - weekly_research_goal
+schedule_hint_json:
+  version: 1
+  jobs: []
+knowledge_sources: []
+recommended_cron: []
+risk_summary: Minimal research archetype — customize slug, brief, and sources before apply.

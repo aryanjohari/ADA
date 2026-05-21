@@ -1,0 +1,26 @@
+name: job-hunt
+slug: job-hunt-example
+title: Job hunt research
+pack: job-hunt
+brief_md: |
+  Operator intent: track roles, companies, and hiring signals via RSS and weekly synthesis.
+  List target company blogs and job boards in knowledge_sources; refine brief_md with search criteria.
+defaults_json:
+  project_id: jarvis-main
+  campaign_id: job-hunt
+skills_enabled:
+  - ingest_rss_mission
+  - weekly_research_goal
+schedule_hint_json:
+  version: 1
+  jobs:
+    - id: weekly_goal
+      min_interval_hours: 168
+      action:
+        type: enqueue_goal
+        goal_text: "Weekly job-hunt synthesis — companies, roles, and signals"
+knowledge_sources: []
+recommended_cron:
+  - comment: Weekly research tick
+    line: "0 7 * * 1 ada mission tick --mission job-hunt-example"
+risk_summary: Job-hunt pack — no publish; operator owns RSS sources and brief.

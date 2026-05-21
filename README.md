@@ -4,6 +4,7 @@
 
 ### Operator docs (Pi / one profile / pSEO)
 
+- [`docs/ADA_CORE_OPS.md`](docs/ADA_CORE_OPS.md) — **operating ADA on a Pi:** autonomic ops (`jarvis-ops`), apply checklist, cron snippets, tick/daemon (Hands H8)
 - [`docs/operator-onboarding.md`](docs/operator-onboarding.md) — single path: **profile (optional) → mission init → playbook → cron**, deprecation map, **`ada mission migrate-env`**  
 - [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — cron + systemd, env matrix, spend caps, dual graph paths, matrix vs keyword tracks, **`ada approval`** for enqueue and publish  
 - [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — stable `page.json` v1 + S3 keys (canonical: `src/ada/publish/page_schema_v1.py`)  
@@ -13,6 +14,9 @@
 - [`docs/OPERATOR_SQLITE_BACKUP.md`](docs/OPERATOR_SQLITE_BACKUP.md) — `state.db` backup / restore drill  
 - [`docs/OPERATOR_LOGGING.md`](docs/OPERATOR_LOGGING.md) — systemd / file logging for daemon on Pi  
 - [`docs/operator-publish-gate.md`](docs/operator-publish-gate.md) — GATE vs ENRICH vs DRAFT (distinct `source_url` facts), diagnosis (`ada workflow status`, `ada gate-failures`, logs)
+- [`docs/JOB_QUEUE_SINGLE_OWNER.md`](docs/JOB_QUEUE_SINGLE_OWNER.md) — one job plane per `state.db` (`legacy` vs `system_jobs`)
+- [`docs/mission-control-flags.md`](docs/mission-control-flags.md) — deterministic HUD flags from SQLite
+- [`docs/mission-control-setup-assist.md`](docs/mission-control-setup-assist.md) — `ada chat --setup` contract
 
 **GATE** (`ADA_PUBLISH_MIN_UNIQUE_FACTS`, distinct `source_url` on graph edges) applies only to **`publish_entity_v1`**, not **`publish_keyword_v1`**. **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`** gates **`DEPLOY`** for **both** publish kinds when enabled.
 
@@ -237,7 +241,7 @@ JSON with a top-level **`parts`** array; entries include `type: text` \| `functi
 | **Disable goal recall** | `ADA_ENABLE_GOAL_RECALL_TOOL=0` | **`read_goal_task_view`** declaration omitted |
 | **Disable web tools** | `ADA_ENABLE_WEB_TOOLS=0` (default) | No `web_search` / `fetch_url_text` declarations; no Serper spend |
 | **Disable knowledge tools** | `ADA_ENABLE_KNOWLEDGE_TOOLS=0` (default) | No `search_knowledge` / `record_synthesis` / `add_knowledge_source` / graph-lite tool declarations |
-| **`enqueue_workflow`** | Create pending **`tasks`** row + **`workflows`** + steps from a **code-defined** template kind | **`ADA_ENABLE_WORKFLOW_TOOLS=1`**; **`ADA_MAX_TASK_STEPS`** caps step count |
+| **`enqueue_workflow`** | Create pending **`tasks`** row + **`workflows`** + steps from a **code-defined** template kind | **Not a chat tool (H2)** — use **`run_skill`** / `ada workflow enqueue` / internal callers; CLI and `ADA_MAX_TASK_STEPS` unchanged |
 | **`get_workflow_status`** | Read-only JSON view of **`workflows`** + **`workflow_steps`** by `workflow_id` | **`ADA_ENABLE_WORKFLOW_TOOLS=1`** |
 
 The model **cannot** run arbitrary SQL or read arbitrary files unless you **explicitly** add allowlisted commands or new tools. **Symlink following** for read/write uses `Path.resolve()` like before—treat untrusted trees with care.
@@ -500,7 +504,9 @@ Keyword-only (no pre-existing **entity_id**; no **GATE**): `ada workflow enqueue
 
 Fallback behavior is explicit: if GSC tables/data are missing, publish workflow continues in brand/entity-only mode and logs the fallback reason (`gsc_table_missing`, `gsc_no_rows`, or `keyword_missing`) in workflow step output and `action_log`.
 
-### 10.4 Optional Streamlit observability dashboard (read-only)
+### 10.4 Optional Streamlit observability dashboard (operator boss UI)
+
+**Primary operator HUD:** the **Chat** tab provides concierge (**Chat**), template **Apply programme** (**Plan**), and **Run action** (**Agent**) beside read-only observability tabs. See [`docs/STREAMLIT_BOSS.md`](docs/STREAMLIT_BOSS.md).
 
 **Architecture:** this dashboard is **not** the agent: it does not run the orchestrator, tool executor, or daemon; it only runs **SELECT** queries against `state.db` in SQLite **read-only** URI mode. Existing `ada` CLI commands and security boundaries ([`docs/claude_logic.md`](docs/claude_logic.md) norms, allowlists, env-gated tools) are unchanged.
 
@@ -557,7 +563,11 @@ Suggested **next planning** items (prioritize as you like):
 
 ## 12. Further reading
 
-- [`docs/claude_logic.md`](docs/claude_logic.md) — transcript / security pointers (stub linking into `store.py`, `query_engine.py`, `orchestrator.py`)  
+- [`docs/ADA_CORE.md`](docs/ADA_CORE.md) — two-face architecture (Entity \| Work)
+- [`docs/ADA_ENTITY_SLICE.md`](docs/ADA_ENTITY_SLICE.md) — global concierge ingress, tools, breaking changes
+- [`docs/ADA_PHASE_A_CONTRACT.md`](docs/ADA_PHASE_A_CONTRACT.md) — Phase A boundaries and non-goals
+- [`docs/GREENFIELD_PROFILE.md`](docs/GREENFIELD_PROFILE.md) — new profile checklist (`jarvis` + `jarvis-ops`)
+- [`docs/claude_logic.md`](docs/claude_logic.md) — transcript / security pointers (index into `store.py`, `query_engine.py`, `orchestrator.py`)  
 - [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — Raspberry Pi single-profile runbook  
 - [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — ISR `page.json` v1 + S3 layout  
 - [`docs/system_architecure.md`](docs/system_architecure.md) — early phase-1 system view (partially superseded by this README)  

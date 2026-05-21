@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+UTC = timezone.utc
 from typing import Any
 
 from ada.analytics.keyword_select import select_keyword_cluster
 from ada.config import Settings
+from ada.mission_defaults_resolve import overlay_tick_merged
 from ada.ingest.gsc_service import ingest_gsc_search_analytics
-from ada.publish.matrix import run_matrix_scan
 from ada.query_engine import QueryEngine
 from ada.workflow.enqueue import enqueue_workflow_via_tool
 
@@ -165,31 +167,107 @@ async def run_mission_tick(
             continue
 
         merged = merge_action_defaults(base_defaults, action)
+        merged = overlay_tick_merged(
+            merged,
+            base_defaults,
+            gsc_site_url_env=settings.gsc_site_url,
+        )
 
         if atype == "gsc_keyword_publish":
-            rc, bump = await _tick_gsc_keyword_publish(
-                qe,
-                settings,
-                mission_slug=slug,
-                job_id=job_id,
-                merged=merged,
-                dry_run=dry_run,
-            )
-            if rc != 0:
-                exit_code = rc
+            if dry_run:
+                print(
+                    f"mission tick: [dry-run] would enqueue tick.gsc_keyword_publish "
+                    f"for mission={slug!r} job={job_id!r}",
+                    flush=True,
+                )
                 continue
+            mid = int(row["id"])
+            idem = f"tick-enq:gsc:{slug}:{job_id}:{now.date().isoformat()}"
+            sj_id = await qe.insert_system_job(
+                kind="tick.gsc_keyword_publish",
+                mission_id=mid,
+                payload_json={
+                    "mission_slug": slug,
+                    "tick_job_id": job_id,
+                    "merged": dict(merged),
+                    "tick_state_key": key,
+                },
+                idempotency_key=idem,
+            )
+            print(
+                f"mission tick: enqueued system_job id={sj_id} kind=tick.gsc_keyword_publish",
+                flush=True,
+            )
+        elif atype == "enqueue_goal":
+            goal_text = str(
+                action.get("goal_text") or merged.get("goal_text") or ""
+            ).strip()
+            if not goal_text:
+                print(
+                    f"mission tick: job {job_id!r}: enqueue_goal requires goal_text",
+                    flush=True,
+                )
+                exit_code = 1
+                continue
+            if dry_run:
+                print(
+                    f"mission tick: [dry-run] would enqueue goal for mission={slug!r} "
+                    f"job={job_id!r}: {goal_text[:80]!r}",
+                    flush=True,
+                )
+                continue
+            from ada.motor import MotorRequest, execute
+
+            result = await execute(
+                MotorRequest(
+                    layer="skill",
+                    id="weekly_research_goal",
+                    params={"goal_text": goal_text},
+                    mission_slug=slug,
+                    approved=True,
+                ),
+                settings=settings,
+                qe=qe,
+            )
+            if not result.ok:
+                print(
+                    f"mission tick: job {job_id!r}: enqueue_goal failed: {result.error}",
+                    flush=True,
+                )
+                exit_code = 1
+                continue
+            await qe.state_set(key, _format_last_run_iso(now))
+            print(
+                f"mission tick: job {job_id!r}: enqueued goal via motor "
+                f"{result.output!r}",
+                flush=True,
+            )
         elif atype == "matrix_entity_legacy_scan":
-            rc, bump = await _tick_matrix_legacy(
-                qe,
-                settings,
-                mission_slug=slug,
-                job_id=job_id,
-                merged=merged,
-                dry_run=dry_run,
-            )
-            if rc != 0:
-                exit_code = rc
+            if dry_run:
+                print(
+                    f"mission tick: [dry-run] would enqueue matrix.scan "
+                    f"mission={slug!r} job={job_id!r}",
+                    flush=True,
+                )
                 continue
+            mdry = bool(merged.get("dry_run"))
+            mid = int(row["id"])
+            idem = f"tick-enq:matrix:{slug}:{job_id}:{now.date().isoformat()}"
+            sj_id = await qe.insert_system_job(
+                kind="matrix.scan",
+                mission_id=mid,
+                payload_json={
+                    "mission_slug": slug,
+                    "dry_run": mdry,
+                    "deterministic": True,
+                    "tick_state_key": key,
+                },
+                idempotency_key=idem,
+            )
+            print(
+                f"mission tick: enqueued system_job id={sj_id} kind=matrix.scan",
+                flush=True,
+            )
         else:
             print(
                 f"mission tick: job {job_id!r}: unknown action.type {atype!r}",
@@ -197,9 +275,6 @@ async def run_mission_tick(
             )
             exit_code = 1
             continue
-
-        if not dry_run and bump:
-            await qe.state_set(key, _format_last_run_iso(now))
 
     return exit_code
 
@@ -322,43 +397,4 @@ async def _tick_gsc_keyword_publish(
         print(f"mission tick: enqueue failed: {wf_out['error']}", flush=True)
         return 1, False
     print(f"mission tick: enqueued workflow_id={wf_out.get('workflow_id')}", flush=True)
-    return 0, True
-
-
-async def _tick_matrix_legacy(
-    qe: QueryEngine,
-    settings: Settings,
-    *,
-    mission_slug: str,
-    job_id: str,
-    merged: dict[str, Any],
-    dry_run: bool,
-) -> tuple[int, bool]:
-    mdry = bool(merged.get("dry_run")) or dry_run
-    if dry_run:
-        print(
-            f"mission tick: [dry-run] would matrix-scan --deterministic "
-            f"mission={mission_slug!r} job={job_id!r}",
-            flush=True,
-        )
-        return 0, False
-
-    out = await run_matrix_scan(
-        qe,
-        settings,
-        dry_run=mdry,
-        deterministic=True,
-        mission_slug=mission_slug,
-    )
-    skipped = str(out.get("skipped") or "")
-    if skipped.startswith("unknown_mission_slug:"):
-        print(f"mission tick: matrix scan skipped ({skipped})", flush=True)
-        return 1, False
-    if skipped == "ADA_MATRIX_ENABLE=0" and not mdry:
-        print(
-            "mission tick: matrix_entity_legacy_scan skipped (ADA_MATRIX_ENABLE=0)",
-            flush=True,
-        )
-        return 0, False
-    print(f"mission tick: matrix scan result={out!r}", flush=True)
     return 0, True

@@ -12,7 +12,7 @@ from typing import Any
 
 import streamlit as st
 
-from ada.config import resolve_runtime_paths_from_environ
+from ada.config import Settings, resolve_runtime_paths_from_environ
 from ada.observability.audit_log import append_operator_action_log
 from ada.observability.db_ro import (
     connect_ro,
@@ -41,9 +41,20 @@ from ada.observability.memory_files import (
 from ada.observability.operator_subprocess import AdaRunResult, format_result_for_logs, run_ada
 from ada.observability.operator_whitelist import WHITELIST_META, build_argv
 from ada.observability.profile_snippets import list_profile_slugs
+from ada.observability.playbook_panel import (
+    list_playbook_registry_rows,
+    validate_mission_defaults_against_playbook,
+)
+from ada.mission_control.digest import render_brief
+from ada.mission_control.flags import collect_flags, flags_to_dicts
+from ada.mission_control.snapshot import build_mission_control_snapshot
 from ada.observability.queries import (
     action_log_recent,
+    mission_id_from_slug,
+    mission_tick_state_rows,
+    missions_overview_list,
     open_readonly_connection,
+    system_jobs_recent,
     task_status_counts,
     tasks_pending_failed,
     usage_by_session_and_kind,
@@ -57,6 +68,16 @@ from ada.observability.queries import (
 )
 from ada.observability.schedule_audit import ScheduleRow, overlap_heuristic, parse_markdown_schedules
 from ada.observability.sql_guard import validate_select_only
+
+
+def _operator_full_ui() -> bool:
+    """When false (default), show Phase A daily tabs only — docs/OPS_DAILY.md."""
+    return os.environ.get("ADA_OPERATOR_FULL_UI", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _json_pretty(obj: Any) -> str:
@@ -158,10 +179,18 @@ def build_sidebar_config() -> dict[str, Any]:
     state_db = rp.state_db_path if rp else (repo_root / "data" / "state.db").resolve()
 
     ada_bin = st.sidebar.text_input("ADA binary", value="ada").strip() or "ada"
+    default_mission = (
+        os.environ.get("ADA_OPERATOR_DEFAULT_MISSION", "").strip()
+        or os.environ.get("ADA_CHAT_DEFAULT_MISSION", "").strip()
+    )
+    try:
+        default_mission = default_mission or str(st.query_params.get("mission", "") or "").strip()
+    except Exception:
+        pass
     mission_filter = st.sidebar.text_input(
         "Mission slug filter (optional)",
-        value="",
-        help="Filters some SQL previews and optional --mission on commands.",
+        value=default_mission,
+        help="Filters SQL previews, brief, and chat tab mission binding.",
     ).strip()
     costs_days = st.sidebar.number_input("Costs window (days)", min_value=1, max_value=366, value=7)
 
@@ -197,7 +226,8 @@ def _try_audit(cfg: dict[str, Any], payload: dict[str, Any]) -> None:
 def render_setup_tab(cfg: dict[str, Any]) -> None:
     st.subheader("Setup")
     st.markdown(
-        "- [Operator onboarding](docs/operator-onboarding.md) — profile → mission → playbook.\n"
+        "- [Pi operator runbook](docs/operator-raspberry-pi.md) — single `.env`, systemd, job queue.\n"
+        "- [Job queue single owner](docs/JOB_QUEUE_SINGLE_OWNER.md) — one daemon mode per DB.\n"
         "- [README §9.0a](README.md) — multi-tenant profiles.\n"
         "- **Streamlit cannot set shell exports** for new terminals; use generated EnvironmentFile / `source`."
     )
@@ -607,29 +637,193 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
         return
 
     with conn:
-        sub = st.tabs(
+        full_ui = _operator_full_ui()
+        obs_tab_names = (
             [
                 "Overview",
+                "Control plane",
+                "Missions",
                 "Tasks",
                 "Goal outputs",
                 "Workflows",
                 "Usage",
                 "Action log",
                 "Caps / budgets",
+                "Job plane",
             ]
+            if full_ui
+            else ["Control plane", "Missions"]
         )
+        sub = st.tabs(obs_tab_names)
+        if not full_ui:
+            st.caption(
+                "Daily ops UI — set `ADA_OPERATOR_FULL_UI=1` for full observability tabs."
+            )
 
-        with sub[0]:
+        if full_ui:
+            with sub[obs_tab_names.index("Overview")]:
+                try:
+                    c2 = connect_ro(db_path)
+                except Exception as e:
+                    st.error(str(e))
+                else:
+                    with c2:
+                        stats = overview_stats(c2, cfg["mission_filter"] or None)
+                        st.json(stats)
+
+        with sub[obs_tab_names.index("Control plane")]:
+            st.subheader("Control plane")
+            st.caption(
+                "Deterministic flags from SQLite — not LLM-invented. "
+                "See docs/mission-control-flags.md."
+            )
             try:
-                c2 = connect_ro(db_path)
-            except Exception as e:
-                st.error(str(e))
-            else:
-                with c2:
-                    stats = overview_stats(c2, cfg["mission_filter"] or None)
-                    st.json(stats)
+                settings = Settings.load()
+                merged = cfg["merged_environ"]
+                mid_filter: int | None = None
+                slug_cp = (cfg.get("mission_filter") or "").strip()
+                if slug_cp:
+                    mid_filter = mission_id_from_slug(conn, slug_cp)
+                flags = collect_flags(
+                    conn,
+                    mission_id=mid_filter,
+                    mission_slug=slug_cp or None,
+                    profile_scope=True,
+                    gemini_api_key=str(
+                        merged.get("GEMINI_API_KEY", settings.gemini_api_key)
+                    ),
+                    ada_job_queue=str(
+                        merged.get("ADA_JOB_QUEUE", settings.ada_job_queue)
+                    ),
+                    ada_kill_switch=settings.ada_kill_switch,
+                    ada_profile=settings.ada_profile,
+                    ada_profile_data_root=str(settings.ada_profile_data_root),
+                    profile_fingerprint=settings.profile_fingerprint,
+                )
+                if flags:
+                    st.dataframe(
+                        flags_to_dicts(flags),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info("No flags (healthy or empty database).")
+                if slug_cp and mid_filter is not None:
+                    snap = build_mission_control_snapshot(
+                        conn,
+                        mission_id=mid_filter,
+                        mission_slug=slug_cp,
+                        profile_scope=True,
+                        gemini_api_key=settings.gemini_api_key,
+                        ada_job_queue=settings.ada_job_queue,
+                        ada_kill_switch=settings.ada_kill_switch,
+                        ada_profile=settings.ada_profile,
+                        ada_profile_data_root=str(settings.ada_profile_data_root),
+                        profile_fingerprint=settings.profile_fingerprint,
+                    )
+                    snap_json = json.dumps(snap, ensure_ascii=False, indent=2)
+                    if st.button("Copy setup context JSON", key="cp_copy_snap"):
+                        st.code(snap_json, language="json")
+                        st.caption("Paste into chat for operator-driven setup (no secrets).")
+                brief_col1, brief_col2 = st.columns(2)
+                with brief_col1:
+                    if st.button("Brief me", key="cp_brief_me"):
+                        try:
+                            brief_md = render_brief(
+                                conn,
+                                mission_id=mid_filter,
+                                mission_slug=slug_cp or None,
+                                profile_scope=True,
+                                gemini_api_key=settings.gemini_api_key,
+                                ada_job_queue=settings.ada_job_queue,
+                                ada_kill_switch=settings.ada_kill_switch,
+                                ada_profile=settings.ada_profile,
+                                ada_profile_data_root=str(settings.ada_profile_data_root),
+                                profile_fingerprint=settings.profile_fingerprint,
+                            )
+                            st.session_state.cp_brief_text = brief_md
+                        except Exception as ex:
+                            st.error(str(ex))
+                with brief_col2:
+                    if st.button("Enqueue brief goal", key="cp_brief_enqueue"):
+                        if not slug_cp or mid_filter is None:
+                            st.warning("Set mission slug filter to enqueue a scoped goal.")
+                        else:
+                            try:
+                                import asyncio
 
-        with sub[1]:
+                                from ada.brief_cli import enqueue_brief_goal
+
+                                brief_md = st.session_state.get("cp_brief_text") or render_brief(
+                                    conn,
+                                    mission_id=mid_filter,
+                                    mission_slug=slug_cp,
+                                    profile_scope=True,
+                                    gemini_api_key=settings.gemini_api_key,
+                                    ada_job_queue=settings.ada_job_queue,
+                                    ada_kill_switch=settings.ada_kill_switch,
+                                    ada_profile=settings.ada_profile,
+                                    ada_profile_data_root=str(
+                                        settings.ada_profile_data_root
+                                    ),
+                                    profile_fingerprint=settings.profile_fingerprint,
+                                )
+                                tid = asyncio.run(
+                                    enqueue_brief_goal(
+                                        settings,
+                                        mission_slug=slug_cp,
+                                        brief_md=brief_md,
+                                    )
+                                )
+                                st.success(f"Brief goal enqueued (task_id={tid}).")
+                            except Exception as ex:
+                                st.error(str(ex))
+                if st.session_state.get("cp_brief_text"):
+                    st.code(st.session_state.cp_brief_text, language="markdown")
+                    st.caption("Deterministic brief from SQLite — not LLM-invented.")
+            except Exception as e:
+                st.exception(e)
+
+        with sub[obs_tab_names.index("Missions")]:
+            st.subheader("Mission overview")
+            st.caption(
+                "Per-mission counts and schedule job ids. "
+                "Kernel note: market_metrics / synthesis_edges are profile-global."
+            )
+            try:
+                rows = missions_overview_list(
+                    conn, slug_filter=cfg["mission_filter"] or None
+                )
+                if not rows:
+                    st.info("No missions (or filter matched nothing).")
+                else:
+                    st.dataframe(
+                        [_flatten_for_df(r) for r in rows],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    slug_for_tick = cfg["mission_filter"] or (
+                        rows[0]["slug"] if len(rows) == 1 else ""
+                    )
+                    if slug_for_tick:
+                        with st.expander(
+                            f"Mission tick state (`mission.tick.{slug_for_tick}.*`)",
+                            expanded=False,
+                        ):
+                            tick_rows = mission_tick_state_rows(
+                                conn, mission_slug=slug_for_tick
+                            )
+                            if tick_rows:
+                                st.dataframe(tick_rows, use_container_width=True)
+                            else:
+                                st.caption("No tick state keys yet.")
+            except Exception as e:
+                st.exception(e)
+
+        if not full_ui:
+            return
+
+        with sub[obs_tab_names.index("Tasks")]:
             st.subheader("Missions & tasks")
             try:
                 c2 = connect_ro(db_path)
@@ -643,7 +837,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
                     st.dataframe(missions, use_container_width=True)
                     st.dataframe(tasks, use_container_width=True)
 
-        with sub[2]:
+        with sub[obs_tab_names.index("Goal outputs")]:
             st.subheader("Completed goal outputs")
             st.caption(
                 "Read-only: completed goal tasks with non-empty `current_output`. "
@@ -694,7 +888,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
                             unsafe_allow_html=True,
                         )
 
-        with sub[3]:
+        with sub[obs_tab_names.index("Workflows")]:
             st.subheader("Pending / failed tasks (sanitized)")
             try:
                 rows = tasks_pending_failed(conn, limit=200)
@@ -750,7 +944,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
             if "obs_alog" in st.session_state:
                 st.dataframe(st.session_state.obs_alog, use_container_width=True)
 
-        with sub[4]:
+        with sub[obs_tab_names.index("Usage")]:
             st.subheader("Usage rollups (UTC day)")
             try:
                 st.dataframe(
@@ -784,7 +978,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
             except Exception as e:
                 st.exception(e)
 
-        with sub[5]:
+        with sub[obs_tab_names.index("Action log")]:
             st.subheader("Recent action_log (payloads sanitized)")
             try:
                 rows = action_log_recent(conn, limit=120)
@@ -805,7 +999,7 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
             except Exception as e:
                 st.exception(e)
 
-        with sub[6]:
+        with sub[obs_tab_names.index("Caps / budgets")]:
             st.subheader("Effective caps (merged env + process)")
             st.caption(
                 "Merged from process environment and sidebar `.env` (dotenv override=False rules). "
@@ -828,16 +1022,168 @@ def render_observability_tab(cfg: dict[str, Any]) -> None:
             except Exception as e:
                 st.exception(e)
 
+        with sub[obs_tab_names.index("Job plane")]:
+            st.subheader("system_jobs (job plane)")
+            st.caption(
+                "Durable queue for goals, ticks, ingest, and workflows. "
+                "See docs/JOB_QUEUE_SINGLE_OWNER.md — do not double-run legacy + worker on one DB. "
+                "Payloads are digested by default; never commit real API keys to fixtures."
+            )
+            if not table_exists(conn, "system_jobs"):
+                st.warning("system_jobs table not present (open DB with current ADA schema).")
+            else:
+                try:
+                    mid_filter: int | None = None
+                    if cfg["mission_filter"]:
+                        mid_filter = mission_id_from_slug(
+                            conn, cfg["mission_filter"]
+                        )
+                    sj_status = st.selectbox(
+                        "Status filter",
+                        options=["(all)", "pending", "running", "completed", "failed", "dead"],
+                        index=0,
+                        key="sj_status_filter",
+                    )
+                    status_arg = None if sj_status == "(all)" else sj_status
+                    rows = system_jobs_recent(
+                        conn,
+                        limit=150,
+                        mission_id=mid_filter,
+                        status=status_arg,
+                    )
+                    show_raw_env = os.environ.get(
+                        "ADA_OPERATOR_SHOW_JOB_PAYLOADS", ""
+                    ).strip().lower() in ("1", "true", "yes", "on")
+                    show_raw_ui = show_raw_env or st.checkbox(
+                        "Show raw payload JSON (sensitive — operator ack)",
+                        value=False,
+                        key="sj_show_raw_payload",
+                    )
+                    display_rows: list[dict[str, Any]] = []
+                    for r in rows:
+                        item = dict(r)
+                        if show_raw_ui:
+                            item["payload_redacted"] = _json_pretty(
+                                item.get("payload_redacted")
+                            )
+                        else:
+                            item.pop("payload_redacted", None)
+                        item["payload_digest"] = _json_pretty(item.get("payload_digest"))
+                        item["payload_keys"] = ",".join(item.get("payload_keys") or [])
+                        display_rows.append(_flatten_for_df(item))
+                    st.dataframe(
+                        display_rows,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                except Exception as e:
+                    st.exception(e)
+
+
+def render_playbooks_tab(cfg: dict[str, Any]) -> None:
+    st.subheader("Playbook registry (read-only)")
+    st.caption(
+        "Trusted procedures from playbooks/registry.yaml. "
+        "Does not modify build_system_instruction or chat prompts."
+    )
+    try:
+        rows = list_playbook_registry_rows(cfg["repo_root"])
+    except ValueError as e:
+        st.error(str(e))
+        return
+    if not rows:
+        st.info("No playbooks in registry.")
+        return
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    st.subheader("Validate mission defaults")
+    slug = st.text_input(
+        "Mission slug",
+        value=cfg["mission_filter"] or "",
+        key="pb_validate_mission_slug",
+    )
+    pid = st.text_input("Playbook id", value="", key="pb_validate_playbook_id")
+    if st.button("Validate defaults_json", key="pb_validate_btn"):
+        if not slug.strip() or not pid.strip():
+            st.warning("Mission slug and playbook id required.")
+            return
+        db_path = cfg["state_db_path"]
+        if not db_path.is_file():
+            st.error("state.db not found")
+            return
+        try:
+            conn = open_readonly_connection(db_path)
+        except OSError as e:
+            st.error(str(e))
+            return
+        with conn:
+            cur = conn.execute(
+                "SELECT defaults_json FROM missions WHERE slug = ? LIMIT 1",
+                (slug.strip(),),
+            )
+            row = cur.fetchone()
+        if row is None:
+            st.error(f"No mission {slug.strip()!r}")
+            return
+        raw = row[0] or "{}"
+        try:
+            defaults = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except json.JSONDecodeError as e:
+            st.error(f"Invalid defaults_json: {e}")
+            return
+        if not isinstance(defaults, dict):
+            st.error("defaults_json must be a JSON object")
+            return
+        out = validate_mission_defaults_against_playbook(
+            playbook_id=pid.strip(),
+            mission_defaults=defaults,
+            project_root=cfg["repo_root"],
+        )
+        if out.get("ok"):
+            st.success("Validation passed")
+            st.json(out)
+        else:
+            st.error(out.get("error", "validation failed"))
+
 
 def render_operator_tabs(cfg: dict[str, Any]) -> None:
-    tabs = st.tabs(["Setup", "Env", "Profiles", "Memory", "Observability"])
-    with tabs[0]:
-        render_setup_tab(cfg)
-    with tabs[1]:
-        render_env_tab(cfg)
-    with tabs[2]:
-        render_profiles_tab(cfg)
-    with tabs[3]:
-        render_memory_tab(cfg)
-    with tabs[4]:
-        render_observability_tab(cfg)
+    if _operator_full_ui():
+        tab_names = [
+            "Setup",
+            "Env",
+            "Profiles",
+            "Memory",
+            "Playbooks",
+            "Observability",
+            "Chat",
+        ]
+    else:
+        tab_names = ["Setup", "Observability", "Chat"]
+    tabs = st.tabs(tab_names)
+    if _operator_full_ui():
+        with tabs[tab_names.index("Setup")]:
+            render_setup_tab(cfg)
+        with tabs[tab_names.index("Env")]:
+            render_env_tab(cfg)
+        with tabs[tab_names.index("Profiles")]:
+            render_profiles_tab(cfg)
+        with tabs[tab_names.index("Memory")]:
+            render_memory_tab(cfg)
+        with tabs[tab_names.index("Playbooks")]:
+            render_playbooks_tab(cfg)
+        with tabs[tab_names.index("Observability")]:
+            render_observability_tab(cfg)
+        with tabs[tab_names.index("Chat")]:
+            from ada.observability.chat_panel import render_chat_tab
+
+            render_chat_tab(cfg)
+    else:
+        with tabs[tab_names.index("Setup")]:
+            render_setup_tab(cfg)
+        with tabs[tab_names.index("Observability")]:
+            render_observability_tab(cfg)
+        with tabs[tab_names.index("Chat")]:
+            from ada.observability.chat_panel import render_chat_tab
+
+            render_chat_tab(cfg)
+        st.caption("Daily ops UI — set `ADA_OPERATOR_FULL_UI=1` for Env, Profiles, Memory, Playbooks.")
