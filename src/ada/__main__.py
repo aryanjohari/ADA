@@ -100,6 +100,21 @@ def main() -> None:
 
     sub.add_parser("daemon", help="Poll pending tasks in SQLite")
 
+    sub.add_parser(
+        "boot",
+        help="Ensure kernel missions (base_ops, ada_ops) and memory source; print ids",
+    )
+
+    reload_p = sub.add_parser(
+        "reload",
+        help="kernel_boot + restart goal daemon (systemd when configured); no DB wipe",
+    )
+    reload_p.add_argument(
+        "--no-daemon",
+        action="store_true",
+        help="Run kernel_boot only; do not invoke systemctl restart",
+    )
+
     doctor_p = sub.add_parser(
         "doctor",
         help="Read-only health checks (profile, job queue, system_jobs)",
@@ -110,11 +125,11 @@ def main() -> None:
 
     sub.add_parser(
         "jarvis",
-        help="Launch Streamlit HUD (operator UI) + print ada chat hint",
+        help="(deprecated) Launch Streamlit HUD — prefer ada hud",
     )
     sub.add_parser(
         "hud",
-        help="Alias for ada jarvis",
+        help="Launch Streamlit operator HUD + print ada chat hint",
     )
 
     _mission_help = (
@@ -507,6 +522,23 @@ def main() -> None:
                     settings,
                     packet_path=args.packet_file,
                     skip_confirm=bool(args.yes),
+                )
+            )
+        )
+    elif args.cmd == "boot":
+        from ada.boot import run_boot_cli
+
+        settings = Settings.load()
+        raise SystemExit(asyncio.run(run_boot_cli(settings)))
+    elif args.cmd == "reload":
+        from ada.reload_cli import run_reload_cli
+
+        settings = Settings.load()
+        raise SystemExit(
+            asyncio.run(
+                run_reload_cli(
+                    settings,
+                    restart_daemon=not bool(getattr(args, "no_daemon", False)),
                 )
             )
         )

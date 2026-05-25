@@ -708,6 +708,8 @@ async def _stream_one_generate_content_attempt(
                 finish_reason = str(fr)
             content = getattr(cand, "content", None)
             if not content or not content.parts:
+                for pfc in _function_calls_from_response_dump(cand):
+                    _remember_fc(fc_bucket, fc_order, pfc)
                 continue
             for part in content.parts:
                 pfc = _fc_from_part(part)

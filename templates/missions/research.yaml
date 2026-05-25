@@ -6,7 +6,7 @@ brief_md: |
   Operator intent: weekly RSS ingest and research synthesis for this site or niche.
   Override gsc_site_url and knowledge_sources before apply.
 defaults_json:
-  project_id: jarvis-main
+  project_id: ada-main
   campaign_id: ops
   gsc_site_url: https://example.com/
   matrix_max_enqueues: 5

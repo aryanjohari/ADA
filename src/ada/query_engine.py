@@ -293,6 +293,20 @@ class QueryEngine:
     async def get_goal_task(self, task_id: int) -> dict[str, Any]:
         return await self._store.get_goal_task(task_id)
 
+    async def list_system_tasks(
+        self,
+        mission_id: int,
+        *,
+        limit: int = 50,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._store.list_system_tasks(
+            mission_id, limit=limit, status=status
+        )
+
+    async def get_system_task(self, task_id: int) -> dict[str, Any]:
+        return await self._store.get_system_task(task_id)
+
     async def create_mission(
         self,
         slug: str,
@@ -347,6 +361,9 @@ class QueryEngine:
             brief_md=brief_md,
             schedule_hint_json=schedule_hint_json,
         )
+
+    async def rename_mission_slug(self, old_slug: str, new_slug: str) -> None:
+        await self._store.rename_mission_slug(old_slug, new_slug)
 
     async def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
         return await self._store.list_missions(limit=limit)

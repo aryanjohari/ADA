@@ -251,6 +251,10 @@ class ChatSession:
         return self.profile.include_run_skill
 
     @property
+    def include_run_primitive(self) -> bool:
+        return self.profile.include_run_primitive
+
+    @property
     def include_propose(self) -> bool:
         return self.profile.include_propose_programme
 
@@ -284,6 +288,9 @@ class ChatSession:
         )
         await qe.connect()
         await enforce_profile_identity(qe, settings)
+        from ada.boot import kernel_boot
+
+        await kernel_boot(qe, settings)
         setup_mode = chat_setup_mode_enabled(setup_mode)
         if programme_mode:
             print(
@@ -620,6 +627,14 @@ class ChatSession:
                 await on_delta(chunk)
 
         cb = on_delta if on_delta is not None else _noop
+        streamed_any = False
+
+        async def _track_delta(chunk: str) -> None:
+            nonlocal streamed_any
+            if chunk:
+                streamed_any = True
+            await cb(chunk)
+
         turn_key = _user_turn_count_key(self.task_id)
         raw = await self.qe.state_get(turn_key)
         try:
@@ -630,10 +645,12 @@ class ChatSession:
         try:
             final = await orchestrate_turn(
                 user_text=user_text,
-                on_delta=cb,
+                on_delta=_track_delta,
                 turn_harness_appendix=appendix,
                 **self._orchestrate_common(),
             )
+            if final.strip() and not streamed_any:
+                await cb(final)
             await self.qe.state_set(turn_key, str(turn_before + 1))
             await self.qe.update_task(
                 self.task_id,

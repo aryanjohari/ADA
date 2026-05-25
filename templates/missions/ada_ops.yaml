@@ -1,12 +1,12 @@
-name: jarvis-ops
-slug: jarvis-ops
-title: Jarvis ops
+name: ada_ops
+slug: ada_ops
+title: Ada ops
 pack: core-ops
 brief_md: |
   Operator intent: nervous-system ops for this profile — daily brief and mission tick only.
   No publish pipelines unless you switch to an ISR template.
 defaults_json:
-  project_id: jarvis-main
+  project_id: ada-main
   campaign_id: ops
 skills_enabled:
   - daily_brief
@@ -21,8 +21,8 @@ schedule_hint_json:
         goal_text: "Daily ops brief — run daily_brief skill or ada brief --enqueue"
 recommended_cron:
   - comment: Daily deterministic brief (operator installs manually)
-    line: "0 7 * * * ada brief --mission jarvis-ops"
+    line: "0 7 * * * ada brief --mission ada_ops"
   - comment: Mission tick (weekly example — adjust cadence)
-    line: "0 6 * * 0 ada mission tick --mission jarvis-ops"
+    line: "0 6 * * 0 ada mission tick --mission ada_ops"
 knowledge_sources: []
-risk_summary: Ops programme for jarvis profile — review cron snippets before apply.
+risk_summary: Ops programme for Ada profile — review cron snippets before apply.

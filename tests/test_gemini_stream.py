@@ -215,6 +215,54 @@ async def test_stream_one_model_leg_retries_503_exponential(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
+async def test_stream_empty_parts_candidate_dump_still_extracts_fc() -> None:
+    """Post-tool leg: candidate has empty parts but nested functionCall in dump."""
+
+    cand = MagicMock()
+    cand.finish_reason = "STOP"
+    cand.content = MagicMock(parts=[])
+    cand.model_dump.return_value = {
+        "content": {
+            "parts": [
+                {
+                    "functionCall": {
+                        "name": "run_primitive",
+                        "args": {
+                            "primitive_id": "log_memory",
+                            "args_json": '{"content":"x"}',
+                        },
+                    }
+                }
+            ]
+        }
+    }
+
+    class Chunk:
+        text = None
+        candidates = [cand]
+        usage_metadata = None
+        function_calls = None
+
+    async def fake_chunks():
+        yield Chunk()
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content_stream = AsyncMock(return_value=fake_chunks())
+
+    with patch.object(gs.genai, "Client", return_value=mock_client):
+        leg = await gs.stream_one_model_leg(
+            api_key="k",
+            model="m",
+            system_instruction="",
+            contents=[],
+            tool=gtypes.Tool(function_declarations=[]),
+        )
+
+    assert len(leg.function_calls) == 1
+    assert leg.function_calls[0].name == "run_primitive"
+
+
+@pytest.mark.asyncio
 async def test_stream_one_model_leg_non_transient_no_retry() -> None:
     async def boom(*_a: object, **_k: object) -> None:
         raise ClientError(

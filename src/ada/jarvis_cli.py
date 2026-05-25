@@ -35,7 +35,11 @@ def run_jarvis_launch() -> int:
     if mission:
         env["ADA_OPERATOR_DEFAULT_MISSION"] = mission
 
-    print("ADA Jarvis HUD — Streamlit operator UI", flush=True)
+    print(
+        "Note: `ada jarvis` is deprecated; use `ada hud` for the operator UI.",
+        flush=True,
+    )
+    print("ADA operator HUD — Streamlit", flush=True)
     print(f"  state.db: {settings.state_db_path}", flush=True)
     if mission:
         print(f"  mission filter: {mission}", flush=True)

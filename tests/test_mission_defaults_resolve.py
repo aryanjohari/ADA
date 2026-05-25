@@ -64,14 +64,14 @@ async def test_resolve_matrix_isr_ids_mission_over_env(
     await qe.connect()
     try:
         await qe.create_mission(
-            slug="jarvis-ops",
+            slug="ada_ops",
             title="Ops",
             defaults_json={
                 "project_id": "mission-proj",
                 "campaign_id": "mission-camp",
             },
         )
-        pid, cid = await resolve_matrix_isr_ids(qe, "jarvis-ops")
+        pid, cid = await resolve_matrix_isr_ids(qe, "ada_ops")
         assert pid == "mission-proj"
         assert cid == "mission-camp"
     finally:

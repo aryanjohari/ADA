@@ -8,6 +8,17 @@ from typing import Any
 from ada.chat_ingress import ChatSurfaceMode
 from ada.config import Settings
 
+PRIMITIVE_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "log_memory",
+        "recall_memory",
+        "add_task",
+        "list_tasks",
+        "complete_task",
+        "body_check",
+    }
+)
+
 ENTITY_KNOWLEDGE_TOOLS: frozenset[str] = frozenset(
     {
         "search_knowledge",
@@ -21,6 +32,8 @@ ENTITY_KNOWLEDGE_TOOLS: frozenset[str] = frozenset(
 class ChatCapabilityProfile:
     surface: ChatSurfaceMode
     include_run_skill: bool
+    include_run_primitive: bool
+    primitive_allowlist: frozenset[str] | None
     include_propose_programme: bool
     include_apply_programme: bool
     include_workflow_status: bool
@@ -39,6 +52,8 @@ def profile_chat(settings: Settings) -> ChatCapabilityProfile:
     return ChatCapabilityProfile(
         surface=ChatSurfaceMode.CHAT,
         include_run_skill=False,
+        include_run_primitive=True,
+        primitive_allowlist=PRIMITIVE_ALLOWLIST,
         include_propose_programme=True,
         include_apply_programme=False,
         include_workflow_status=False,
@@ -58,6 +73,8 @@ def profile_plan(settings: Settings) -> ChatCapabilityProfile:
     return ChatCapabilityProfile(
         surface=ChatSurfaceMode.PLAN,
         include_run_skill=False,
+        include_run_primitive=False,
+        primitive_allowlist=None,
         include_propose_programme=True,
         include_apply_programme=True,
         include_workflow_status=False,
@@ -76,6 +93,8 @@ def profile_agent(settings: Settings) -> ChatCapabilityProfile:
     return ChatCapabilityProfile(
         surface=ChatSurfaceMode.AGENT,
         include_run_skill=True,
+        include_run_primitive=False,
+        primitive_allowlist=None,
         include_propose_programme=False,
         include_apply_programme=False,
         include_workflow_status=settings.enable_workflow_tools,
@@ -94,6 +113,8 @@ def profile_setup(settings: Settings) -> ChatCapabilityProfile:
     return ChatCapabilityProfile(
         surface=ChatSurfaceMode.SETUP,
         include_run_skill=False,
+        include_run_primitive=False,
+        primitive_allowlist=None,
         include_propose_programme=False,
         include_apply_programme=False,
         include_workflow_status=settings.enable_workflow_tools,
@@ -113,6 +134,8 @@ def profile_work_legacy(settings: Settings) -> ChatCapabilityProfile:
     return ChatCapabilityProfile(
         surface=ChatSurfaceMode.AGENT,
         include_run_skill=True,
+        include_run_primitive=False,
+        primitive_allowlist=None,
         include_propose_programme=False,
         include_apply_programme=False,
         include_workflow_status=settings.enable_workflow_tools,
@@ -148,6 +171,8 @@ def build_profile_orchestrate_flags(
     """Orchestrate-turn include_* flags derived from capability profile."""
     return {
         "include_run_skill": profile.include_run_skill,
+        "include_run_primitive": profile.include_run_primitive,
+        "primitive_allowlist": profile.primitive_allowlist,
         "include_propose_programme": profile.include_propose_programme,
         "include_apply_programme": profile.include_apply_programme,
         "include_workflow_tools": profile.include_workflow_status,

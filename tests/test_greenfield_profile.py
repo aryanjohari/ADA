@@ -1,16 +1,17 @@
-"""Greenfield profile gate: mission init + doctor + chat mission binding."""
+"""Greenfield profile gate: kernel boot + doctor + Entity chat (NULL task mission)."""
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
 import pytest
 
+from ada.chat_ingress import ChatSurfaceMode
+from ada.chat_session import ChatSession
 from ada.config import Settings
 from ada.doctor import run_doctor
-from ada.query_engine import TASK_KIND_CHAT, QueryEngine
+from ada.query_engine import QueryEngine
 
 
 @pytest.mark.asyncio
@@ -30,33 +31,34 @@ async def test_greenfield_mission_and_chat_binding(
     monkeypatch.setenv("ADA_PROFILE_DATA_ROOT", str(profile_root))
     monkeypatch.setenv("ADA_REQUIRE_PROFILE_ISOLATION", "1")
     monkeypatch.setenv("ADA_JOB_QUEUE", "system_jobs")
-    monkeypatch.setenv("ADA_CHAT_DEFAULT_MISSION", "jarvis-ops")
+    monkeypatch.setenv("ADA_CHAT_DEFAULT_MISSION", "ada_ops")
     monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key-not-real")
 
     settings = Settings.load()
     settings.ensure_data_dir()
 
-    defaults_path = Path(__file__).resolve().parents[1] / "templates" / "mission_defaults.json"
-    defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
-
     qe = QueryEngine(settings.state_db_path, schema_sql_path, debounce_ms=1)
     await qe.connect()
     try:
+        from ada.boot import kernel_boot
         from ada.profile_runtime import enforce_profile_identity
 
         await enforce_profile_identity(qe, settings)
-        mid = await qe.create_mission(
-            slug="jarvis-ops",
-            title="Jarvis ops",
-            defaults_json=defaults,
+        kernel = await kernel_boot(qe, settings)
+        assert kernel.ada_ops_id > 0
+        assert kernel.base_ops_id > 0
+
+        session = await ChatSession.open(
+            settings,
+            new_session=True,
+            surface_mode=ChatSurfaceMode.CHAT,
+            apply_env_default=False,
         )
-        tid = await qe.insert_task(
-            "Interactive session",
-            status="executing",
-            task_kind=TASK_KIND_CHAT,
-            mission_id=mid,
-        )
-        assert await qe.get_task_mission_id(tid) == mid
+        try:
+            assert session.mission_id is None
+            assert await qe.get_task_mission_id(session.task_id) is None
+        finally:
+            await session.close()
 
         report = run_doctor(settings)
         assert report.exit_code == 0
@@ -71,6 +73,6 @@ def test_jarvis_env_example_documents_chat_default() -> None:
         Path(__file__).resolve().parents[1] / "profiles" / "jarvis.env.example"
     )
     text = example.read_text(encoding="utf-8")
-    assert "ADA_CHAT_DEFAULT_MISSION=jarvis-ops" in text
+    assert "ADA_CHAT_DEFAULT_MISSION=ada_ops" in text
     assert "ADA_JOB_QUEUE=system_jobs" in text
     assert "GSC_SITE_URL=" not in text

@@ -27,6 +27,10 @@ from ada.tool_executor import (
     WebToolConfig,
 )
 from ada.knowledge_embeddings import embed_query_text
+from ada.primitives.handlers import (
+    _coerce_run_primitive_args,
+    format_run_primitive_operator_summary,
+)
 from ada.tools.registry import (
     build_agent_tools,
     frozen_tool_declaration_names,
@@ -46,6 +50,104 @@ class StreamFailed(Exception):
 
 class SessionTokenLimitExceeded(Exception):
     """Raised when summed session usage_ledger tokens exceed ADA_MAX_SESSION_TOKENS."""
+
+
+async def _persist_fallback_assistant_text(
+    qe: QueryEngine,
+    *,
+    session_id: int,
+    parent_uuid: str,
+    model: str,
+    summary: str,
+) -> str:
+    """Persist a synthetic assistant turn when the model stream is empty post-tool."""
+    text = summary.strip() or "Done."
+    assistant_uuid = await qe.persist_assistant_begin(session_id, parent_uuid)
+    meta: dict[str, Any] = {
+        "model": model,
+        "finish_reason": "FALLBACK_RUN_PRIMITIVE",
+        "usage": {},
+    }
+    await qe.persist_assistant_finalize(assistant_uuid, text, meta)
+    await qe.state_set("session.active_model", model)
+    return text
+
+
+async def _apply_run_primitive_stream_fallback(
+    qe: QueryEngine,
+    *,
+    session_id: int,
+    parent_uuid: str,
+    model: str,
+    last_run_primitive_response: dict[str, Any] | None,
+    on_delta: Callable[[str], Coroutine[Any, Any, None]] | None,
+    reason: str,
+) -> str | None:
+    """Return operator summary when leg 2+ stream fails after a ``run_primitive`` tool row."""
+    if not last_run_primitive_response:
+        return None
+    summary = format_run_primitive_operator_summary(last_run_primitive_response)
+    if not summary:
+        return None
+    await qe.append_action_log(
+        "run_primitive_stream_fallback",
+        {
+            "reason": reason,
+            "primitive": last_run_primitive_response.get("primitive"),
+        },
+        session_id=session_id,
+    )
+    text = await _persist_fallback_assistant_text(
+        qe,
+        session_id=session_id,
+        parent_uuid=parent_uuid,
+        model=model,
+        summary=summary,
+    )
+    if on_delta:
+        await on_delta(text)
+    return text
+
+
+def _last_run_primitive_response_from_chain(
+    chain: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    for row in reversed(chain):
+        if row.get("role") != "tool":
+            continue
+        for part in row.get("parts") or []:
+            if part.get("type") != "function_response":
+                continue
+            if part.get("name") != "run_primitive":
+                continue
+            resp = part.get("response")
+            if isinstance(resp, dict):
+                return resp
+    return None
+
+
+async def _run_primitive_fallback_from_chain(
+    qe: QueryEngine,
+    session_id: int,
+    model: str,
+    on_delta: Callable[[str], Coroutine[Any, Any, None]] | None,
+) -> str | None:
+    chain = await qe.load_chain_for_api(session_id)
+    resp = _last_run_primitive_response_from_chain(chain)
+    if resp is None:
+        return None
+    head = await qe.chain_head_uuid(session_id)
+    if not head:
+        return None
+    return await _apply_run_primitive_stream_fallback(
+        qe,
+        session_id=session_id,
+        parent_uuid=head,
+        model=model,
+        last_run_primitive_response=resp,
+        on_delta=on_delta,
+        reason="outer_retry",
+    )
 
 
 def file_guard_audit_hook(
@@ -114,6 +216,8 @@ async def orchestrate_turn(
     enrich_subject_entity_id: int | None = None,
     mission_control_snapshot_fn: Callable[[], Awaitable[dict[str, Any]]] | None = None,
     include_run_skill: bool = False,
+    include_run_primitive: bool = False,
+    primitive_allowlist: frozenset[str] | None = None,
     include_propose_programme: bool = False,
     include_apply_programme: bool = False,
     motor_settings: Settings | None = None,
@@ -154,6 +258,7 @@ async def orchestrate_turn(
         include_workflow_tools=include_workflow_tools,
         include_mission_control_snapshot=mission_control_snapshot_fn is not None,
         include_run_skill=include_run_skill,
+        include_run_primitive=include_run_primitive,
         include_propose_programme=include_propose_programme,
         include_apply_programme=include_apply_programme,
     )
@@ -772,6 +877,30 @@ async def orchestrate_turn(
             return {"error": result.error or "motor failed"}
         return {"ok": True, "output": result.output, "action_log_id": result.action_log_id}
 
+    async def _run_primitive_bound(call: CompletedFunctionCall) -> dict[str, Any]:
+        if mot_settings is None:
+            return {"error": "run_primitive not configured"}
+        from ada.primitives.handlers import execute_primitive
+
+        primitive_id, args = _coerce_run_primitive_args(call.args)
+        if not primitive_id:
+            return {"error": "primitive_id required"}
+        if primitive_allowlist is not None and primitive_id not in primitive_allowlist:
+            return {
+                "error": f"primitive {primitive_id!r} not in chat allowlist",
+                "allowed": sorted(primitive_allowlist),
+            }
+        try:
+            result = await execute_primitive(
+                qe, mot_settings, primitive_id, args, kernel=None
+            )
+            if result.get("error") or result.get("ok") is False:
+                log.debug("run_primitive %s: %s", primitive_id, result)
+            return result
+        except (ValueError, RuntimeError) as e:
+            log.debug("run_primitive %s error: %s", primitive_id, e)
+            return {"error": str(e)}
+
     async def _propose_programme_bound(call: CompletedFunctionCall) -> dict[str, Any]:
         from ada.programme.propose import propose_packet
 
@@ -816,6 +945,7 @@ async def orchestrate_turn(
         )
 
     run_skill_h = _run_skill_bound if include_run_skill else None
+    run_primitive_h = _run_primitive_bound if include_run_primitive else None
     propose_h = _propose_programme_bound if include_propose_programme else None
     apply_h = _apply_programme_bound if include_apply_programme else None
 
@@ -855,6 +985,7 @@ async def orchestrate_turn(
             gsc_read=gsc_read_fn,
             mission_control_snapshot=mission_control_snapshot_fn,
             run_skill_handler=run_skill_h,
+            run_primitive_handler=run_primitive_h,
             propose_programme_handler=propose_h,
             apply_programme_handler=apply_h,
         )
@@ -892,11 +1023,27 @@ async def orchestrate_turn(
         except SessionTokenLimitExceeded:
             executor.discard()
             raise
+        except StreamFailed as e:
+            last_err = e
+            executor.discard()
+            await qe.state_set("turn.fallback_generation", str(attempt + 1))
+            if tools_were_persisted[0]:
+                fb = await _run_primitive_fallback_from_chain(
+                    qe, session_id, model, on_delta
+                )
+                if fb is not None:
+                    return fb
+                break
         except Exception as e:
             last_err = e
             executor.discard()
             await qe.state_set("turn.fallback_generation", str(attempt + 1))
             if tools_were_persisted[0]:
+                fb = await _run_primitive_fallback_from_chain(
+                    qe, session_id, model, on_delta
+                )
+                if fb is not None:
+                    return fb
                 break
             if attempt >= max_retries:
                 break
@@ -936,6 +1083,7 @@ async def _agentic_loop(
     turn_harness_appendix: str | None = None,
 ) -> str:
     parent = user_parent_uuid
+    last_run_primitive_response: dict[str, Any] | None = None
 
     async def _gemini_transient_retry_log(payload: dict[str, Any]) -> None:
         await qe.append_action_log(
@@ -981,13 +1129,24 @@ async def _agentic_loop(
                     rewire_orphans=rewire_after_tombstone,
                 )
                 raise
-            except Exception:
+            except Exception as stream_exc:
                 await qe.tombstone(
                     [assistant_uuid, *tool_rows_this_leg],
                     session_id,
                     rewire_orphans=rewire_after_tombstone,
                 )
-                raise
+                fb = await _apply_run_primitive_stream_fallback(
+                    qe,
+                    session_id=session_id,
+                    parent_uuid=parent,
+                    model=model,
+                    last_run_primitive_response=last_run_primitive_response,
+                    on_delta=on_delta,
+                    reason="stream_error",
+                )
+                if fb is not None:
+                    return fb
+                raise stream_exc from stream_exc
 
             if leg.function_calls or (leg.text or "").strip():
                 break
@@ -1016,6 +1175,17 @@ async def _agentic_loop(
             if empty_try < _EMPTY_MODEL_STREAM_RETRIES - 1:
                 await asyncio.sleep(0.25 * (empty_try + 1))
         else:
+            fb = await _apply_run_primitive_stream_fallback(
+                qe,
+                session_id=session_id,
+                parent_uuid=parent,
+                model=model,
+                last_run_primitive_response=last_run_primitive_response,
+                on_delta=on_delta,
+                reason="empty_model_stream",
+            )
+            if fb is not None:
+                return fb
             raise StreamFailed("empty model output after stream retries")
         if leg is None or assistant_uuid is None:
             raise StreamFailed("empty model output after stream retries")
@@ -1194,6 +1364,8 @@ async def _agentic_loop(
                 tr.call.args,
                 tr.response,
             )
+            if tr.call.name == "run_primitive" and isinstance(tr.response, dict):
+                last_run_primitive_response = tr.response
         tools_were_persisted[0] = True
 
         head = await qe.chain_head_uuid(session_id)

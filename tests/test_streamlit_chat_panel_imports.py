@@ -21,11 +21,15 @@ def test_render_chat_tab_importable() -> None:
 def test_hud_actions_importable() -> None:
     from ada.observability.hud_actions import (
         hud_apply_programme,
+        hud_kernel_summary,
+        hud_run_primitive,
         hud_run_skill,
         skills_for_mission_defaults,
     )
 
     assert callable(hud_apply_programme)
+    assert callable(hud_kernel_summary)
+    assert callable(hud_run_primitive)
     assert callable(hud_run_skill)
     assert callable(skills_for_mission_defaults)
 

@@ -86,12 +86,32 @@ def test_entity_mode_note_in_system_instruction() -> None:
         allowlist_summary="(none)",
         entity_mode=True,
     )
-    assert "Jarvis" in instr or "concierge" in instr
+    assert "Ada" in instr or "concierge" in instr
     assert "ada chat --agent" in instr
     assert "run_skill" in instr
     assert "do not have `run_skill`" in instr
+    assert "run_primitive" in instr
+    assert "log_memory" in instr
+    assert "body_check" in instr
     assert _ENTITY_MODE_NOTE.split(".")[0] in instr
     assert "Never paste raw `defaults_json`" in instr
+
+
+def test_concierge_routing_primitive_reflexes() -> None:
+    routing = format_concierge_routing_note()
+    assert "run_primitive" in routing
+    assert "log_memory" in routing
+    assert "body_check" in routing
+    assert "add_task" in routing
+
+    chat = build_system_instruction(
+        soul_text="",
+        master_text="",
+        state_db_display_path="/tmp/state.db",
+        allowlist_summary="(none)",
+        entity_mode=True,
+    )
+    assert routing in chat
 
 
 def test_entity_mode_no_run_skill_encouragement() -> None:

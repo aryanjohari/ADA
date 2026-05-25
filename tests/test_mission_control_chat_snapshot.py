@@ -40,7 +40,7 @@ def test_work_mode_snapshot_fn_when_mission_bound(test_settings) -> None:
         settings,
         surface=ChatSurfaceMode.AGENT,
         mission_id=1,
-        mission_slug="jarvis-ops",
+        mission_slug="ada_ops",
         effective_mission_id=1,
     )
     assert fn is not None

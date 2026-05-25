@@ -6,7 +6,7 @@ brief_md: |
   Operator intent: track roles, companies, and hiring signals via RSS and weekly synthesis.
   List target company blogs and job boards in knowledge_sources; refine brief_md with search criteria.
 defaults_json:
-  project_id: jarvis-main
+  project_id: ada-main
   campaign_id: job-hunt
 skills_enabled:
   - ingest_rss_mission

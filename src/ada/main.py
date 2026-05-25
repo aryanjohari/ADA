@@ -80,6 +80,9 @@ async def run_daemon_loop(settings: Settings) -> None:
     )
     await qe.connect()
     await enforce_profile_identity(qe, settings)
+    from ada.boot import kernel_boot
+
+    await kernel_boot(qe, settings)
     allow = load_allowlist_exact_lines(settings.allowlist_path)
     soul = read_soul_text(settings.soul_path)
     master = read_text_file(settings.master_path)

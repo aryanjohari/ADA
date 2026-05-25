@@ -6,7 +6,7 @@ brief_md: |
   Operator intent: NZ ISR entity pages — enrich graph, gate on unique facts, draft and deploy.
   Set project_id, campaign_id, niche, and entity_id in defaults_json before apply.
 defaults_json:
-  project_id: jarvis-main
+  project_id: ada-main
   campaign_id: isr-nz
   niche: isr
   delivery_scaffold: v1

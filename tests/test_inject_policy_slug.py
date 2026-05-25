@@ -14,8 +14,8 @@ from ada.query_engine import QueryEngine
 
 
 def test_slug_mentioned_word_boundary() -> None:
-    slugs = ["jarvis-ops", "ops"]
-    assert slug_mentioned_in_user_text("check jarvis-ops status", slugs) == "jarvis-ops"
+    slugs = ["ada_ops", "ops"]
+    assert slug_mentioned_in_user_text("check ada_ops status", slugs) == "ada_ops"
     assert slug_mentioned_in_user_text("no match here", slugs) is None
 
 

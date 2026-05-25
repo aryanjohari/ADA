@@ -6,8 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ada.boot import kernel_boot
 from ada.config import Settings
 from ada.motor.execute import execute
+from ada.primitives.catalog import PRIMITIVE_IDS
+from ada.primitives.handlers import execute_primitive
 from ada.motor.types import MotorRequest, MotorResult
 from ada.motor.registry import SkillSpec, load_skill_registry
 from ada.programme.apply import confirm_and_apply
@@ -61,6 +64,55 @@ async def hud_apply_programme(
         return await confirm_and_apply(
             qe, settings, packet, approved=approved, session_id=None
         )
+    finally:
+        await qe.close()
+
+
+async def hud_kernel_summary(settings: Settings) -> dict[str, Any]:
+    """Connect, kernel_boot, return mission hat ids — HUD sidebar (J3)."""
+    qe = QueryEngine(
+        settings.state_db_path,
+        _schema_path(),
+        debounce_ms=settings.persist_debounce_ms,
+    )
+    await qe.connect()
+    try:
+        kernel = await kernel_boot(qe, settings)
+        return {"ok": True, **kernel.as_summary()}
+    finally:
+        await qe.close()
+
+
+async def hud_run_primitive(
+    settings: Settings,
+    *,
+    primitive_id: str,
+    args: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Open QueryEngine, kernel_boot, execute_primitive — no chat task required (J3)."""
+    pid = str(primitive_id or "").strip()
+    if not pid:
+        return {"ok": False, "error": "primitive_id required"}
+    if pid not in PRIMITIVE_IDS:
+        known = sorted(PRIMITIVE_IDS)
+        return {
+            "ok": False,
+            "error": f"unknown primitive {pid!r}; known: {known}",
+        }
+    raw_args = args if isinstance(args, dict) else {}
+    qe = QueryEngine(
+        settings.state_db_path,
+        _schema_path(),
+        debounce_ms=settings.persist_debounce_ms,
+    )
+    await qe.connect()
+    try:
+        kernel = await kernel_boot(qe, settings)
+        return await execute_primitive(
+            qe, settings, pid, raw_args, kernel=kernel
+        )
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     finally:
         await qe.close()
 

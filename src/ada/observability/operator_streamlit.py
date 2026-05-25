@@ -32,6 +32,7 @@ from ada.observability.env_wizard import (
     validate_paths_and_env,
 )
 from ada.observability.goal_outputs import completed_goal_outputs_recent
+from ada.observability.hud_actions import hud_kernel_summary
 from ada.observability.memory_files import (
     DEFAULT_BOOTSTRAP_BASENAMES,
     list_bootstrap_files,
@@ -202,6 +203,20 @@ def build_sidebar_config() -> dict[str, Any]:
         st.sidebar.code(f"state.db\n{state_db}", language="text")
         st.sidebar.code(f"memory_dir\n{rp.memory_dir}", language="text")
         st.sidebar.code(f"policy_root\n{rp.policy_root}", language="text")
+
+    if state_db.is_file():
+        try:
+            import asyncio
+
+            ksum = asyncio.run(hud_kernel_summary(Settings.load()))
+            if ksum.get("ok"):
+                st.sidebar.markdown("**Kernel hats**")
+                st.sidebar.caption(
+                    f"`base_ops` id {ksum.get('base_ops_id')} · "
+                    f"`ada_ops` id {ksum.get('ada_ops_id')}"
+                )
+        except Exception:
+            st.sidebar.caption("Kernel: run `ada boot` to ensure base_ops / ada_ops.")
 
     return {
         "repo_root": repo_root,

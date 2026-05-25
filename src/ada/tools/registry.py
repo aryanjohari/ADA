@@ -42,6 +42,44 @@ def _mission_control_snapshot_declaration() -> types.FunctionDeclaration:
     )
 
 
+def _run_primitive_declaration() -> types.FunctionDeclaration:
+    return types.FunctionDeclaration(
+        name="run_primitive",
+        description=(
+            "Execute a closed-list biology primitive (personal CRM on base_ops or body_check on ada_ops). "
+            "Chat mode allowlist only — no publish or workflow enqueue. "
+            "args_json keys per primitive_id: "
+            "add_task {\"goal\" (required), \"status\"?}; "
+            "list_tasks {\"status\"?, \"limit\"?}; "
+            "complete_task {\"task_id\" (required)}; "
+            "log_memory {\"content\" (required), \"tags\"?}; "
+            "recall_memory {\"query\"?, \"limit\"?}; "
+            "body_check {}."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "primitive_id": {
+                    "type": "string",
+                    "description": (
+                        "Primitive id: log_memory, recall_memory, add_task, list_tasks, "
+                        "complete_task, or body_check."
+                    ),
+                },
+                "args_json": {
+                    "type": "string",
+                    "description": (
+                        "JSON object. add_task: goal (req), status?; list_tasks: status?, limit?; "
+                        "complete_task: task_id (req); log_memory: content (req), tags?; "
+                        "recall_memory: query?, limit?; body_check: {}."
+                    ),
+                },
+            },
+            "required": ["primitive_id"],
+        },
+    )
+
+
 def _run_skill_declaration() -> types.FunctionDeclaration:
     return types.FunctionDeclaration(
         name="run_skill",
@@ -754,12 +792,15 @@ def build_agent_tools(
     include_workflow_tools: bool = False,
     include_mission_control_snapshot: bool = False,
     include_run_skill: bool = False,
+    include_run_primitive: bool = False,
     include_propose_programme: bool = False,
     include_apply_programme: bool = False,
 ) -> types.Tool:
     decls: list[types.FunctionDeclaration] = [_check_token_usage_declaration()]
     if include_mission_control_snapshot:
         decls.append(_mission_control_snapshot_declaration())
+    if include_run_primitive:
+        decls.append(_run_primitive_declaration())
     if include_run_skill:
         decls.append(_run_skill_declaration())
     if include_propose_programme:

@@ -7,6 +7,7 @@ from typing import Any
 from ada.motor.registry import load_skill_registry
 
 PACK_SKILL_ALLOWLIST: dict[str, frozenset[str]] = {
+    "personal": frozenset(),
     "core-ops": frozenset({"daily_brief", "mission_tick_dry_run"}),
     "isr-publish": frozenset({"publish_entity_v1", "publish_keyword_v1"}),
     "isr-research": frozenset({"ingest_rss_mission", "weekly_research_goal"}),
@@ -80,6 +81,10 @@ def validate_programme_skills(
         return None
     if pack not in KNOWN_PACKS:
         return f"unknown pack {pack!r}; known packs: {sorted(KNOWN_PACKS)}"
+    if pack == "personal":
+        if ids:
+            return validate_skills_for_pack(ids, pack)
+        return None
     if not ids:
         return f"pack {pack!r} requires explicit skills_enabled"
     return validate_skills_for_pack(ids, pack)

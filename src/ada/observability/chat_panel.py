@@ -17,6 +17,8 @@ from ada.mission_cli import list_mission_template_names, load_mission_template
 from ada.mission_control.snapshot import build_snapshot_from_settings
 from ada.observability.hud_actions import (
     hud_apply_programme,
+    hud_kernel_summary,
+    hud_run_primitive,
     hud_run_skill,
     parse_params_json,
     skills_for_mission_defaults,
@@ -273,6 +275,96 @@ def _render_agent_panel(settings: Settings, default_slug: str) -> None:
             st.error(result.get("error", "Action failed"))
 
 
+def _render_home_primitive_chips(settings: Settings) -> None:
+    """J3: quick primitives without opening a chat turn."""
+    st.markdown("#### Quick actions")
+    st.caption(
+        "Personal CRM on **base_ops** (memory, todos) and read-only **body_check** on "
+        "**ada_ops**. Same handlers as Chat `run_primitive`; no chat task created."
+    )
+    try:
+        kernel = asyncio.run(hud_kernel_summary(settings))
+    except Exception as e:
+        st.warning(f"Kernel not ready ({e}). Run `ada boot` first.")
+        return
+    if kernel.get("ok"):
+        st.caption(
+            f"Kernel: `base_ops_id={kernel.get('base_ops_id')}` · "
+            f"`ada_ops_id={kernel.get('ada_ops_id')}` · "
+            f"`memory_source_id={kernel.get('memory_source_id')}`"
+        )
+
+    col_mem, col_todo, col_body = st.columns(3)
+    with col_mem:
+        mem_text = st.text_area(
+            "Log memory",
+            placeholder="Note to remember…",
+            height=80,
+            key="hud_chip_log_memory",
+        )
+        if st.button("Log memory", key="hud_btn_log_memory"):
+            content = mem_text.strip()
+            if not content:
+                st.error("Enter memory content.")
+            else:
+                with st.spinner("Logging…"):
+                    result = asyncio.run(
+                        hud_run_primitive(
+                            settings,
+                            primitive_id="log_memory",
+                            args={"content": content},
+                        )
+                    )
+                with st.expander("Result", expanded=not result.get("ok")):
+                    st.json(result)
+                if result.get("ok"):
+                    st.success("Memory logged.")
+                else:
+                    st.error(result.get("error", "log_memory failed"))
+
+    with col_todo:
+        todo_text = st.text_input(
+            "Add todo",
+            placeholder="buy milk",
+            key="hud_chip_add_todo",
+        )
+        if st.button("Add todo", key="hud_btn_add_todo"):
+            goal = todo_text.strip()
+            if not goal:
+                st.error("Enter a todo.")
+            else:
+                with st.spinner("Adding…"):
+                    result = asyncio.run(
+                        hud_run_primitive(
+                            settings,
+                            primitive_id="add_task",
+                            args={"goal": goal},
+                        )
+                    )
+                with st.expander("Result", expanded=not result.get("ok")):
+                    st.json(result)
+                if result.get("ok"):
+                    st.success(f"Todo #{result.get('task_id')} added.")
+                else:
+                    st.error(result.get("error", "add_task failed"))
+
+    with col_body:
+        st.markdown("&nbsp;")
+        if st.button("Body check", key="hud_btn_body_check", type="primary"):
+            with st.spinner("Checking…"):
+                result = asyncio.run(
+                    hud_run_primitive(
+                        settings,
+                        primitive_id="body_check",
+                        args={},
+                    )
+                )
+            with st.expander("Body check JSON", expanded=True):
+                st.json(result)
+            if not result.get("ok"):
+                st.error(result.get("error", "body_check failed"))
+
+
 def _render_chat_snapshot_expander(settings: Settings) -> None:
     with st.expander("Refresh profile snapshot"):
         try:
@@ -292,11 +384,13 @@ def render_chat_tab(cfg: dict[str, Any]) -> None:
 
     st.subheader("Operator chat")
     st.caption(
-        "**Chat** — concierge (`propose_programme`, ProfileDigest). "
+        "**Chat** — concierge (`run_primitive`, ProfileDigest). "
         "**Plan** — template **Apply programme** or `propose_programme` / `apply_programme`. "
-        "**Agent** — **Run action** panel or chat `run_skill`; optional default mission slug. "
+        "**Agent** — **Run action** panel or chat `run_skill` on **ada_ops**; optional default mission slug. "
         "No `enqueue_workflow` in chat."
     )
+
+    _render_home_primitive_chips(settings)
 
     if not settings.gemini_api_key and not str(
         cfg.get("merged_environ", {}).get("GEMINI_API_KEY", "")

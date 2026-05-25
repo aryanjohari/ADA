@@ -146,6 +146,7 @@ class StreamingToolExecutor:
         mission_control_snapshot: Callable[[], Awaitable[dict[str, Any]]]
         | None = None,
         run_skill_handler: WorkflowToolHandler | None = None,
+        run_primitive_handler: WorkflowToolHandler | None = None,
         propose_programme_handler: WorkflowToolHandler | None = None,
         apply_programme_handler: WorkflowToolHandler | None = None,
     ) -> None:
@@ -174,6 +175,7 @@ class StreamingToolExecutor:
         self._gsc_read = gsc_read
         self._mission_control_snapshot = mission_control_snapshot
         self._run_skill_fn = run_skill_handler
+        self._run_primitive_fn = run_primitive_handler
         self._propose_programme_fn = propose_programme_handler
         self._apply_programme_fn = apply_programme_handler
         self.discarded = False
@@ -225,6 +227,8 @@ class StreamingToolExecutor:
             return await self._mission_control_snapshot()
         if call.name == "run_skill":
             return await self._run_skill(call)
+        if call.name == "run_primitive":
+            return await self._run_primitive(call)
         if call.name == "propose_programme":
             return await self._propose_programme(call)
         if call.name == "apply_programme":
@@ -383,6 +387,15 @@ class StreamingToolExecutor:
             return await self._run_skill_fn(call)
         except Exception as e:
             log.warning("run_skill failed: %s", e)
+            return {"error": str(e)}
+
+    async def _run_primitive(self, call: CompletedFunctionCall) -> dict[str, Any]:
+        if self._run_primitive_fn is None:
+            return {"error": "run_primitive not configured"}
+        try:
+            return await self._run_primitive_fn(call)
+        except Exception as e:
+            log.warning("run_primitive failed: %s", e)
             return {"error": str(e)}
 
     async def _propose_programme(self, call: CompletedFunctionCall) -> dict[str, Any]:

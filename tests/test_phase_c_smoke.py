@@ -14,9 +14,9 @@ from ada.observability.queries import open_readonly_connection
 from ada.query_engine import QueryEngine
 
 
-def test_ops_template_load() -> None:
-    data = _load_mission_template("ops")
-    assert data["mission_slug"] == "jarvis-ops"
+def test_ada_ops_template_load() -> None:
+    data = _load_mission_template("ada_ops")
+    assert data["mission_slug"] == "ada_ops"
     assert "daily_brief" in data["skills_enabled"]
     assert data["recommended_cron"]
 

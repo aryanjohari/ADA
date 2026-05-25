@@ -2508,6 +2508,35 @@ class PersistentState:
         )
         await self._conn.commit()
 
+    async def rename_mission_slug(self, old_slug: str, new_slug: str) -> None:
+        """Rename mission slug when ``new_slug`` is not already taken."""
+        assert self._conn is not None
+        old = old_slug.strip()
+        new = new_slug.strip()
+        if not old or not new or old == new:
+            return
+        cur = await self._conn.execute(
+            "SELECT id FROM missions WHERE slug = ? LIMIT 1",
+            (new,),
+        )
+        if await cur.fetchone() is not None:
+            raise ValueError(f"mission slug already exists: {new!r}")
+        cur = await self._conn.execute(
+            "SELECT id FROM missions WHERE slug = ? LIMIT 1",
+            (old,),
+        )
+        if await cur.fetchone() is None:
+            return
+        await self._conn.execute(
+            """
+            UPDATE missions
+            SET slug = ?, updated_at = datetime('now')
+            WHERE slug = ?
+            """,
+            (new, old),
+        )
+        await self._conn.commit()
+
     async def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
         assert self._conn is not None
         limit = max(1, min(int(limit), 500))
@@ -2695,6 +2724,79 @@ class PersistentState:
             raise LookupError(f"no task with id={task_id}")
         if str(row[5]) != TASK_KIND_GOAL:
             raise ValueError(f"task {task_id} is not a goal task (task_kind={row[5]!r})")
+        mid = row[8]
+        slug = row[9]
+        return {
+            "id": int(row[0]),
+            "goal": str(row[1]),
+            "status": str(row[2]),
+            "plan_json": str(row[3]),
+            "current_output": str(row[4]),
+            "task_kind": str(row[5]),
+            "created_at": str(row[6]),
+            "updated_at": str(row[7]),
+            "mission_id": int(mid) if mid is not None else None,
+            "mission_slug": str(slug) if slug is not None else None,
+        }
+
+    async def list_system_tasks(
+        self,
+        mission_id: int,
+        *,
+        limit: int = 50,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        assert self._conn is not None
+        limit = max(1, min(limit, 500))
+        mid = int(mission_id)
+        if status is not None:
+            cur = await self._conn.execute(
+                """
+                SELECT t.id, t.goal, t.status, t.plan_json, t.created_at, t.updated_at,
+                       t.mission_id, m.slug
+                FROM tasks t
+                LEFT JOIN missions m ON m.id = t.mission_id
+                WHERE t.task_kind = ? AND t.mission_id = ? AND t.status = ?
+                ORDER BY t.id DESC
+                LIMIT ?
+                """,
+                (TASK_KIND_SYSTEM, mid, status, limit),
+            )
+        else:
+            cur = await self._conn.execute(
+                """
+                SELECT t.id, t.goal, t.status, t.plan_json, t.created_at, t.updated_at,
+                       t.mission_id, m.slug
+                FROM tasks t
+                LEFT JOIN missions m ON m.id = t.mission_id
+                WHERE t.task_kind = ? AND t.mission_id = ?
+                ORDER BY t.id DESC
+                LIMIT ?
+                """,
+                (TASK_KIND_SYSTEM, mid, limit),
+            )
+        rows = await cur.fetchall()
+        return self._goal_task_rows_to_dicts(rows)
+
+    async def get_system_task(self, task_id: int) -> dict[str, Any]:
+        assert self._conn is not None
+        cur = await self._conn.execute(
+            """
+            SELECT t.id, t.goal, t.status, t.plan_json, t.current_output, t.task_kind,
+                   t.created_at, t.updated_at, t.mission_id, m.slug
+            FROM tasks t
+            LEFT JOIN missions m ON m.id = t.mission_id
+            WHERE t.id = ?
+            """,
+            (task_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise LookupError(f"no task with id={task_id}")
+        if str(row[5]) != TASK_KIND_SYSTEM:
+            raise ValueError(
+                f"task {task_id} is not a system task (task_kind={row[5]!r})"
+            )
         mid = row[8]
         slug = row[9]
         return {

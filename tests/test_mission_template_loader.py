@@ -12,7 +12,8 @@ from ada.programme.packs import PACK_SKILL_ALLOWLIST, validate_skills_for_pack
 def test_list_mission_template_names_includes_isr_publish() -> None:
     names = list_mission_template_names()
     assert "isr-publish" in names
-    assert "ops" in names
+    assert "ada_ops" in names
+    assert "base_ops" in names
 
 
 def test_isr_publish_template_loads_brief_pack_skills() -> None:
@@ -32,6 +33,9 @@ def test_template_skills_subset_of_pack_allowlist(name: str) -> None:
     assert pack, f"template {name!r} missing pack"
     assert pack in PACK_SKILL_ALLOWLIST
     skills = list(packet.skills_enabled)
+    if pack == "personal":
+        assert not skills
+        return
     assert skills, f"template {name!r} must set skills_enabled"
     err = validate_skills_for_pack(skills, str(pack))
     assert err is None, err

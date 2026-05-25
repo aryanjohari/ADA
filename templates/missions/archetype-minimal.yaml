@@ -6,7 +6,7 @@ brief_md: |
   Operator intent: starter programme for unknown domain or job-hunt research.
   Clone this template, set mission_slug and brief_md, add RSS knowledge_sources.
 defaults_json:
-  project_id: jarvis-main
+  project_id: ada-main
   campaign_id: research
 skills_enabled:
   - ingest_rss_mission

@@ -13,11 +13,11 @@ from ada.query_engine import QueryEngine
 async def test_plain_chat_ignores_default_mission_env(
     schema_sql_path, test_settings, monkeypatch
 ) -> None:
-    monkeypatch.setenv("ADA_CHAT_DEFAULT_MISSION", "jarvis-ops")
+    monkeypatch.setenv("ADA_CHAT_DEFAULT_MISSION", "ada_ops")
     qe = QueryEngine(test_settings.state_db_path, schema_sql_path, debounce_ms=1)
     await qe.connect()
     try:
-        await qe.create_mission(slug="jarvis-ops", title="Ops")
+        await qe.create_mission(slug="ada_ops", title="Ops")
         mid = await resolve_chat_mission_id(
             qe, test_settings, None, apply_env_default=False
         )
