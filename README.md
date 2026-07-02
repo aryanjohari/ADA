@@ -1,5 +1,7 @@
 # ADA
 
+Visitor overview: see `portfolio.yaml`.
+
 **ADA** is a **headless Python 3.11+ asyncio harness** for a local operator agent on edge devices (e.g. Raspberry Pi). One install can run **interactive chat**, a **background worker** (`ada daemon`), **offline ingest CLIs**, and **deterministic publish workflows** (pSEO / ISR), all backed by a single **SQLite** database per profile.
 
 | Layer | What it does |
@@ -27,6 +29,10 @@ Normative transcript and security rules: [`docs/claude_logic.md`](docs/claude_lo
 - [`docs/JOB_QUEUE_SINGLE_OWNER.md`](docs/JOB_QUEUE_SINGLE_OWNER.md) — one job plane per `state.db` (`legacy` vs `system_jobs`)
 - [`docs/mission-control-flags.md`](docs/mission-control-flags.md) — deterministic HUD flags from SQLite
 - [`docs/mission-control-setup-assist.md`](docs/mission-control-setup-assist.md) — `ada chat --setup` contract
+- [`docs/ADA_ENTITY_BUCKETS.md`](docs/ADA_ENTITY_BUCKETS.md) — Friend / House / Lab operator buckets
+- [`docs/TOOL_EXTENSION_GUIDE.md`](docs/TOOL_EXTENSION_GUIDE.md) — primitive → skill → cron → workflow ladder
+- [`docs/MEMORY_OPS.md`](docs/MEMORY_OPS.md) — entity memory layers, tags, cron matrix
+- [`docs/use_cases/README.md`](docs/use_cases/README.md) — use-case spec lifecycle (**write a spec before implementing Friend/House/Lab features**)
 
 **GATE** (`ADA_PUBLISH_MIN_UNIQUE_FACTS`, distinct `source_url` on graph edges) applies only to **`publish_entity_v1`**, not **`publish_keyword_v1`**. **`ADA_REQUIRE_APPROVAL_FOR_PUBLISH`** gates **`DEPLOY`** for **both** publish kinds when enabled.
 
@@ -748,6 +754,10 @@ Suggested **next planning** items (prioritize as you like):
 
 ## 15. Further reading
 
+- [`docs/ADA_ENTITY_BUCKETS.md`](docs/ADA_ENTITY_BUCKETS.md) — Friend / House / Lab buckets and bridge rules
+- [`docs/TOOL_EXTENSION_GUIDE.md`](docs/TOOL_EXTENSION_GUIDE.md) — how to extend tools without new missions per habit
+- [`docs/MEMORY_OPS.md`](docs/MEMORY_OPS.md) — `log_memory` tags, dream vs kernel, cron matrix
+- [`docs/use_cases/README.md`](docs/use_cases/README.md) — use-case spec lifecycle (write a spec before implementing bucket features)
 - [`docs/JOB_QUEUE_SINGLE_OWNER.md`](docs/JOB_QUEUE_SINGLE_OWNER.md) — `legacy` vs `system_jobs` daemon
 - [`docs/STREAMLIT_BOSS.md`](docs/STREAMLIT_BOSS.md) — Jarvis HUD tabs and operator flows
 - [`docs/ADA_CORE.md`](docs/ADA_CORE.md) — two-face architecture (Entity \| Work)
