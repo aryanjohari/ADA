@@ -20,6 +20,7 @@ stack:
   - Streamlit
   - pytest
 status: active
+diagram: docs/architecture.mmd
 links:
   github: https://github.com/aryanjohari/ADA
   docs: https://github.com/aryanjohari/ADA/tree/main/docs
