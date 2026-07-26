@@ -6,7 +6,9 @@ __pycache__/
 .env
 data/
 *.db
-docs/
+docs/*
+!docs/ARCHITECTURE.md
+!docs/architecture.mmd
 memory/
 secrets/
 .env.business_test

@@ -1,0 +1,36 @@
+flowchart TB
+  subgraph ingress [Operator surfaces]
+    Chat["ada chat\nEntity / Agent / Plan"]
+    Cron["cron / systemd"]
+    HUD["ada hud\nStreamlit read-only"]
+  end
+
+  subgraph core [Agent core]
+    Orch["Orchestrator\nmanual Gemini tools"]
+    Tools["Tool executor\nallowlist + skills"]
+    Daemon["ada daemon\ngoals + workflows"]
+  end
+
+  subgraph truth [Local truth]
+    DB["state.db\nSQLite WAL + FTS5"]
+    Mem["memory/*.md\nsoul + master"]
+  end
+
+  subgraph data [Offline data plane]
+    Ingest["Ingest CLIs\nRSS / GSC / brand"]
+    Graph["Graph-lite\ntriage + edges"]
+    Wf["Publish workflows\nENRICH → GATE? → DRAFT → DEPLOY"]
+  end
+
+  Out["S3 page.json + manifest\nISR consumer out of repo"]
+
+  Chat --> Orch
+  Orch --> Tools
+  Tools --> DB
+  Orch --> Mem
+  Cron --> Ingest --> DB
+  Cron --> Graph --> DB
+  Cron --> Daemon
+  Daemon --> Orch
+  Daemon --> Wf --> Out
+  HUD --> DB
