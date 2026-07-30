@@ -1,0 +1,44 @@
+C4Container
+  title Containers — ADA
+
+  Person(operator, "Operator", "Local machine")
+
+  System_Boundary(ada, "ADA install") {
+    Container(cliChat, "ada chat", "Python CLI", "Entity / Agent / Plan / Setup ingress")
+    Container(hud, "ada hud", "Streamlit", "Read-only observability on localhost")
+    Container(orch, "Orchestrator", "Python", "Manual Gemini tool loop + transcript")
+    Container(tools, "Tool executor", "Python", "Allowlist + motor skills")
+    Container(daemon, "ada daemon", "Python worker", "Goals + workflow steps (one per profile)")
+    Container(ingest, "Ingest CLIs", "Python CLI", "RSS / GSC / brand / GETS")
+    Container(graph, "Graph-lite", "Python CLI", "Triage, extract, enrich")
+    Container(publish, "Publish workflows", "Python", "ENRICH → GATE? → DRAFT → DEPLOY")
+    ContainerDb(stateDb, "state.db", "SQLite WAL + FTS5", "Messages, jobs, knowledge, graph, workflows")
+    ContainerDb(memory, "memory/*.md", "Markdown files", "soul, master, related memory")
+  }
+
+  Container_Ext(scheduler, "cron / systemd", "Host OS", "Triggers short CLIs; runs daemon under systemd")
+  System_Ext(gemini, "Google Gemini", "LLM API")
+  System_Ext(s3, "AWS S3", "page.json + manifest")
+
+  Rel(operator, cliChat, "Interactive chat")
+  Rel(operator, hud, "Opens localhost UI")
+  Rel(operator, scheduler, "Installs schedules / units")
+
+  Rel(cliChat, orch, "Runs turns")
+  Rel(orch, gemini, "Model legs")
+  Rel(orch, tools, "Invokes tools")
+  Rel(orch, memory, "Reads memory context")
+  Rel(tools, stateDb, "Persists tool / message rows")
+
+  Rel(scheduler, ingest, "Runs ingest-*")
+  Rel(scheduler, graph, "Runs triage / extract / enrich")
+  Rel(scheduler, daemon, "Starts or keeps worker alive")
+  Rel(ingest, stateDb, "Writes knowledge_items")
+  Rel(graph, stateDb, "Writes entities / edges")
+
+  Rel(daemon, orch, "Goal model turns")
+  Rel(daemon, publish, "Advances workflow steps")
+  Rel(publish, stateDb, "Reads facts / writes workflow state")
+  Rel(publish, s3, "DEPLOY uploads page.json")
+
+  Rel(hud, stateDb, "SELECT-only reads")

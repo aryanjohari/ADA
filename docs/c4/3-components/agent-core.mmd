@@ -1,0 +1,18 @@
+C4Component
+  title Components — Agent core
+
+  Container_Boundary(agentCore, "Agent core (chat + shared turn loop)") {
+    Component(ingress, "Chat ingress", "chat_ingress / chat_session", "Entity vs Work / Plan / Setup modes")
+    Component(orch, "Orchestrator", "orchestrator.py", "Multi-leg turns, tombstone on failure")
+    Component(gemini, "Gemini adapter", "adapters/gemini_stream", "Manual function calling (SDK auto-FC off)")
+    Component(tools, "Tool executor", "tool_executor.py", "Dispatches registered tools")
+    Component(motor, "Motor / skills", "motor/ + skills/*.yaml", "Allowlisted shell + run_skill")
+    Component(persist, "Transcript writes", "persistent/store", "messages with parent_uuid + sequence")
+  }
+
+  Rel(ingress, orch, "Starts turn with mode + tool set")
+  Rel(orch, gemini, "Streams model legs")
+  Rel(orch, tools, "Runs tool calls from model")
+  Rel(tools, motor, "Shell / skill paths")
+  Rel(orch, persist, "Persists user / tool / assistant rows")
+  Rel(tools, persist, "Persists tool results")

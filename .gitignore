@@ -9,6 +9,8 @@ data/
 docs/*
 !docs/ARCHITECTURE.md
 !docs/architecture.mmd
+!docs/c4/
+!docs/c4/**
 memory/
 secrets/
 .env.business_test
