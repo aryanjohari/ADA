@@ -33,50 +33,22 @@ Custom or adapted design choices (verified in code/docs):
 - **Single-owner job plane** — `ADA_JOB_QUEUE=legacy` vs `system_jobs`; do not mix on one `state.db` ([`docs/JOB_QUEUE_SINGLE_OWNER.md`](JOB_QUEUE_SINGLE_OWNER.md))
 - **HUD is not the agent** — read-only SQLite + whitelisted `ada` argv only
 
+## C4 overview
+
+| Level | Link |
+|-------|------|
+| Index | [`docs/c4/README.md`](c4/README.md) |
+| Context (C1) | [`c4/1-context.md`](c4/1-context.md) · [`.mmd`](c4/1-context.mmd) |
+| Containers (C2) | [`c4/2-containers.md`](c4/2-containers.md) · [`.mmd`](c4/2-containers.mmd) |
+| Components (C3) | [`agent-core`](c4/3-components/agent-core.md), [`daemon`](c4/3-components/daemon.md), [`publish-workflows`](c4/3-components/publish-workflows.md) |
+
+Portfolio IR (from C2): [`architecture.graph.json`](architecture.graph.json). Visitor Mermaid: [`architecture.mmd`](architecture.mmd).
+
 ## System overview
 
-Canonical visitor diagram: [`docs/architecture.mmd`](architecture.mmd).
+Canonical visitor diagram: [`docs/architecture.mmd`](architecture.mmd) (kept aligned with C2 Containers). Prefer the C4 Mermaid files above rather than duplicating large fences here.
 
-```mermaid
-flowchart TB
-  subgraph ingress [Operator surfaces]
-    Chat["ada chat\nEntity / Agent / Plan"]
-    Cron["cron / systemd"]
-    HUD["ada hud\nStreamlit read-only"]
-  end
-
-  subgraph core [Agent core]
-    Orch["Orchestrator\nmanual Gemini tools"]
-    Tools["Tool executor\nallowlist + skills"]
-    Daemon["ada daemon\ngoals + workflows"]
-  end
-
-  subgraph truth [Local truth]
-    DB["state.db\nSQLite WAL + FTS5"]
-    Mem["memory/*.md\nsoul + master"]
-  end
-
-  subgraph data [Offline data plane]
-    Ingest["Ingest CLIs\nRSS / GSC / brand"]
-    Graph["Graph-lite\ntriage + edges"]
-    Wf["Publish workflows\nENRICH → GATE? → DRAFT → DEPLOY"]
-  end
-
-  Out["S3 page.json + manifest\nISR consumer out of repo"]
-
-  Chat --> Orch
-  Orch --> Tools
-  Tools --> DB
-  Orch --> Mem
-  Cron --> Ingest --> DB
-  Cron --> Graph --> DB
-  Cron --> Daemon
-  Daemon --> Orch
-  Daemon --> Wf --> Out
-  HUD --> DB
-```
-
-*(Keep this fence in sync with `architecture.mmd`.)*
+**Happy path:** operator chats → orchestrator (manual Gemini tools) → SQLite + memory → publish workflows → S3 `page.json` (ISR consumer out of repo). **Secondary:** cron/systemd runs ingest/graph and supervises the daemon; HUD reads the DB only.
 
 ## Key components
 

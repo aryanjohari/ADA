@@ -1,36 +1,40 @@
 flowchart TB
-  subgraph ingress [Operator surfaces]
-    Chat["ada chat\nEntity / Agent / Plan"]
-    Cron["cron / systemd"]
-    HUD["ada hud\nStreamlit read-only"]
+  subgraph inputs [Inputs]
+    cliChat["ada chat"]
+    hostScheduler["cron / systemd"]
+    hud["ada hud"]
   end
 
-  subgraph core [Agent core]
-    Orch["Orchestrator\nmanual Gemini tools"]
-    Tools["Tool executor\nallowlist + skills"]
-    Daemon["ada daemon\ngoals + workflows"]
+  subgraph core [Core]
+    orchestrator["Orchestrator\nmanual Gemini tools"]
+    toolExecutor["Tool executor\nallowlist + skills"]
+    daemon["ada daemon\ngoals + workflows"]
+    stateDb[("state.db\nSQLite WAL + FTS5")]
+    memoryFiles[("memory/*.md")]
+    ingestClis["Ingest CLIs\nRSS / GSC / brand"]
+    graphLite["Graph-lite\ntriage + edges"]
+    publishWorkflows["Publish workflows\nENRICH → GATE? → DRAFT → DEPLOY"]
   end
 
-  subgraph truth [Local truth]
-    DB["state.db\nSQLite WAL + FTS5"]
-    Mem["memory/*.md\nsoul + master"]
+  subgraph outputs [Outputs]
+    s3Out["S3 page.json + manifest\nISR consumer out of repo"]
   end
 
-  subgraph data [Offline data plane]
-    Ingest["Ingest CLIs\nRSS / GSC / brand"]
-    Graph["Graph-lite\ntriage + edges"]
-    Wf["Publish workflows\nENRICH → GATE? → DRAFT → DEPLOY"]
-  end
+  cliChat -->|runs turns| orchestrator
+  orchestrator -->|invokes tools| toolExecutor
+  toolExecutor -->|persists rows| stateDb
+  orchestrator -->|reads memory| memoryFiles
+  orchestrator -->|transcript| stateDb
 
-  Out["S3 page.json + manifest\nISR consumer out of repo"]
+  hostScheduler -.->|runs ingest| ingestClis
+  hostScheduler -.->|runs graph| graphLite
+  hostScheduler -.->|supervises| daemon
+  ingestClis -.->|knowledge_items| stateDb
+  graphLite -.->|entities / edges| stateDb
 
-  Chat --> Orch
-  Orch --> Tools
-  Tools --> DB
-  Orch --> Mem
-  Cron --> Ingest --> DB
-  Cron --> Graph --> DB
-  Cron --> Daemon
-  Daemon --> Orch
-  Daemon --> Wf --> Out
-  HUD --> DB
+  daemon -.->|goal turns| orchestrator
+  daemon -->|advances steps| publishWorkflows
+  stateDb -->|facts + workflow state| publishWorkflows
+  publishWorkflows -->|DEPLOY| s3Out
+
+  hud -.->|SELECT-only| stateDb

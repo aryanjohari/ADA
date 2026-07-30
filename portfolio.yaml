@@ -21,6 +21,7 @@ stack:
   - pytest
 status: active
 diagram: docs/architecture.mmd
+graph: docs/architecture.graph.json
 links:
   github: https://github.com/aryanjohari/ADA
   docs: https://github.com/aryanjohari/ADA/tree/main/docs

@@ -72,7 +72,8 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): Python **3.11** and
 ## Architecture
 
 Case study and tradeoffs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
-Portfolio diagram: [`docs/architecture.mmd`](docs/architecture.mmd)
+C4 maps (context → containers → components): [`docs/c4/README.md`](docs/c4/README.md)  
+Portfolio diagram: [`docs/architecture.mmd`](docs/architecture.mmd) · graph IR: [`docs/architecture.graph.json`](docs/architecture.graph.json)
 
 ### Operator docs (Pi / pSEO)
 
