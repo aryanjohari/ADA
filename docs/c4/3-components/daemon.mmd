@@ -7,6 +7,7 @@ C4Component
     Component(goals, "Goal turns", "daemon_goal.py", "Dequeues goals; may call orchestrator")
     Component(wfRun, "Workflow runner", "workflow/runner.py", "Advances deterministic step kinds")
     Component(templates, "Workflow templates", "workflow/templates.py", "Code-defined WORKFLOW_KINDS only")
+    Component(handlers, "system_jobs handlers", "jobs/handlers.py", "workflow.start, ingest.run, matrix, ticks")
   }
 
   Component_Ext(orch, "Orchestrator", "Shared agent-core turn loop")
@@ -14,6 +15,7 @@ C4Component
 
   Rel(worker, plane, "Owns one plane per state.db")
   Rel(worker, goals, "goal.run_turn / legacy tasks")
+  Rel(worker, handlers, "Dispatches system_jobs kinds")
   Rel(worker, wfRun, "workflow.start and step jobs")
   Rel(wfRun, templates, "Resolves kind → steps")
   Rel(goals, orch, "Model turns when needed")

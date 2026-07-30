@@ -72,18 +72,13 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): Python **3.11** and
 ## Architecture
 
 Case study and tradeoffs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
-C4 maps (context → containers → components): [`docs/c4/README.md`](docs/c4/README.md)  
-Portfolio diagram: [`docs/architecture.mmd`](docs/architecture.mmd) · graph IR: [`docs/architecture.graph.json`](docs/architecture.graph.json)
+C4 maps (Context → Containers → Components): [`docs/c4/README.md`](docs/c4/README.md)  
+Portfolio zoom index: [`docs/c4/portfolio-map.json`](docs/c4/portfolio-map.json)  
+Containers Mermaid: [`docs/c4/2-containers.mmd`](docs/c4/2-containers.mmd) (alias: [`docs/architecture.mmd`](docs/architecture.mmd))
 
 ### Operator docs (Pi / pSEO)
 
-- [`docs/ADA_CORE.md`](docs/ADA_CORE.md) — Entity vs Work model
-- [`docs/ADA_CORE_OPS.md`](docs/ADA_CORE_OPS.md) — Pi autonomic ops, boot/reload, cron
-- [`docs/operator-runbook-raspberry-pi.md`](docs/operator-runbook-raspberry-pi.md) — cron, systemd, spend caps, publish tracks
-- [`docs/pseo-isr-contract.md`](docs/pseo-isr-contract.md) — `page.json` v1 + S3 keys
-- [`docs/JOB_QUEUE_SINGLE_OWNER.md`](docs/JOB_QUEUE_SINGLE_OWNER.md) — legacy vs `system_jobs`
-- [`ops/schedule.md`](ops/schedule.md) — suggested ingest / dream / daemon cadence
-- [`docs/claude_logic.md`](docs/claude_logic.md) — transcript + security rules
+Many operator/runbook files live under `docs/` locally; GitHub visitors should start from C4 + ARCHITECTURE. Tracked companion: [`docs/claude_logic.md`](docs/claude_logic.md) (transcript rules). Ops cadence: [`ops/schedule.md`](ops/schedule.md).
 
 ### Layout
 

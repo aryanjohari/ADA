@@ -22,31 +22,32 @@ ADA is a **headless Python 3.11+ asyncio harness** for a local operator agent on
 
 ## Unique approach
 
-Custom or adapted design choices (verified in code/docs):
+Custom or adapted design choices (verified in code):
 
-- **Two-face Entity vs Work** — same package, different chat ingress and tool sets; global scope uses `mission_id IS NULL` ([`docs/ADA_CORE.md`](ADA_CORE.md))
+- **Two-face Entity vs Work** — same package, different chat ingress and tool sets; global scope uses `mission_id IS NULL`
 - **Manual function calling** — Gemini SDK automatic function calling is disabled; the orchestrator runs multi-leg turns and persists tool rows itself ([`src/ada/adapters/gemini_stream.py`](../src/ada/adapters/gemini_stream.py))
 - **Claude-inspired transcript** — `messages` with `parent_uuid`, sequence, tombstone + optional rewire ([`docs/claude_logic.md`](claude_logic.md))
 - **Allowlisted shell + motor skills** — exact-line shell allowlist; YAML skills invoked via `run_skill` in Agent mode, not freeform plugin DAGs
 - **Fact GATE on entity publish** — `publish_entity_v1` requires enough distinct HTTPS `source_url` facts before DRAFT/DEPLOY; keyword track skips GATE
-- **ISR contract as Pydantic** — `PageJsonV1` with `extra="forbid"` for an out-of-repo Next consumer ([`docs/pseo-isr-contract.md`](pseo-isr-contract.md))
-- **Single-owner job plane** — `ADA_JOB_QUEUE=legacy` vs `system_jobs`; do not mix on one `state.db` ([`docs/JOB_QUEUE_SINGLE_OWNER.md`](JOB_QUEUE_SINGLE_OWNER.md))
+- **ISR contract as Pydantic** — `PageJsonV1` with `extra="forbid"` for an out-of-repo Next consumer ([`isr.md`](../isr.md))
+- **Single-owner job plane** — `ADA_JOB_QUEUE=legacy` vs `system_jobs`; do not mix on one `state.db`
 - **HUD is not the agent** — read-only SQLite + whitelisted `ada` argv only
 
-## C4 overview
+## C4 overview (canonical diagrams)
 
 | Level | Link |
 |-------|------|
-| Index | [`docs/c4/README.md`](c4/README.md) |
+| Index + zoom path | [`docs/c4/README.md`](c4/README.md) |
 | Context (C1) | [`c4/1-context.md`](c4/1-context.md) · [`.mmd`](c4/1-context.mmd) |
 | Containers (C2) | [`c4/2-containers.md`](c4/2-containers.md) · [`.mmd`](c4/2-containers.mmd) |
-| Components (C3) | [`agent-core`](c4/3-components/agent-core.md), [`daemon`](c4/3-components/daemon.md), [`publish-workflows`](c4/3-components/publish-workflows.md) |
+| Components (C3) | [`agent-core`](c4/3-components/agent-core.md), [`daemon`](c4/3-components/daemon.md), [`ingest-clis`](c4/3-components/ingest-clis.md), [`graph-lite`](c4/3-components/graph-lite.md), [`publish-workflows`](c4/3-components/publish-workflows.md), [`hud`](c4/3-components/hud.md) |
+| Portfolio zoom index | [`c4/portfolio-map.json`](c4/portfolio-map.json) |
 
-Portfolio IR (from C2): [`architecture.graph.json`](architecture.graph.json). Visitor Mermaid: [`architecture.mmd`](architecture.mmd).
+Visitor Mermaid alias (kept aligned with C2): [`architecture.mmd`](architecture.mmd). Do **not** treat archived [`architecture.graph.json`](archive/architecture.graph.json) as canonical.
 
 ## System overview
 
-Canonical visitor diagram: [`docs/architecture.mmd`](architecture.mmd) (kept aligned with C2 Containers). Prefer the C4 Mermaid files above rather than duplicating large fences here.
+Prefer the C4 Mermaid files above rather than duplicating large fences here.
 
 **Happy path:** operator chats → orchestrator (manual Gemini tools) → SQLite + memory → publish workflows → S3 `page.json` (ISR consumer out of repo). **Secondary:** cron/systemd runs ingest/graph and supervises the daemon; HUD reads the DB only.
 
@@ -76,7 +77,7 @@ Canonical visitor diagram: [`docs/architecture.mmd`](architecture.mmd) (kept ali
 - **Approvals** — optional `ADA_REQUIRE_APPROVAL_FOR_ENQUEUE` / `ADA_REQUIRE_APPROVAL_FOR_PUBLISH` (DEPLOY for both publish kinds when enabled).
 - **Cost / safety** — `ADA_KILL_SWITCH`, daily/monthly token budgets, profile isolation (`ADA_PROFILE`, `ADA_PROFILE_DATA_ROOT`).
 - **Integrations** — env-gated clients only (Serper, Jina, GSC, DataForSEO, Unsplash, S3, optional embeddings/Apprise); no in-repo REST server.
-- **Deferred** — voice STT/TTS ([`VOICE_DEFERRED.md`](VOICE_DEFERRED.md)); built-in scheduler; full transcript RAG; Next.js ISR app (blueprint in [`isr.md`](../isr.md)).
+- **Deferred** — voice STT/TTS; built-in scheduler; full transcript RAG; Next.js ISR app (blueprint in [`isr.md`](../isr.md)).
 
 ## Tradeoffs and limitations
 
@@ -89,7 +90,7 @@ Canonical visitor diagram: [`docs/architecture.mmd`](architecture.mmd) (kept ali
 | HUD whitelist | Safer than embedding the agent in UI | Operators need CLI for full control |
 | ISR frontend out of repo | Clear contract boundary | End-to-end “site live” is a second codebase |
 
-Older phase-1 notes in [`system_architecure.md`](system_architecure.md) are partially stale; prefer this document and the root README for current maps.
+Phase-1 MVP notes are archived at [`archive/system_architecure.md`](archive/system_architecure.md); prefer this document and the root README.
 
 ## How to verify locally
 
@@ -102,5 +103,3 @@ ada chat
 ada daemon             # separate terminal
 pytest -q
 ```
-
-Operator / Pi depth: [`ADA_CORE_OPS.md`](ADA_CORE_OPS.md), [`operator-runbook-raspberry-pi.md`](operator-runbook-raspberry-pi.md), [`pseo-isr-contract.md`](pseo-isr-contract.md).

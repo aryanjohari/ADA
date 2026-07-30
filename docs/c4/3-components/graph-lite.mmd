@@ -1,0 +1,20 @@
+C4Component
+  title Components — Graph-lite
+
+  Container_Boundary(graph, "Graph-lite CLIs") {
+    Component(triage, "Triage", "triage/run.py", "LLM scores knowledge_items (impact + taxonomy)")
+    Component(extract, "Extract graph-lite", "extract/graph_lite.py", "LLM → entities / edges JSON")
+    Component(enrich, "Enrich graph", "cli + publish/batch_enrich", "Widen entity facts for publish")
+    Component(types, "Entity types", "graph/entity_types.py", "Canonical type set + aliases")
+  }
+
+  Component_Ext(gemini, "Google Gemini", "Model calls")
+  ComponentDb_Ext(stateDb, "state.db", "knowledge_items, entities, edges")
+
+  Rel(triage, stateDb, "Reads unscored items; writes scores")
+  Rel(triage, gemini, "Classification turn")
+  Rel(extract, stateDb, "Reads items; upserts graph")
+  Rel(extract, gemini, "Extraction turn")
+  Rel(extract, types, "Normalizes entity types")
+  Rel(enrich, stateDb, "Reads entities; writes facts")
+  Rel(enrich, gemini, "Enrichment turns")

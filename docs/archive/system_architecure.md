@@ -1,5 +1,7 @@
 # ADA: System Architecture (Phase 1 MVP)
 
+> **Archived.** Stale Phase-1 MVP (daemon-only, no tools). Canonical diagrams: [`docs/c4/`](../c4/). Narrative: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
+
 **Purpose:** Defines the structural boundaries, database schemas, and execution loop for a headless, edge-based autonomous cognitive engine.
 
 ## 1. The Core Paradigm

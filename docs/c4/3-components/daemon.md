@@ -1,16 +1,17 @@
 # Components — ada daemon
 
-Long-running worker: **one daemon per profile / `state.db`**. Do not mix `ADA_JOB_QUEUE=legacy` and `system_jobs` on the same database ([`JOB_QUEUE_SINGLE_OWNER.md`](../../JOB_QUEUE_SINGLE_OWNER.md)).
+Long-running worker: **one daemon per profile / `state.db`**. Do not mix `ADA_JOB_QUEUE=legacy` and `system_jobs` on the same database.
 
 ## Components
 
-| ID | Role |
-|----|------|
-| **Job worker** | Poll loop in `ada daemon` ([`src/ada/main.py`](../../../src/ada/main.py), [`src/ada/jobs/worker.py`](../../../src/ada/jobs/worker.py)) |
-| **Job plane** | `legacy` pending goal tasks **or** `system_jobs` rows (`goal.run_turn`, `workflow.start`, `ingest.run`, `matrix.scan`, …) |
-| **Goal turns** | Background objectives that may invoke the shared orchestrator |
-| **Workflow runner** | Executes step handlers for enqueued workflows |
-| **Workflow templates** | Code-defined kinds only: `rss_fetch_then_graph_then_synth`, `publish_entity_v1`, `publish_keyword_v1` |
+| ID | Role | Evidence |
+|----|------|----------|
+| `job-worker` | Poll loop in `ada daemon` | [`main.py`](../../../src/ada/main.py), [`jobs/worker.py`](../../../src/ada/jobs/worker.py) |
+| `job-plane` | `legacy` pending goal tasks **or** `system_jobs` rows | `ADA_JOB_QUEUE` in config; worker plane loop |
+| `goal-turns` | Background objectives that may invoke the shared orchestrator | [`daemon_goal.py`](../../../src/ada/daemon_goal.py) |
+| `workflow-runner` | Executes step handlers for enqueued workflows | [`workflow/runner.py`](../../../src/ada/workflow/runner.py) |
+| `workflow-templates` | Code-defined kinds only | [`workflow/templates.py`](../../../src/ada/workflow/templates.py): `rss_fetch_then_graph_then_synth`, `publish_entity_v1`, `publish_keyword_v1` |
+| `system-jobs-handlers` | `workflow.start`, `ingest.run`, matrix / tick slices | [`jobs/handlers.py`](../../../src/ada/jobs/handlers.py) |
 
 ## Scheduling
 

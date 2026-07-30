@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "title": "ADA",
+  "summary": "Local Python agent: chat and a background daemon share an orchestrator, persist truth in SQLite, and publish SEO pages to S3.",
+  "notes": "ARCHIVED — prefer docs/c4/portfolio-map.json + C4 Mermaid. Historical portfolio flowchart IR from C2 Containers. Gemini was an edge label (model turns), not a node. ISR frontend out of repo. No public demo URL.",
+  "skin": "default",
+  "c4": {
+    "level": "containers",
+    "componentsPath": "docs/c4/3-components/"
+  },
+  "groups": [
+    { "id": "inputs", "label": "Inputs" },
+    { "id": "core", "label": "Core" },
+    { "id": "outputs", "label": "Outputs" }
+  ],
+  "nodes": [
+    {
+      "id": "cli-chat",
+      "label": "ada chat",
+      "kind": "input",
+      "groupId": "inputs",
+      "shape": "rounded"
+    },
+    {
+      "id": "host-scheduler",
+      "label": "cron / systemd",
+      "kind": "input",
+      "groupId": "inputs",
+      "shape": "rounded"
+    },
+    {
+      "id": "hud",
+      "label": "ada hud",
+      "kind": "input",
+      "groupId": "inputs",
+      "shape": "rounded"
+    },
+    {
+      "id": "orchestrator",
+      "label": "Orchestrator",
+      "kind": "process",
+      "groupId": "core",
+      "shape": "rect"
+    },
+    {
+      "id": "tool-executor",
+      "label": "Tool executor",
+      "kind": "process",
+      "groupId": "core",
+      "shape": "rect"
+    },
+    {
+      "id": "daemon",
+      "label": "ada daemon",
+      "kind": "process",
+      "groupId": "core",
+      "shape": "rect"
+    },
+    {
+      "id": "state-db",
+      "label": "state.db",
+      "kind": "store",
+      "groupId": "core",
+      "shape": "cylinder"
+    },
+    {
+      "id": "memory-files",
+      "label": "memory/*.md",
+      "kind": "store",
+      "groupId": "core",
+      "shape": "cylinder"
+    },
+    {
+      "id": "ingest-clis",
+      "label": "Ingest CLIs",
+      "kind": "process",
+      "groupId": "core",
+      "shape": "rect"
+    },
+    {
+      "id": "graph-lite",
+      "label": "Graph-lite",
+      "kind": "process",
+      "groupId": "core",
+      "shape": "rect"
+    },
+    {
+      "id": "publish-workflows",
+      "label": "Publish workflows",
+      "kind": "process",
+      "groupId": "core",
+      "shape": "rect"
+    },
+    {
+      "id": "s3-out",
+      "label": "S3 page.json",
+      "kind": "output",
+      "groupId": "outputs",
+      "shape": "stadium"
+    }
+  ],
+  "edges": [
+    { "id": "e-chat-orch", "from": "cli-chat", "to": "orchestrator", "label": "runs turns", "style": "solid" },
+    { "id": "e-orch-tools", "from": "orchestrator", "to": "tool-executor", "label": "invokes tools", "style": "solid" },
+    { "id": "e-tools-db", "from": "tool-executor", "to": "state-db", "label": "persists rows", "style": "solid" },
+    { "id": "e-orch-mem", "from": "orchestrator", "to": "memory-files", "label": "reads memory", "style": "solid" },
+    { "id": "e-orch-db", "from": "orchestrator", "to": "state-db", "label": "transcript", "style": "solid" },
+    { "id": "e-sched-ingest", "from": "host-scheduler", "to": "ingest-clis", "label": "runs ingest", "style": "dashed" },
+    { "id": "e-sched-graph", "from": "host-scheduler", "to": "graph-lite", "label": "runs graph", "style": "dashed" },
+    { "id": "e-sched-daemon", "from": "host-scheduler", "to": "daemon", "label": "supervises", "style": "dashed" },
+    { "id": "e-ingest-db", "from": "ingest-clis", "to": "state-db", "label": "knowledge_items", "style": "dashed" },
+    { "id": "e-graph-db", "from": "graph-lite", "to": "state-db", "label": "entities / edges", "style": "dashed" },
+    { "id": "e-daemon-orch", "from": "daemon", "to": "orchestrator", "label": "goal turns", "style": "dashed" },
+    { "id": "e-daemon-publish", "from": "daemon", "to": "publish-workflows", "label": "advances steps", "style": "solid" },
+    { "id": "e-db-publish", "from": "state-db", "to": "publish-workflows", "label": "facts + workflow state", "style": "solid" },
+    { "id": "e-publish-s3", "from": "publish-workflows", "to": "s3-out", "label": "DEPLOY", "style": "solid" },
+    { "id": "e-hud-db", "from": "hud", "to": "state-db", "label": "SELECT-only", "style": "dashed" }
+  ],
+  "tour": [
+    "cli-chat",
+    "orchestrator",
+    "state-db",
+    "publish-workflows",
+    "s3-out"
+  ],
+  "captions": [
+    {
+      "id": "cli-chat",
+      "title": "Operator chats",
+      "body": "ada chat runs Entity, Agent, Plan, or Setup ingress on the operator’s machine—no public HTTP API.",
+      "spotlightIds": ["cli-chat"]
+    },
+    {
+      "id": "orchestrator",
+      "title": "Manual tool loop",
+      "body": "The orchestrator streams Gemini legs with automatic function calling off, then persists each tool call itself.",
+      "items": [
+        "Allowlisted shell and YAML motor skills",
+        "Claude-style transcript with parent_uuid"
+      ],
+      "spotlightIds": ["orchestrator", "tool-executor"]
+    },
+    {
+      "id": "state-db",
+      "title": "Local truth",
+      "body": "Per-profile SQLite (WAL + FTS5) holds messages, jobs, knowledge, and graph; markdown memory files sit beside it.",
+      "spotlightIds": ["state-db", "memory-files"]
+    },
+    {
+      "id": "publish-workflows",
+      "title": "Deterministic publish",
+      "body": "Entity pages run ENRICH → GATE → DRAFT → DEPLOY; keyword pages skip GATE.",
+      "items": [
+        "GATE needs distinct HTTPS source_url facts",
+        "PageJsonV1 is a strict Pydantic contract"
+      ],
+      "spotlightIds": ["publish-workflows", "daemon"]
+    },
+    {
+      "id": "s3-out",
+      "title": "S3 page.json",
+      "body": "DEPLOY writes /{project}/{campaign}/{slug}/page.json and merges manifest.json for an out-of-repo ISR consumer.",
+      "spotlightIds": ["s3-out"]
+    }
+  ]
+}

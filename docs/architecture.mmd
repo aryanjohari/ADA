@@ -1,3 +1,5 @@
+%% Sync’d overview alias of docs/c4/2-containers.mmd — C4 is canonical.
+%% Prefer docs/c4/ for Context → Containers → Components zoom.
 flowchart TB
   subgraph inputs [Inputs]
     cliChat["ada chat"]
@@ -11,7 +13,7 @@ flowchart TB
     daemon["ada daemon\ngoals + workflows"]
     stateDb[("state.db\nSQLite WAL + FTS5")]
     memoryFiles[("memory/*.md")]
-    ingestClis["Ingest CLIs\nRSS / GSC / brand"]
+    ingestClis["Ingest CLIs\nRSS / GSC / brand / GETS / keywords"]
     graphLite["Graph-lite\ntriage + edges"]
     publishWorkflows["Publish workflows\nENRICH → GATE? → DRAFT → DEPLOY"]
   end

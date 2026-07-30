@@ -6,6 +6,7 @@ C4Component
     Component(gate, "GATE", "count unique HTTPS source_url facts", "Entity track only")
     Component(draft, "DRAFT", "publish/draft + PageJsonV1", "Build strict page.json")
     Component(deploy, "DEPLOY", "publish/s3_publish", "Upload page.json; merge manifest")
+    Component(schema, "PageJsonV1", "publish/page_schema_v1", "Pydantic extra=forbid contract")
   }
 
   ComponentDb_Ext(stateDb, "state.db", "Graph facts + workflow rows")
@@ -15,6 +16,7 @@ C4Component
   Rel(enrich, gate, "Entity: publish_entity_v1")
   Rel(enrich, draft, "Keyword: publish_keyword_v1 skips GATE")
   Rel(gate, draft, "Passes when fact threshold met")
-  Rel(draft, deploy, "Validated PageJsonV1")
+  Rel(draft, schema, "Validates PageJsonV1")
+  Rel(draft, deploy, "Validated page.json")
   Rel(deploy, s3, "/{project}/{campaign}/{slug}/page.json")
   Rel(deploy, stateDb, "Updates workflow status")

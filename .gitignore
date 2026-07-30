@@ -9,8 +9,11 @@ data/
 docs/*
 !docs/ARCHITECTURE.md
 !docs/architecture.mmd
+!docs/claude_logic.md
 !docs/c4/
 !docs/c4/**
+!docs/archive/
+!docs/archive/**
 memory/
 secrets/
 .env.business_test

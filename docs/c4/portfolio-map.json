@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "defaultLevel": "context",
+  "context": { "path": "docs/c4/1-context.mmd" },
+  "containers": { "path": "docs/c4/2-containers.mmd" },
+  "zoom": [
+    {
+      "id": "ada",
+      "label": "ADA",
+      "fromLevel": "context",
+      "toLevel": "containers",
+      "matchLabels": ["ADA", "Local Python agent"]
+    },
+    {
+      "id": "cli-chat",
+      "label": "ada chat",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["ada chat", "Entity / Agent"],
+      "componentsPath": "docs/c4/3-components/agent-core.mmd"
+    },
+    {
+      "id": "orchestrator",
+      "label": "Orchestrator",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["Orchestrator", "Manual Gemini"],
+      "componentsPath": "docs/c4/3-components/agent-core.mmd"
+    },
+    {
+      "id": "tool-executor",
+      "label": "Tool executor",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["Tool executor", "Allowlist"],
+      "componentsPath": "docs/c4/3-components/agent-core.mmd"
+    },
+    {
+      "id": "daemon",
+      "label": "ada daemon",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["ada daemon", "Goals + workflow"],
+      "componentsPath": "docs/c4/3-components/daemon.mmd"
+    },
+    {
+      "id": "ingest-clis",
+      "label": "Ingest CLIs",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["Ingest CLIs", "RSS / GSC"],
+      "componentsPath": "docs/c4/3-components/ingest-clis.mmd"
+    },
+    {
+      "id": "graph-lite",
+      "label": "Graph-lite",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["Graph-lite", "Triage"],
+      "componentsPath": "docs/c4/3-components/graph-lite.mmd"
+    },
+    {
+      "id": "publish-workflows",
+      "label": "Publish workflows",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["Publish workflows", "ENRICH"],
+      "componentsPath": "docs/c4/3-components/publish-workflows.mmd"
+    },
+    {
+      "id": "hud",
+      "label": "ada hud",
+      "fromLevel": "containers",
+      "toLevel": "components",
+      "matchLabels": ["ada hud", "Streamlit"],
+      "componentsPath": "docs/c4/3-components/hud.mmd"
+    }
+  ],
+  "componentZooms": [
+    {
+      "id": "agent-core",
+      "label": "Agent core",
+      "path": "docs/c4/3-components/agent-core.mmd",
+      "markdownPath": "docs/c4/3-components/agent-core.md",
+      "coversContainers": ["cli-chat", "orchestrator", "tool-executor"]
+    },
+    {
+      "id": "daemon",
+      "label": "ada daemon",
+      "path": "docs/c4/3-components/daemon.mmd",
+      "markdownPath": "docs/c4/3-components/daemon.md",
+      "coversContainers": ["daemon"]
+    },
+    {
+      "id": "ingest-clis",
+      "label": "Ingest CLIs",
+      "path": "docs/c4/3-components/ingest-clis.mmd",
+      "markdownPath": "docs/c4/3-components/ingest-clis.md",
+      "coversContainers": ["ingest-clis"]
+    },
+    {
+      "id": "graph-lite",
+      "label": "Graph-lite",
+      "path": "docs/c4/3-components/graph-lite.mmd",
+      "markdownPath": "docs/c4/3-components/graph-lite.md",
+      "coversContainers": ["graph-lite"]
+    },
+    {
+      "id": "publish-workflows",
+      "label": "Publish workflows",
+      "path": "docs/c4/3-components/publish-workflows.mmd",
+      "markdownPath": "docs/c4/3-components/publish-workflows.md",
+      "coversContainers": ["publish-workflows"]
+    },
+    {
+      "id": "hud",
+      "label": "ada hud",
+      "path": "docs/c4/3-components/hud.mmd",
+      "markdownPath": "docs/c4/3-components/hud.md",
+      "coversContainers": ["hud"]
+    }
+  ]
+}
