@@ -1,2 +1,0 @@
-"""Graph-lite extraction helpers."""
-

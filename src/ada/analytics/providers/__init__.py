@@ -1,1 +1,0 @@
-"""Analytics provider adapters."""
