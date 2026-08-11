@@ -1,11 +1,15 @@
 # ADA — Assistant Research & Design Notes
 
-**Status:** living research notes (decisions in §7 resolved; see body + constitution)  
-**Date:** 2026-08-11 (patched same day for decision lock-in)  
+**Status:** living research notes (v1.1 finalization; decisions feed body + constitution)  
+**Date:** 2026-08-12 (finalization patch; prior lock-in 2026-08-11)  
 **Machine:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1)  
 **Branch:** `rewrite/v1-body`  
 **North star:** personal always-on assistant in the spirit of Jarvis (Iron Man) / Justine (Why Him) — conversational, situationally aware, proactive under control, useful in daily life. **Not** movie AGI. **Not** claiming consciousness.  
 **Depends on / feeds:** [`01_BODY.md`](./01_BODY.md), [`02_CONSTITUTION.md`](./02_CONSTITUTION.md)
+
+### Project intent (lab framing)
+
+ADA on this branch is a **personal lab + daily-use companion + PhD-prep learning surface** — **not** a product to ship. Prefer **harder-but-correct** setups when they teach (typed tools, crash-safe stores, permission gateways, dual-store memory, explicit egress). Before each major capability slice: a **module research card** (§8). Portfolio/factory code stays on `main`.
 
 This document separates three lenses wherever claims get slippery:
 
@@ -16,6 +20,22 @@ This document separates three lenses wherever claims get slippery:
 | **FEASIBLE ON PI5 8GB** | Realistic on *this* body as inspected today, given RAM/CPU/IO and blank-slate software. |
 
 Aligned soft constraints from `VISION.md`: LLM as cortex/orchestrator (not the whole organism); no custom distro; prefer evidence from papers + this hardware.
+
+### Cloud trust rings (not “everything stays on the Pi”)
+
+Three distinct trust boundaries — do not collapse them into “private”:
+
+| Ring | What | Counterparty |
+|------|------|--------------|
+| **Control plane** | HUD / chat ingress | Tailscale (Aryan devices / session auth) |
+| **Cortex egress** | Chat turns, tool schemas, retrieved slices for the turn; light Dream manage-pass deltas | Gemini API (primary); future adapters |
+| **Backup egress** | Sealed Dream packages | Configured S3-compatible remote (`dream.push`) |
+
+**“No exfil”** means **no unallowlisted egress** — not “Google never sees a word.” Hybrid cortex is deliberate for quality. Future lab path (not Tier A gate): PII redact / quiet local small-model filtering before cloud calls ([MemPrivacy](https://arxiv.org/html/2605.09530v3)-class ideas; research later). Secrets/API keys are never-to-cloud.
+
+### Smoke eval (shared pointer)
+
+Operational falsifiers live in [`01_BODY.md` §10](./01_BODY.md) (body acceptance). Runtime harness organ (when coded): `eval.smoke`. Academic LoCoMo / LongMemEval are **won’t-chase as v1 gates** (§5); use them only as optional graded homework.
 
 ---
 
@@ -42,7 +62,7 @@ Aligned soft constraints from `VISION.md`: LLM as cortex/orchestrator (not the w
 ### Storage topology
 | Device | Role | Size / free | Notes |
 |--------|------|-------------|-------|
-| `sdb` SanDisk Cruzer Blade USB | boot + root (`bootfs` + `rootfs`) | ~28G root, ~22G free | OS lives on USB stick, not μSD |
+| `sdb` SanDisk Cruzer Blade USB | boot + root (`bootfs` + `rootfs`) | ~28G root, ~22G free | OS on USB stick (risk accepted; see body) |
 | `sda` Seagate Expansion HDD | labeled `ada-data` → `/mnt/ada-data` | ~916G, ~870G free (~empty) | Primary durable substrate |
 | Layout under `/mnt/ada-data` | `ADA/`, `memory/`, `runs/`, `dream/` (planned), `scratch/` | durable substrate | See `01_BODY.md`; constitution in `02_CONSTITUTION.md` |
 
@@ -87,6 +107,8 @@ Mapped from those vibes to things a real personal assistant must do:
 - **Hybrid LLM + tools**: models should offload arithmetic, search, calendars, code execution — Toolformer showed smaller models + APIs beating larger tool-less models ([Schick et al. 2023](https://arxiv.org/abs/2302.04761)).
 - **Long-horizon reliability gap**: strong single-step reasoning ≠ durable multi-hour task completion; planning/memory/execution failures dominate as horizon grows ([Horizon Gap survey](https://arxiv.org/html/2608.06663); [Long-Horizon Task Mirage](https://arxiv.org/html/2604.11978v1)).
 - **Reflective / episodic memory streams** (generative agents, Park et al. 2023) popularized retrieve → reflect → plan loops; useful pattern, not evidence of consciousness.
+- **Offline consolidation as a second timescale** (fast online write / slow manage) — [Auto-Dreamer, 2026](https://arxiv.org/html/2605.20616) strengthens the Dream *shape* (cite as lineage; training the consolidator is won’t-chase).
+- **Agent privacy is data-path shaped** — personal assistants are intimate + high-permission ([Agents That Know Too Much, 2026](https://arxiv.org/html/2606.26627)); confirm dialogs must bind to real tool args ([Consent Integrity, 2026](https://arxiv.org/html/2606.02668v1)).
 
 ### FEASIBLE ON PI5 8GB (capability realism)
 | Capability | Feasible now? | Note |
@@ -123,22 +145,28 @@ Film assistants feel effective because they **close loops**. For ADA, effectiven
 
 4. **Safety & control**
    - Permission ladders: read-only by default → confirm for external/side-effecting → hard deny for high risk.
-   - Auth on every remote channel; no anonymous open internet control plane.
+   - Auth: Tailscale ACL to Aryan devices + session auth for Agent writes (see constitution).
    - Human can stop / mute proactivity quickly (“quiet hours”, kill switch).
+   - Overnight: **heal first** (retry + cleanup); wake Aryan only if recovery fails or critical body faults listed in body/constitution.
 
 5. **Memory usefulness (not just storage)**
-   - Retrieve correct preference/fact days later (LoCoMo / LongMemEval-style *questions* as internal smoke tests — not academic chase).
+   - Retrieve correct **FACT** days later; WORLDVIEW digests must cite facts and never overwrite them (dual-store — body §5).
+   - Local smoke questions (LoCoMo / LongMemEval-*style*, not academic chase).
    - Write policy: what gets stored, summarized, forgotten (GDPR-ish hygiene without ceremony).
 
 6. **Proactivity quality**
    - Precision over recall: fewer high-value nudges beat constant chatter.
    - Every proactive act should be attributable: trigger rule + evidence + permission tier.
 
+7. **Cloud honesty (lab)**
+   - When cortex/Dream/HUD land: meter tokens and egress class in logs/HUD — **promise only now; no fake numbers.**
+
 ### Anti-metrics (do not optimize)
 - Word count / theatrical personality density.
 - Number of autonomous background agents.
 - Tokens burned on voice-of-AGI roleplay.
 - SEO / content-factory throughput (explicit non-goal).
+- Leaderboard chasing before local smoke falsifiers exist.
 
 ---
 
@@ -154,10 +182,10 @@ Patterns below are widely reused in research *and* production agent harnesses. P
 ### 3.2 Hybrid cortex + tools (not all-in-weights)
 **EVIDENCE-BACKED:** Toolformer (Schick et al., 2023); modern function-calling APIs (OpenAI/Anthropic/etc.). Strengths of LLMs (language, planning sketches) + strengths of programs (time, files, HTTP, DB).
 
-**ADA implication:** Pi owns deterministic organs (clock, FS, process mgr, home APIs); LLM proposes tool calls with schemas + permissions.
+**ADA implication:** Pi owns deterministic organs (clock, FS, process mgr, home APIs); LLM proposes tool calls with schemas + permissions. Confirm UI must show **gateway-rendered real args**, not model narration ([Consent Integrity, 2026](https://arxiv.org/html/2606.02668v1)).
 
-### 3.3 Memory tiers (write–manage–read)
-**EVIDENCE-BACKED:** agent memory surveys converge on hierarchical stores rather than stuffing the context window forever ([Zhang 2024](https://arxiv.org/abs/2404.13501); [2026 memory surveys](https://arxiv.org/html/2603.07670v1); MemGPT-style paging [Packer et al. 2023/24](https://arxiv.org/abs/2310.08560); MEMTIER-style episodic→semantic consolidation on long-running agents).
+### 3.3 Memory tiers (write–manage–read) + dual-store
+**EVIDENCE-BACKED:** agent memory surveys converge on hierarchical stores rather than stuffing the context window forever ([Zhang 2024](https://arxiv.org/abs/2404.13501); [2026 memory surveys](https://arxiv.org/html/2603.07670v1); MemGPT-style paging [Packer et al. 2023/24](https://arxiv.org/abs/2310.08560); offline region consolidation [Auto-Dreamer, 2026](https://arxiv.org/html/2605.20616)).
 
 Pragmatic tiers for ADA:
 
@@ -165,11 +193,14 @@ Pragmatic tiers for ADA:
 |------|----------|----------------------|
 | Working | current turn, tool obs, short scratch | RAM / session transcript |
 | Episodic | dated events, runs, conversations | `/mnt/ada-data/runs`, append-only logs |
-| Semantic | durable facts, prefs, people, projects | `/mnt/ada-data/memory` (structured + retrieval) |
+| Semantic **FACTS** | durable prefs, people stubs, identity — strict | `/mnt/ada-data/memory/facts/` (structured) |
+| Semantic **WORLDVIEW** | digests, takes, consolidations that *cite* facts | `/mnt/ada-data/memory/worldview/` (Dream + awake synthesis) |
 | Procedural | skills, playbooks, tool schemas | git-tracked code + skill docs |
 | Cold archive | raw dumps, old sessions | HDD; retrieve rarely |
 
-**Caution (EVIDENCE-BACKED):** memory systems often underperform their promise when evaluation is weak, retrieval is naive, or maintenance latency is ignored ([Anatomy of Agentic Memory](https://arxiv.org/html/2602.19320)). Start simple: structured notes + timestamps + grep/BM25/embeddings later.
+**POLICY:** WORLDVIEW never silently overwrites FACTS. Dream auto-merge only hits an explicit **whitelist** of FACT keys (body §5 / constitution).
+
+**Caution (EVIDENCE-BACKED):** memory systems often underperform their promise when evaluation is weak, retrieval is naive, or maintenance latency is ignored ([Anatomy of Agentic Memory](https://arxiv.org/html/2602.19320)). Start simple: structured notes + timestamps + grep/BM25/embeddings later. Usability can collapse as irrelevant sessions grow ([scale-conditioned memory eval, 2026](https://arxiv.org/html/2605.07313)).
 
 ### 3.4 Horizon management (the “horizon gap”)
 **EVIDENCE-BACKED:** as task length grows, failures shift toward planning early mistakes, forgetting constraints, and false completion ([Horizon Gap](https://arxiv.org/html/2608.06663); [Long-Horizon Mirage](https://arxiv.org/html/2604.11978v1)). Stepwise “reason harder” is not planning ([Why Reasoning Fails to Plan](https://arxiv.org/abs/2601.22311)).
@@ -180,7 +211,7 @@ Pragmatic tiers for ADA:
 - Prefer small vertical slices over “multi-day unsupervised missions.”
 
 ### 3.5 Permissions, audit, and human-in-the-loop
-**EVIDENCE-BACKED / product pattern:** production agents that email, spend money, or mutate systems use confirmations, sandboxes, and audit trails (coding agents, enterprise copilots). Research on long-horizon agents repeatedly flags execution-time control as necessary.
+**EVIDENCE-BACKED / product pattern:** production agents that email, spend money, or mutate systems use confirmations, sandboxes, and audit trails. Programmable least-privilege tool policies ([Progent, 2025](https://arxiv.org/pdf/2504.11703)) and deny-default gateways fit the lab better than vibe prompts.
 
 **ADA implication:** tool capability ≠ tool authority. Schema includes side-effect class.
 
@@ -189,42 +220,50 @@ Pragmatic tiers for ADA:
 - Quantized ≤~3–4B models: often ~3–7 tok/s decode on Pi5; usable for offline stubs, not snappy multi-tool agents ([community llama.cpp benches 2025–26](https://specpicks.com/reviews/raspberry-pi-5-local-llm-2026)).
 - 7–8B Q4 on 8GB: tight/swappy once OS + KV + STT coexist — poor interactive agent host.
 - HDD space is not the bottleneck; **RAM + latency + CPU contention** are.
-- Prefer: **API cortex** + local organs; optional tiny local model for privacy-sensitive classification / fallback.
+- Prefer: **API cortex** + local organs; optional tiny local model for privacy-sensitive classification / fallback (future research path).
 
 ### 3.7 Interaction channel
-Voice is a *channel*, not a brain. Text-first preserves auditability and fits current hardware (no mic observed). **Locked:** voice out of Tier A; push-to-talk is Tier B; always-on wake-word / voice-ID is Tier C aspiration (see constitution future hooks).
+Voice is a *channel*, not a brain. Text-first preserves auditability and fits current hardware (no mic observed).
+
+**Voice tiers (locked):**
+| Tier | Voice |
+|------|--------|
+| **A** | None (text Tailscale HUD/chat) |
+| **B** | Push-to-talk |
+| **C** | Always-listen + voice-ID |
 
 ---
 
 ## 4. Mapped to THIS Pi: Tier A / B / C
 
 ### Tier A — now (blank slate → lovable loop on this body)
-Ship what this machine already enables without extra silicon (**locks as of body + constitution**):
+Ship what this machine already enables without extra silicon (**locks as of body + constitution v1.1**):
 
 - **Body sense organs:** uptime, load, temp/throttle, disk free on `/` and `/mnt/ada-data`, network presence, process heartbeat.
-- **Agent runtime skeleton:** one supervised service; session log under `/mnt/ada-data/runs`; durable notes under `/mnt/ada-data/memory`; Dream seal under `/mnt/ada-data/dream`.
+- **Agent runtime skeleton:** one supervised service; session log under `/mnt/ada-data/runs`; dual-store memory under `/mnt/ada-data/memory`; Dream seal under `/mnt/ada-data/dream`.
 - **Cortex:** **Gemini** primary with tool calling; cortex adapter for Claude later — not on-device main brain.
-- **Tools (read-heavy + memory):** `body.vitals`, memory read/append, lifecycle; privileged `dream.push` only to allowlisted backup remote (not general web).
-- **Channel:** **Tailscale-only web HUD + chat** (plain UI first; pretext face later). No public agent ingress.
-- **Proactivity v0:** **warmly forward** briefs/nudges, attributable; quiet hours **23:00–07:00 NZST**; never silent external side effects.
-- **Safety:** secrets outside git; Tailnet ACL ingress; deny open anonymous control.
+- **Tools (read-heavy + memory):** `body.vitals`, FACT append/search, lifecycle; privileged `dream.push` only to allowlisted backup remote after **one-time** operator confirm.
+- **Channel:** **Tailscale-only web HUD + chat**; ACL Aryan devices; session auth for Agent writes. No public agent ingress.
+- **Proactivity v0:** **warmly forward** briefs/nudges, attributable; quiet hours **23:00–07:00 NZST** with **heal-first** overnight faults; never silent unallowlisted external side effects.
+- **Safety:** secrets outside git; deny open anonymous control; never-to-cloud secret class.
 
 ### Tier B — next (software + peripherals, still Pi5)
 - Richer memory retrieval (embeddings on Pi or API embeddings + local index on HDD).
 - More actuators: email draft→confirm send, Home Assistant / smart home, browser-fetch with allowlists.
 - Push-to-talk voice (USB mic + cloud or Whisper-tiny + Piper) if desired.
 - Multi-step workflows with persisted checklists and stage-gate confirms (attacks horizon gap without claiming AGI autonomy).
-- Optional small local LLM for offline mode / intent routing — **ancillary**, not primary cortex.
+- Optional small local LLM for offline mode / intent routing / **future PII redact research** — **ancillary**, not primary cortex.
+- Token/egress metering in HUD.
 
 ### Tier C — needs more hardware (or offboard compute)
-- Always-listening multi-room audio, camera fusion, on-device vision at interactive FPS.
+- Always-listening multi-room audio, camera fusion, on-device vision at interactive FPS; voice-ID.
 - Comfortable concurrent local 7B+ agent + STT + embeddings without swap drama → prefer **16GB Pi**, NPU/AI HAT, or a nearby mini-PC as organ cluster.
 - Heavy browser automation / long coding agents with desktop GUIs.
 - Anything requiring GPU-class local generation for “movie latency.”
 
 ---
 
-## 5. Explicit non-goals
+## 5. Explicit non-goals & won’t chase (lab)
 
 Do **not** prioritize in rewrite/v1-body:
 
@@ -236,45 +275,79 @@ Do **not** prioritize in rewrite/v1-body:
 6. **Unbounded autonomy** — no multi-day unsupervised missions before short-horizon evals exist.
 7. **Force-rewriting `main`** — branch discipline remains.
 
+### Won’t chase (lab) — cite, don’t build as v1 gate
+
+| Topic | Stance | Why |
+|-------|--------|-----|
+| Train Auto-Dreamer / GRPO consolidator | Won’t chase | Separate research project; Dream *shape* already justified |
+| LoCoMo / LongMemEval as Tier A gate | Won’t chase | Local smoke first (`eval.smoke` + body §10) |
+| Always-listen + voice-ID | Tier C only | No mic; privacy + CPU |
+| Local LLM as main cortex | Won’t chase | Wrong for snappy multi-tool on 8GB |
+| Full MemPrivacy-class edge model in Tier A | Research later | Hybrid Gemini accepted; redact is future harden |
+| Custom distro / ZFS-before-loop | Won’t chase | VISION + body non-goals |
+| Multi-agent swarm productization | Won’t chase | Lab + companion, not product |
+
 ---
 
 ## 6. Recommended first vertical slice AFTER body sense
 
-**Smallest lovable loop:** *truthful body companion with one durable memory write and one proactive brief — over Tailscale web UI.*
+**Smallest lovable loop:** *truthful body companion with one durable FACT write and one proactive brief — over Tailscale web UI.*
 
 ### Sequence (design intent; not implemented here)
 1. **Body sense:** answer “how are you / how is the body?” from real sensors with receipts.
 2. **Chat turn + tool loop (Gemini):** user → cortex → tools → observation → answer; transcript in `/mnt/ada-data/runs/...`.
-3. **Memory write/read:** “remember that I prefer NZST briefs at 07:30” → structured note → later retrieve.
+3. **Memory write/read:** “remember that I prefer NZST briefs at 07:30” → FACT store → later retrieve.
 4. **Warmly forward brief:** daily status proposal (body + prefs); respect quiet hours; mute available.
-5. **Dream seal (local):** fsync + checksummed package; light capped manage-pass optional; push when remote configured.
-6. **Eval smokes:** disk free accuracy; remember/retrieve; Tailscale-only; no fake success without receipt.
+5. **Dream seal (local):** fsync + checksummed package; light capped manage-pass optional; WORLDVIEW digest cites FACTS; whitelist auto-merge only; push after one-time remote confirm.
+6. **Eval smokes:** disk free accuracy; remember/retrieve FACT; Tailscale-only; no fake success without receipt.
 
 This delivers Jarvis-*feel* ingredients that are **evidence-aligned** on this hardware: grounded status, continuity, controlled initiative — without voice, home automation, or local-AGI theater.
 
+**Before coding networking / agent slices:** research card (§8). Next ops pointer after docs commit: **M01 Tailscale** hardening (ACL Aryan-only + session auth design) — card before implementation.
+
 ---
 
-## 7. Decision log (resolved before constitution)
-
-These were open in the first research pass; **resolved** via operator decisions + `01_BODY.md` / `02_CONSTITUTION.md` (2026-08-11):
+## 7. Decision log (resolved; v1.1 finalization)
 
 | # | Topic | Resolution |
 |---|--------|------------|
 | 1 | Cortex | **Gemini primary**; adapter for Claude/others later; offline stub = organs-only degraded mode |
-| 2 | Channel | **Tailscale-only web HUD + chat**; Tailnet ACL as auth base |
-| 3 | Voice | **Out of Tier A**; PTT Tier B; voice-ID / always-listen = future hook |
-| 4 | Actuation | Auto: body read, lifecycle/runs append, birth once, memory append, Dream seal; confirm: semantic overwrite/delete; deny: general web/email/HA; exception: allowlisted `dream.push` |
-| 5 | Identity & memory | Embodied personal aide on this Pi; **no** consciousness/feelings claims; hybrid memory; Aryan may inspect/export/**delete** anytime; Dream auto-merges **low-risk** only |
+| 2 | Channel | **Tailscale-only web HUD + chat**; ACL Aryan devices; session auth for Agent writes |
+| 3 | Voice | **Tier A none**; **B PTT**; **C always-listen + voice-ID** |
+| 4 | Actuation | Auto: body read, lifecycle/runs append, birth once, FACT append, Dream seal; whitelist Dream merge; confirm: FACT overwrite/delete, sensitive merges, first `dream.push`; deny: general web/email/HA |
+| 5 | Identity & memory | Embodied personal aide; **no** consciousness claims; **dual-store** FACTS vs WORLDVIEW; Aryan may inspect/export/**delete** anytime |
+| 6 | Cloud trust | Named rings: Tailscale ≠ Gemini ≠ backup; “no exfil” = no unallowlisted egress; future PII-redact research path |
+| 7 | Quiet / faults | Heal-first overnight; wake only if recovery fails or urgent faults (body list) |
+| 8 | Lab | Module research card before major slices; harder-but-correct when it teaches |
 | — | Operator | **Aryan** sole command authority; people known by name, no order rights |
-| — | Voice/personality | Full-stage witty roast energy; truth over charm; warmly forward + quiet 23:00–07:00 NZST |
+| — | Voice/personality | Full-stage witty roast energy (**she/her**); truth over charm; warmly forward + quiet 23:00–07:00 NZST |
 
 Living-doc note: amend via constitution change process when locks move; patch this table when superseded.
 
 ---
 
+## 8. Module research card gate (required before major slices)
+
+**POLICY (lab).** Before Tier A/B capability work beyond trivial doc edits, write a short card (path suggestion: `docs/modules/<name>.md` when created — **do not invent modules early**). Networking / Tailscale harden = next candidate after this doc patch; card first.
+
+**Required fields:**
+1. Question / capability  
+2. Lens tags (FANFICTION / EVIDENCE / FEASIBLE / POLICY)  
+3. ≥2 citations or explicit “metal-only / systems practice”  
+4. Pi 5 8GB feasibility note  
+5. **Learning objective** (what Aryan/the lab should understand afterward)  
+6. Harder-but-correct choice vs shortcut  
+7. Won’t-chase for this slice  
+8. Acceptance falsifiers (`eval.smoke` / body §10 style)  
+9. Egress impact (which trust ring touches data)  
+
+No card → no major slice. Tiny stubs/pointers allowed without full card; full organ implementation is not.
+
+---
+
 ## References (selected)
 
-- Yao et al., *ReAct: Synergizing Reasoning and Acting in Language Models* (2022) — https://arxiv.org/abs/2210.03629  
+- Yao et al., *ReAct* (2022) — https://arxiv.org/abs/2210.03629  
 - Schick et al., *Toolformer* (2023) — https://arxiv.org/abs/2302.04761  
 - Packer et al., *MemGPT* (2023) — https://arxiv.org/abs/2310.08560  
 - Zhang et al., *A Survey on the Memory Mechanism of LLM-based Agents* (2024) — https://arxiv.org/abs/2404.13501  
@@ -282,14 +355,22 @@ Living-doc note: amend via constitution change process when locks move; patch th
 - *The Horizon Gap…* (2026 survey) — https://arxiv.org/html/2608.06663  
 - *The Long-Horizon Task Mirage?* (2026) — https://arxiv.org/html/2604.11978v1  
 - Memory surveys 2026 — https://arxiv.org/html/2603.07670v1 , https://arxiv.org/html/2602.19320  
-- Pi5 local LLM / voice latency community benches (2025–26) — e.g. SpecPicks / offline voice writeups cited above  
+- Auto-Dreamer (2026) — https://arxiv.org/html/2605.20616 — offline consolidation lineage (**won’t train**)  
+- *When Stored Evidence Stops Being Usable* (2026) — https://arxiv.org/html/2605.07313  
+- LoCoMo (2024) — https://arxiv.org/abs/2402.17753 — optional homework, not v1 gate  
+- LongMemEval (2024) — https://arxiv.org/abs/2410.10813 — optional homework, not v1 gate  
+- *Agents That Know Too Much* (2026) — https://arxiv.org/html/2606.26627  
+- Consent Integrity / LITL (2026) — https://arxiv.org/html/2606.02668v1  
+- Progent (2025) — https://arxiv.org/pdf/2504.11703  
+- MemPrivacy (2026) — https://arxiv.org/html/2605.09530v3 — future redact research  
+- Pi5 local LLM / voice latency community benches (2025–26) — e.g. SpecPicks / offline voice writeups  
 
 ---
 
 ### Internal (downstream)
-- [`01_BODY.md`](./01_BODY.md) — metal, organs, Dream/durability  
-- [`02_CONSTITUTION.md`](./02_CONSTITUTION.md) — normative charter  
+- [`01_BODY.md`](./01_BODY.md) — metal, organs, Dream/durability, acceptance  
+- [`02_CONSTITUTION.md`](./02_CONSTITUTION.md) — normative charter v1.1  
 
 ---
 
-*Research notes are living. Decisions in §7 supersede the older open-question framing; deepen and amend as the system grows.*
+*Research notes are living. §7 + constitution v1.1 supersede older open-question framing; deepen and amend as the system grows.*
