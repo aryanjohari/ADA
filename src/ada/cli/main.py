@@ -1,8 +1,10 @@
-"""No-Gemini CLI for body sense: status, birth, wake, story, doctor."""
+"""Body sense + chat harness CLI (M00 organs + M02 cortex)."""
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -19,7 +21,7 @@ from ada.io.paths import BodyFault, ada_data_mounted, get_paths, require_ada_dat
 console = Console(stderr=False)
 err_console = Console(stderr=True)
 
-app = typer.Typer(name="ada", help="ADA body organs (M00 — no cortex).", no_args_is_help=True)
+app = typer.Typer(name="ada", help="ADA — body organs + chat harness.", no_args_is_help=True)
 body_app = typer.Typer(help="Body sense: vitals, identity, lifecycle.", no_args_is_help=True)
 app.add_typer(body_app, name="body")
 
@@ -226,16 +228,146 @@ def body_doctor() -> None:
         raise typer.Exit(code=2)
 
 
+def _chat_sink_printer(event: str, payload: dict) -> None:
+    if event == "tool_call_started":
+        tool = payload.get("tool")
+        args = payload.get("args") or {}
+        console.print(f"[cyan]tool[/cyan] {tool}({json.dumps(args, default=str)})")
+    elif event == "tool_call_finished":
+        ok = payload.get("ok")
+        rid = payload.get("receipt_id", "")[:12]
+        mark = "[green]ok[/green]" if ok else "[red]fail[/red]"
+        console.print(f"  ↳ {mark} receipt={rid}…")
+
+
+@app.command("chat")
+def chat(
+    query: Optional[str] = typer.Option(
+        None,
+        "--query",
+        "-q",
+        help="Single-turn question then exit.",
+    ),
+    mode: str = typer.Option(
+        "observe",
+        "--mode",
+        help="observe (default) | agent | plan",
+    ),
+    estimate: bool = typer.Option(
+        False,
+        "--estimate",
+        help="Print rough pre-call USD estimate (labeled).",
+    ),
+    jsonl_path: Optional[Path] = typer.Option(
+        None,
+        "--jsonl-path",
+        help="Override run transcript path (tests).",
+        exists=False,
+        dir_okay=False,
+        writable=True,
+        resolve_path=True,
+    ),
+) -> None:
+    """Gemini ReAct chat — body tools via gateway; receipts under runs/."""
+    from ada.cortex.charter import build_system_charter
+    from ada.cortex.cost import estimate_from_text
+    from ada.cortex.gemini import GeminiAdapter
+    from ada.cortex.models import resolve_model
+    from ada.harness.loop import run_turn
+    from ada.harness.session import ChatSession
+    from ada.harness.stream_events import CallbackSink
+    from ada.secrets.load import MissingSecret, load_gemini_api_key
+
+    mode_l = mode.lower().strip()
+    if mode_l not in ("observe", "agent", "plan"):
+        err_console.print(f"[red]invalid mode:[/red] {mode}")
+        raise typer.Exit(code=2)
+
+    try:
+        api_key = load_gemini_api_key()
+    except MissingSecret as exc:
+        err_console.print(f"[red]no_key:[/red] {exc.message}")
+        try:
+            session = ChatSession(mode=mode_l, jsonl_path=jsonl_path)  # type: ignore[arg-type]
+            session.ensure_started()
+            session.end(stop_reason="no_key")
+            err_console.print(f"run: {session.run_path}")
+        except Exception:  # noqa: BLE001
+            pass
+        raise typer.Exit(code=1)
+
+    model = resolve_model("chat_interactive")
+    session = ChatSession(mode=mode_l, model=model, jsonl_path=jsonl_path)  # type: ignore[arg-type]
+    adapter = GeminiAdapter(api_key, model=model)
+    sink = CallbackSink()
+    sink.on(_chat_sink_printer)
+
+    system = build_system_charter(mode=mode_l)
+
+    def _one(user_text: str, *, end_session: bool, history: list) -> int:
+        if estimate:
+            est = estimate_from_text(model, system, user_text)
+            console.print(
+                f"[dim]estimate ~${est.usd_estimate:.6f} "
+                f"(~{est.prompt_tokens}+{est.candidates_tokens} tok, labeled estimate)[/dim]"
+            )
+        result = run_turn(
+            session,
+            user_text,
+            adapter,
+            system=system,
+            sink=sink,
+            contents=history,
+            end_session=end_session,
+        )
+        if result.text:
+            console.print(Panel(result.text, title="ADA", border_style="magenta"))
+        else:
+            console.print("[yellow](no assistant text)[/yellow]")
+        console.print(
+            f"[dim]stop={result.stop_reason} steps={result.steps} run={result.run_path}[/dim]"
+        )
+        if result.stop_reason in ("error", "no_key"):
+            return 1
+        return 0
+
+    if query is not None:
+        code = _one(query, end_session=True, history=[])
+        raise typer.Exit(code=code)
+
+    console.print(
+        f"[bold]ADA chat[/bold] mode={mode_l} model={model} (Ctrl-D /exit to quit)"
+    )
+    console.print(f"[dim]session={session.session_id}[/dim]")
+    history: list = []
+    exit_code = 0
+    try:
+        while True:
+            try:
+                line = console.input("[bold green]you>[/bold green] ").strip()
+            except EOFError:
+                console.print()
+                break
+            if not line:
+                continue
+            if line in ("/exit", "/quit", ":q"):
+                break
+            exit_code = _one(line, end_session=False, history=history)
+    finally:
+        if session._started:
+            session.end(stop_reason="completed")
+            console.print(f"[dim]run: {session.run_path}[/dim]")
+    raise typer.Exit(code=exit_code)
+
+
 @app.callback()
 def main_callback() -> None:
-    """ADA — body sense CLI (M00)."""
+    """ADA — body sense + chat harness."""
 
 
-# Typer/Click entrypoint for console_scripts
 def main() -> None:
     app()
 
 
-# setuptools: ada = ada.cli.main:app — Typer instance is a Click command group
 if __name__ == "__main__":
     app()

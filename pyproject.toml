@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ada"
 version = "0.1.0"
-description = "ADA body sense — vitals, identity, lifecycle (M00)"
+description = "ADA body sense + chat harness (M00/M02)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
   "PyYAML",
   "typer",
   "rich",
+  "google-genai>=1,<3",
 ]
 
 [project.optional-dependencies]

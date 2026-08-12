@@ -45,6 +45,11 @@ class DataPaths:
     def lifecycle_jsonl(self) -> Path:
         return self.memory / "lifecycle.jsonl"
 
+    @property
+    def runs(self) -> Path:
+        """Episodic chat transcripts / tool receipts (M02)."""
+        return self.root / "runs"
+
 
 def get_data_root() -> Path:
     raw = os.environ.get(ENV_ADA_DATA_ROOT, DEFAULT_ADA_DATA_ROOT)
