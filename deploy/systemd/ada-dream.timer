@@ -1,0 +1,21 @@
+# Optional pointer — NOT an acceptance gate (M04 §12 step 11).
+# Install manually when ready:
+#   sudo cp deploy/systemd/ada-dream.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ada-dream.timer
+#
+# Schedule: ~03:30 NZST (Pacific/Auckland). Offline Dream manage is OK
+# during quiet hours 23:00–05:30 NZST; user-facing proactive pings are not.
+
+[Unit]
+Description=ADA Dream seal timer (~03:30 NZST)
+Requires=ada-dream.service
+
+[Timer]
+# Wall-clock in the host timezone. Prefer Pacific/Auckland on ada-pi5.
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=ada-dream.service
+
+[Install]
+WantedBy=timers.target

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ada"
 version = "0.1.0"
-description = "ADA body sense + chat harness + Tailscale Serve HUD (M00/M02/M03)"
+description = "ADA body sense + chat harness + Tailscale Serve HUD + memory/Dream (M00–M04)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

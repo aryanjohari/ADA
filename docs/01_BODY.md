@@ -134,7 +134,7 @@ Carried from research + operator decisions (2026-08-11 / finalization 2026-08-12
 | Voice | Tier A none / B PTT / C always-listen+voice-ID |
 | Pronouns | **she/her** |
 | Personality (verbal) | **Full-stage witty friend** (Raina/Kamra-class energy) — loyal; truth over charm |
-| Proactivity | **Warmly forward** + quiet hours **23:00–07:00 NZST**; **heal-first** faults overnight |
+| Proactivity | **Warmly forward** + quiet hours **23:00–05:30 NZST**; default `brief_time` **05:30**; **heal-first** faults overnight |
 | Operator | **Aryan** sole command authority; people-by-name, no guest command rights |
 | Continuity | **Birth ledger + lifecycle log** |
 | Memory | **Dual-store:** FACTS (strict) + WORLDVIEW (freer, cites facts); whitelist Dream auto-merge |
@@ -165,7 +165,7 @@ Carried from research + operator decisions (2026-08-11 / finalization 2026-08-12
 | `dream.push` | upload sealed package to configured object remote only | **privileged outbound** (§6.7) |
 | `channel.web` | Tailscale-served HUD + chat | ingress on mesh only |
 | `auth.session` | bind Agent writes to Aryan session (beyond mere Tailnet presence) | **auth gate** |
-| `schedule.quiet` | quiet hours 23:00–07:00 NZST; proactive suppress | **read/config** |
+| `schedule.quiet` | quiet hours 23:00–05:30 NZST; proactive suppress | **read/config** |
 | `control.mute` | mute / chill / kill-switch for proactivity | **write** (operator) |
 | `privacy.egress` / redact | classify egress ring; never-send secrets; future redact hook | **gate** |
 | `secrets.load` | load Gemini / rclone secrets from outside git | **read** (privileged) |
@@ -277,8 +277,8 @@ Knowing things from day one does **not** require Dream: awake FACT appends alrea
 
 | Whitelist key | Expected shape (illustrative) |
 |---------------|-------------------------------|
-| `brief_time` | `HH:MM` local |
-| `quiet_hours_start` / `quiet_hours_end` | `HH:MM` (defaults 23:00 / 07:00 NZST) |
+| `brief_time` | `HH:MM` local (default **05:30** NZST — operator wake) |
+| `quiet_hours_start` / `quiet_hours_end` | `HH:MM` (defaults **23:00 / 05:30** NZST) |
 | `mute_proactivity` | bool |
 | `tease_ok` | bool |
 | `preferred_tz` | IANA tz string (default Pacific/Auckland) |
@@ -359,11 +359,11 @@ Suggested tree:
 2. Build **delta** since last `dream_ok` (new lifecycle lines, new `runs/` bytes, new FACT/WORLDVIEW files) — not full history replay every night.  
 3. Seal package: identity + FACT YAML + WORLDVIEW delta + episodic delta + `MANIFEST.json` + checksums + `dream_id` / hostname / `born_at` / agent version.  
 4. **Light LLM manage-pass (early POLICY):** one capped Gemini call over the delta only → structured `{digest, fact_candidates[], worldview_notes[], open_loops[], conflicts[]}` — this is **cortex egress** (trust ring).  
-5. Write WORLDVIEW digest under `memory/worldview/` / `memory/dreams/YYYY-MM-DD.md` with citations; **auto-merge only §5.3 whitelist** FACT keys; **stage** all else; surface conflicts — never silently overwrite identity or non-whitelist FACTS. Quiet hours do not block Dream (offline manage), but user-facing nudges respect 23:00–07:00 NZST.  
+5. Write WORLDVIEW digest under `memory/worldview/` / `memory/dreams/YYYY-MM-DD.md` with citations; **auto-merge only §5.3 whitelist** FACT keys; **stage** all else; surface conflicts — never silently overwrite identity or non-whitelist FACTS. Quiet hours do not block Dream (offline manage; seal timer ~03:30 NZST), but user-facing nudges respect **23:00–05:30 NZST**.  
 6. Move sealed package to `outbox/`; try `dream.push` per §6.7 if remote configured.  
 7. Append lifecycle `dream_ok` or `dream_fail` with receipts (bytes, token spend when metering exists, push status).
 
-**Schedule (FEASIBLE):** systemd timer (nightly NZST) + on clean `sleep`; optional after long sessions.
+**Schedule (FEASIBLE / locked):** systemd timer **`ada-dream.timer` ~03:30 NZST** (offline manage OK during quiet hours) + on clean `sleep`; optional after long sessions. Morning user-facing brief uses FACT `brief_time` default **05:30 NZST** (outside quiet).
 
 ### 6.5 What light Dream may “make meaning” of
 
@@ -405,7 +405,7 @@ Expose: `last_dream_at`, `last_dream_status`, `bytes_pending_push`, `last_push_a
 
 ### 6.9 Quiet hours & overnight faults (heal-first)
 
-**POLICY.** Quiet hours **23:00–07:00 NZST**: no user-facing proactive chat pings.
+**POLICY.** Quiet hours **23:00–05:30 NZST**: no user-facing proactive chat pings (morning brief at default `brief_time` 05:30 is outside quiet).
 
 **Heal-first:** on fault overnight, organs retry + cleanup first; emit `heal_retry` / `heal_ok` / `heal_give_up`. Prefer morning brief of overnight recoveries over chatty pages.
 
@@ -452,7 +452,7 @@ Not implemented here; contract for upcoming code:
 | Piece | Intent |
 |-------|--------|
 | systemd user or system unit `ada-agent.service` | supervised always-on process |
-| systemd timer `ada-dream.timer` | nightly (+ on sleep) Dream seal / light LLM / optional push |
+| systemd timer `ada-dream.timer` | ~**03:30 NZST** (+ on sleep) Dream seal / light LLM / optional push |
 | Python package under `ADA/` | vitals, lifecycle, memory, dream, agent loop, web HUD |
 | Secrets | outside git — Gemini API key; later rclone/S3 credentials |
 | Health | unit restart on crash → emits `fault`/`wake`/`heal_*` lifecycle events |

@@ -244,7 +244,7 @@ Ship what this machine already enables without extra silicon (**locks as of body
 - **Cortex:** **Gemini** primary with tool calling; cortex adapter for Claude later — not on-device main brain.
 - **Tools (read-heavy + memory):** `body.vitals`, FACT append/search, lifecycle; privileged `dream.push` only to allowlisted backup remote after **one-time** operator confirm.
 - **Channel:** **Tailscale-only web HUD + chat**; ACL Aryan devices; session auth for Agent writes. No public agent ingress.
-- **Proactivity v0:** **warmly forward** briefs/nudges, attributable; quiet hours **23:00–07:00 NZST** with **heal-first** overnight faults; never silent unallowlisted external side effects.
+- **Proactivity v0:** **warmly forward** briefs/nudges, attributable; quiet hours **23:00–05:30 NZST** with **heal-first** overnight faults; default morning brief **05:30**; never silent unallowlisted external side effects.
 - **Safety:** secrets outside git; deny open anonymous control; never-to-cloud secret class.
 
 ### Tier B — next (software + peripherals, still Pi5)
@@ -296,7 +296,7 @@ Do **not** prioritize in rewrite/v1-body:
 ### Sequence (design intent; not implemented here)
 1. **Body sense:** answer “how are you / how is the body?” from real sensors with receipts.
 2. **Chat turn + tool loop (Gemini):** user → cortex → tools → observation → answer; transcript in `/mnt/ada-data/runs/...`.
-3. **Memory write/read:** “remember that I prefer NZST briefs at 07:30” → FACT store → later retrieve.
+3. **Memory write/read:** “remember that I prefer NZST briefs at 05:30” → FACT store → later retrieve.
 4. **Warmly forward brief:** daily status proposal (body + prefs); respect quiet hours; mute available.
 5. **Dream seal (local):** fsync + checksummed package; light capped manage-pass optional; WORLDVIEW digest cites FACTS; whitelist auto-merge only; push after one-time remote confirm.
 6. **Eval smokes:** disk free accuracy; remember/retrieve FACT; Tailscale-only; no fake success without receipt.
@@ -320,7 +320,7 @@ This delivers Jarvis-*feel* ingredients that are **evidence-aligned** on this ha
 | 7 | Quiet / faults | Heal-first overnight; wake only if recovery fails or urgent faults (body list) |
 | 8 | Lab | Module research card before major slices; harder-but-correct when it teaches |
 | — | Operator | **Aryan** sole command authority; people known by name, no order rights |
-| — | Voice/personality | Full-stage witty roast energy (**she/her**); truth over charm; warmly forward + quiet 23:00–07:00 NZST |
+| — | Voice/personality | Full-stage witty roast energy (**she/her**); truth over charm; warmly forward + quiet **23:00–05:30 NZST** |
 
 Living-doc note: amend via constitution change process when locks move; patch this table when superseded.
 

@@ -14,3 +14,4 @@ def test_charter_loaded_includes_mode():
     assert "Never claim consciousness" in text
     assert "Observe" in text
     assert "body_vitals" in text
+    assert "FACTS (dry" in text

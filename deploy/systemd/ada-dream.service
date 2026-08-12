@@ -1,0 +1,19 @@
+# Optional pointer — NOT an acceptance gate (M04).
+# Invokes local Dream seal + capped manage; push remains stubbed (skipped).
+
+[Unit]
+Description=ADA Dream run (local seal + manage)
+After=local-fs.target
+# Refuse if ada-data missing — organ raises BodyFault.
+
+[Service]
+Type=oneshot
+User=ada-pi5
+WorkingDirectory=/mnt/ada-data/ADA
+Environment=ADA_DATA_ROOT=/mnt/ada-data
+# Prefer venv ada on metal; adjust path if installed differently.
+ExecStart=/mnt/ada-data/ADA/.venv/bin/ada dream run
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

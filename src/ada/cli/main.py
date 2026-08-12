@@ -1,4 +1,4 @@
-"""Body sense + chat harness + HUD CLI (M00/M02/M03)."""
+"""Body sense + chat harness + HUD + memory/Dream CLI (M00/M02/M03/M04)."""
 
 from __future__ import annotations
 
@@ -24,13 +24,17 @@ err_console = Console(stderr=True)
 
 app = typer.Typer(
     name="ada",
-    help="ADA — body organs + chat harness + HUD.",
+    help="ADA — body organs + chat harness + HUD + memory/Dream.",
     no_args_is_help=True,
 )
 body_app = typer.Typer(help="Body sense: vitals, identity, lifecycle.", no_args_is_help=True)
 hud_app = typer.Typer(help="Control-plane HUD (localhost + Tailscale Serve).", no_args_is_help=True)
+memory_app = typer.Typer(help="FACTS / WORLDVIEW / open loops (M04).", no_args_is_help=True)
+dream_app = typer.Typer(help="Dream seal / status (M04).", no_args_is_help=True)
 app.add_typer(body_app, name="body")
 app.add_typer(hud_app, name="hud")
+app.add_typer(memory_app, name="memory")
+app.add_typer(dream_app, name="dream")
 
 
 def _exit_body_fault(exc: BodyFault) -> None:
@@ -401,9 +405,173 @@ def hud_serve(
     uvicorn.run(create_app(), host=bind_host, port=port, log_level="info")
 
 
+@memory_app.command("get")
+def memory_get(
+    key: str = typer.Argument(..., help="Fact key, e.g. prefs.brief_time"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Get a FACT by key."""
+    from ada.memory.facts import get_fact
+
+    try:
+        result = get_fact(key)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+    else:
+        console.print(result)
+
+
+@memory_app.command("search")
+def memory_search(
+    query: str = typer.Argument(..., help="Key or grep query"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Search FACTS (key lookup + grep)."""
+    from ada.memory.facts import search_facts
+
+    try:
+        result = search_facts(query)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+    else:
+        console.print_json(data=result)
+
+
+@memory_app.command("append")
+def memory_append(
+    key: str = typer.Option(..., "--key", "-k", help="e.g. prefs.brief_time"),
+    value: str = typer.Option(..., "--value", "-v"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Append/set a FACT field (overwrite of different value → needs_confirm)."""
+    from ada.memory.facts import append_fact
+
+    # Coerce obvious bools.
+    coerced: object = value
+    low = value.strip().lower()
+    if low in {"true", "false"}:
+        coerced = low == "true"
+    try:
+        result = append_fact(key, coerced)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    except ValueError as exc:
+        err_console.print(f"[red]bad args:[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+    if json_out:
+        console.print_json(data=result)
+    else:
+        if result.get("needs_confirm"):
+            console.print(f"[yellow]needs_confirm[/yellow] {result.get('reason')}")
+        else:
+            console.print(f"[green]ok[/green] {key}={result.get('value')!r}")
+    if result.get("needs_confirm"):
+        raise typer.Exit(code=2)
+
+
+@memory_app.command("loops")
+def memory_loops(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """List open loops."""
+    from ada.memory.open_loops import list_loops
+
+    try:
+        loops = list_loops(status="open")
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data={"loops": loops, "count": len(loops)})
+    else:
+        if not loops:
+            console.print("(no open loops)")
+            return
+        for loop in loops:
+            console.print(f"- [{loop.get('id')}] {loop.get('text')}")
+
+
+@dream_app.command("status")
+def dream_status_cmd(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show last dream_ok/fail + outbox pending."""
+    from ada.dream.run import dream_status
+
+    try:
+        status = dream_status()
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=status)
+    else:
+        ok = status.get("last_dream_ok")
+        fail = status.get("last_dream_fail")
+        console.print(f"last_dream_ok: {ok['ts'] if ok else '(none)'} id={ok['id'] if ok else '-'}")
+        console.print(
+            f"last_dream_fail: {fail['ts'] if fail else '(none)'} "
+            f"id={fail['id'] if fail else '-'}"
+        )
+        console.print(f"outbox_pending: {status.get('outbox_count')} {status.get('outbox_pending')}")
+        console.print(f"staging_pending: {status.get('staging_pending')}")
+        console.print(f"push: {status.get('push')}")
+
+
+@dream_app.command("run")
+def dream_run_cmd(
+    skip_manage: bool = typer.Option(
+        False,
+        "--skip-manage",
+        help="Seal only — skip Gemini manage-pass (still dream_ok on seal).",
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Local Dream: delta → seal → capped manage → whitelist merge → push stub."""
+    from ada.dream.run import dream_run
+
+    try:
+        result = dream_run(skip_manage=skip_manage)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        # Avoid dumping huge nested objects with non-JSON types.
+        slim = {
+            "ok": result.get("ok"),
+            "status": result.get("status"),
+            "dream_id": result.get("dream_id"),
+            "receipts": result.get("receipts"),
+            "push": result.get("push"),
+            "manage": {
+                "ok": (result.get("manage") or {}).get("ok"),
+                "skipped": (result.get("manage") or {}).get("skipped"),
+                "reason": (result.get("manage") or {}).get("reason"),
+            },
+        }
+        console.print_json(data=slim)
+    else:
+        rid = result.get("dream_id")
+        push = (result.get("push") or {}).get("push")
+        manage = result.get("manage") or {}
+        console.print(f"[green]dream_ok[/green] {rid}")
+        console.print(
+            f"  seal={result.get('seal', {}).get('package_sha256', '')[:16]}… "
+            f"manage_skipped={manage.get('skipped')} push={push}"
+        )
+        console.print(f"  outbox={result.get('seal', {}).get('outbox_path')}")
+
+
 @app.callback()
 def main_callback() -> None:
-    """ADA — body sense + chat harness + HUD."""
+    """ADA — body sense + chat harness + HUD + memory/Dream."""
 
 
 def main() -> None:

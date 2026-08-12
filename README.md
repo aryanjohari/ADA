@@ -1,6 +1,6 @@
-# ADA (M00–M03)
+# ADA (M00–M04)
 
-Body sense, Gemini chat harness, and a Tailscale Serve control-plane HUD on the Pi.
+Body sense, Gemini chat harness, Tailscale Serve control-plane HUD, and dual-store memory + Dream seal on the Pi.
 
 ## Install
 
@@ -63,6 +63,26 @@ tailscale serve status          # expect proxy → 127.0.0.1; Funnel off
 - Observe chat works with mesh presence via Serve; Agent/Plan need session login.
 - Vitals panes call the same organs as `ada body doctor`.
 - Chat uses the same `harness.run_turn` / `runs/` JSONL as `ada chat` (one interactive writer at a time).
+
+## CLI — memory / Dream (M04)
+
+Dual-store FACTS (YAML) + WORLDVIEW (MD). No embeddings. Dream push is stubbed.
+
+```bash
+ada memory append --key prefs.brief_time --value 05:30
+ada memory get prefs.brief_time
+ada memory search brief_time
+ada memory loops
+
+ada dream run                 # delta → seal → capped manage → merge → push=skipped
+ada dream run --skip-manage   # local seal only (still dream_ok)
+ada dream status
+```
+
+Optional timer pointer (not a gate): `deploy/systemd/ada-dream.timer` (~03:30 NZST).
+Quiet hours **23:00–05:30 NZST**; default `brief_time` **05:30**.
+
+Voice exemplars: `docs/VOICE_EXEMPLARS.md` (boot-loaded with §14 + anti-fluff).
 
 Equivalent without the Typer wrapper:
 

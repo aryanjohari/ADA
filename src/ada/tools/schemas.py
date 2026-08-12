@@ -1,4 +1,4 @@
-"""Gemini FunctionDeclaration schemas — not raw AFC callables (M02 §5.1)."""
+"""Gemini FunctionDeclaration schemas — not raw AFC callables (M02/M04)."""
 
 from __future__ import annotations
 
@@ -10,13 +10,26 @@ TOOL_NAMES = frozenset(
         "body_whoami",
         "body_story",
         "body_doctor",
+        "memory_facts_get",
+        "memory_facts_search",
+        "memory_facts_append",
+        "memory_facts_propose_edit",
+        "memory_open_loops_list",
+        "memory_open_loops_upsert",
+        "memory_worldview_search",
+        "memory_worldview_write",
+        "dream_status",
     }
 )
 
-# Future write tools — denied in Observe when registered later.
+# Write tools — denied in Observe/Plan; allowed in Agent.
 WRITE_TOOL_NAMES = frozenset(
     {
-        "fact_append",  # stub name for mode tests only
+        "fact_append",  # stub name kept for legacy mode tests
+        "memory_facts_append",
+        "memory_facts_propose_edit",
+        "memory_open_loops_upsert",
+        "memory_worldview_write",
     }
 )
 
@@ -69,6 +82,145 @@ def function_declarations() -> list[dict[str, Any]]:
             "description": (
                 "Mount honesty + probe_errors + urgent fault flags "
                 "(same spirit as `ada body doctor`)."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "memory_facts_get",
+            "description": (
+                "Get a FACT by key (e.g. prefs.brief_time) or doc name (prefs). "
+                "FACTS are dry standing truth — not WORLDVIEW digests."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Dotted key or doc name",
+                    }
+                },
+                "required": ["key"],
+            },
+        },
+        {
+            "name": "memory_facts_search",
+            "description": (
+                "Search FACTS by key lookup + grep across facts/*.yaml. No embeddings."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "max_hits": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "memory_facts_append",
+            "description": (
+                "Append/set a FACT (Agent mode). Use prefs.brief_time etc. "
+                "Overwrite of existing different value returns needs_confirm."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "e.g. prefs.brief_time",
+                    },
+                    "value": {
+                        "description": "Value to store (string/bool/number)",
+                    },
+                    "note": {"type": "string"},
+                },
+                "required": ["key", "value"],
+            },
+        },
+        {
+            "name": "memory_facts_propose_edit",
+            "description": (
+                "Propose FACT overwrite. Without confirmed=true returns needs_confirm."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "value": {},
+                    "confirmed": {"type": "boolean"},
+                },
+                "required": ["key", "value"],
+            },
+        },
+        {
+            "name": "memory_open_loops_list",
+            "description": "List open loops (projects/promises/TODOs).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Filter status (default open)",
+                    },
+                    "limit": {"type": "integer"},
+                },
+            },
+        },
+        {
+            "name": "memory_open_loops_upsert",
+            "description": (
+                "Create/update an open loop (Agent). Delete requires confirmed=true."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "id": {"type": "string"},
+                    "status": {"type": "string"},
+                    "delete": {"type": "boolean"},
+                    "confirmed": {"type": "boolean"},
+                },
+            },
+        },
+        {
+            "name": "memory_worldview_search",
+            "description": (
+                "Search WORLDVIEW digests (interpretive). Digests ≠ metal FACTS."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_hits": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "memory_worldview_write",
+            "description": (
+                "Write a WORLDVIEW digest (Agent). cites[] required and non-empty. "
+                "Never overwrites FACTS."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "body": {"type": "string"},
+                    "cites": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "FACT keys and/or run/lifecycle receipts",
+                    },
+                    "title": {"type": "string"},
+                },
+                "required": ["body", "cites"],
+            },
+        },
+        {
+            "name": "dream_status",
+            "description": (
+                "Last dream_ok/fail, outbox pending, staging count. "
+                "Dream runs primarily via `ada dream run`, not chat."
             ),
             "parameters": {"type": "object", "properties": {}},
         },

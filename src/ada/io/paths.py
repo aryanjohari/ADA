@@ -42,6 +42,36 @@ class DataPaths:
         return self.facts / "identity.yaml"
 
     @property
+    def prefs_yaml(self) -> Path:
+        return self.facts / "prefs.yaml"
+
+    @property
+    def open_loops_yaml(self) -> Path:
+        return self.facts / "open_loops.yaml"
+
+    @property
+    def people(self) -> Path:
+        return self.facts / "people"
+
+    @property
+    def aryan_yaml(self) -> Path:
+        return self.people / "aryan.yaml"
+
+    @property
+    def worldview(self) -> Path:
+        return self.memory / "worldview"
+
+    @property
+    def dreams(self) -> Path:
+        """Dream-produced WORLDVIEW digests under memory/."""
+        return self.memory / "dreams"
+
+    @property
+    def memory_staging(self) -> Path:
+        """Dream FACT candidates awaiting confirm."""
+        return self.memory / "staging"
+
+    @property
     def lifecycle_jsonl(self) -> Path:
         return self.memory / "lifecycle.jsonl"
 
@@ -49,6 +79,39 @@ class DataPaths:
     def runs(self) -> Path:
         """Episodic chat transcripts / tool receipts (M02)."""
         return self.root / "runs"
+
+    @property
+    def dream(self) -> Path:
+        """Sealed Dream packages tree (staging / outbox / sent)."""
+        return self.root / "dream"
+
+    @property
+    def dream_staging(self) -> Path:
+        return self.dream / "staging"
+
+    @property
+    def dream_outbox(self) -> Path:
+        return self.dream / "outbox"
+
+    @property
+    def dream_sent(self) -> Path:
+        return self.dream / "sent"
+
+    def ensure_memory_dirs(self) -> None:
+        """Create memory layout dirs lazily (facts, worldview, dreams, staging)."""
+        for d in (
+            self.facts,
+            self.people,
+            self.worldview,
+            self.dreams,
+            self.memory_staging,
+        ):
+            d.mkdir(parents=True, exist_ok=True)
+
+    def ensure_dream_dirs(self) -> None:
+        """Create dream/{staging,outbox,sent} lazily on first dream.run."""
+        for d in (self.dream_staging, self.dream_outbox, self.dream_sent):
+            d.mkdir(parents=True, exist_ok=True)
 
 
 def get_data_root() -> Path:

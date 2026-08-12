@@ -25,6 +25,8 @@ EventType = Literal[
     "heal_give_up",
     "deploy",
     "note",
+    "dream_ok",
+    "dream_fail",
 ]
 
 V0_EVENT_TYPES: frozenset[str] = frozenset(
@@ -38,6 +40,8 @@ V0_EVENT_TYPES: frozenset[str] = frozenset(
         "heal_give_up",
         "deploy",
         "note",
+        "dream_ok",
+        "dream_fail",
     }
 )
 

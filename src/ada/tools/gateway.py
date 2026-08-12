@@ -12,7 +12,7 @@ from typing import Any, Literal
 from ada.body.vitals import utc_now_iso
 from ada.io.paths import BodyFault
 from ada.runs.append import new_receipt_id
-from ada.tools import body_tools
+from ada.tools import body_tools, memory_tools
 from ada.tools.schemas import TOOL_NAMES, WRITE_TOOL_NAMES
 
 Mode = Literal["observe", "agent", "plan"]
@@ -55,8 +55,6 @@ class Gateway:
     extra_handlers: dict[str, Any] = field(default_factory=dict)
 
     def allowed_tools(self) -> frozenset[str]:
-        # v1: all four body reads in Observe/Agent/Plan.
-        # Write tools never allowed in Observe; Agent would allow later — none in M02.
         return TOOL_NAMES
 
     def execute(self, tool: str, args: dict[str, Any] | None = None) -> GatewayResult:
@@ -64,7 +62,6 @@ class Gateway:
         receipt_id = new_receipt_id()
         ts = utc_now_iso()
 
-        # Future write tools: deny in Observe/Plan; M02 Agent has no write tools yet.
         if tool in WRITE_TOOL_NAMES and self.mode in ("observe", "plan"):
             reason = (
                 f"tool '{tool}' is a write tool; denied in {self.mode.capitalize()} mode"
@@ -127,8 +124,25 @@ class Gateway:
                     error="n must be an integer",
                     outcome="error",
                 )
+        if tool == "memory_worldview_write":
+            cites = args.get("cites")
+            if not cites or (isinstance(cites, list) and not any(str(c).strip() for c in cites)):
+                return GatewayResult(
+                    ok=False,
+                    tool=tool,
+                    args=args,
+                    receipt_id=receipt_id,
+                    ts=ts,
+                    error="WORLDVIEW write requires non-empty cites[]",
+                    denied_reason="WORLDVIEW write requires non-empty cites[]",
+                    outcome="denied",
+                )
 
-        handler = self.extra_handlers.get(tool) or body_tools.DISPATCH.get(tool)
+        handler = (
+            self.extra_handlers.get(tool)
+            or memory_tools.DISPATCH.get(tool)
+            or body_tools.DISPATCH.get(tool)
+        )
         if handler is None:
             return GatewayResult(
                 ok=False,
@@ -163,12 +177,37 @@ class Gateway:
                 outcome="error",
             )
 
+        # Propagate needs_confirm from memory organs.
+        needs_confirm = False
+        outcome = "ok"
+        ok = True
+        if isinstance(data, dict):
+            if data.get("needs_confirm"):
+                needs_confirm = True
+                outcome = "needs_confirm"
+                ok = False
+            elif data.get("ok") is False and data.get("outcome") == "error":
+                ok = False
+                outcome = "error"
+                return GatewayResult(
+                    ok=False,
+                    tool=tool,
+                    args=args,
+                    receipt_id=receipt_id,
+                    ts=ts,
+                    data=data,
+                    error=data.get("error") or data.get("denied_reason"),
+                    denied_reason=data.get("denied_reason"),
+                    outcome="error",
+                )
+
         return GatewayResult(
-            ok=True,
+            ok=ok,
             tool=tool,
             args=args,
             receipt_id=receipt_id,
             ts=ts,
             data=data,
-            outcome="ok",
+            needs_confirm=needs_confirm,
+            outcome=outcome,
         )
