@@ -109,7 +109,9 @@ class ChatService:
                     "run_path": path,
                 }
 
-            system = build_system_charter(mode=mode)
+            system = build_system_charter(
+                mode=mode, chill_active=self.session.chill_active
+            )
             result: LoopResult = run_turn(
                 self.session,
                 user_text,

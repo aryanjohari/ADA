@@ -283,6 +283,10 @@ Knowing things from day one does **not** require Dream: awake FACT appends alrea
 | `tease_ok` | bool |
 | `preferred_tz` | IANA tz string (default Pacific/Auckland) |
 | `brief_enabled` | bool |
+| `roast_energy` | float 0..1 (default **0.65** — M05 register capacity) |
+| `humor_density` | float 0..1 (default **0.15** — low by default) |
+| `chill_immediate` | bool (default **true** — honor chill for session) |
+| `humor_banned_topics` | list of strings (default **[]** stub) |
 
 **Always stage (never auto-merge):** people graphs, secrets, identity fields (`born_at`, operator, pronouns), open financial/health, conflicting values vs existing FACT, any key not listed above.
 

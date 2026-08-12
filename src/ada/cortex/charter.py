@@ -16,10 +16,16 @@ from ada.io.paths import BodyFault, get_paths
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CONSTITUTION = _REPO_ROOT / "docs" / "02_CONSTITUTION.md"
 _DEFAULT_VOICE_EXEMPLARS = _REPO_ROOT / "docs" / "VOICE_EXEMPLARS.md"
+_DEFAULT_VOICE_REGISTER = _REPO_ROOT / "docs" / "VOICE_REGISTER.md"
 
 _SECTION_14_RE = re.compile(
     r"##\s*14\.\s*Prompt extract.*?\n```text\n(.*?)```",
     re.DOTALL | re.IGNORECASE,
+)
+
+_REGISTER_FENCE_RE = re.compile(
+    r"```text\n(.*?)```",
+    re.DOTALL,
 )
 
 ANTI_FLUFF_ADDENDUM = """Anti-fluff (hard rules):
@@ -29,6 +35,39 @@ ANTI_FLUFF_ADDENDUM = """Anti-fluff (hard rules):
 - FACTS are dry standing truth. WORLDVIEW digests are interpretive and must be labeled as such — never equal to vitals/lifecycle metal.
 - Prefer short, sharp answers; truth beats charm. If Aryan says chill, chill immediately.
 """
+
+# Compact fallback if docs/VOICE_REGISTER.md is missing (M05).
+REGISTER_CONTRACT_FALLBACK = """REGISTER CONTRACT (formatting layer — truth > charm):
+dials: roast_energy=0.65; humor_density=0.15; casualness=0.75;
+  formality=0.25; directness=0.85; intimacy_scope=small;
+  cadence=short_sentences; uncertainty=refuse_or_check_≤2;
+  chill_immediate=true; humor_banned_topics=[]
+intent→class:
+  social: tools usually none; 1–3 short sentences; soft cap ~60 tok; light roast optional
+  lookup: tools if needed; list/facts first; roast usually off; ~160
+  task: result first; roast only if plan deserves; ~160
+  challenge: short pushback; roast ON if tease_ok and not chilled
+  refuse: ≤2 sentences; dry wit OK; no tools
+  deep_dive: structured; ask before essay; roast low; ~320
+humor gate: roast only when situation invites AND prefs.tease_ok
+  AND not session-chilled; never invent facts for jokes; never on missing evidence
+anti-copy: paraphrase register; NEVER copy distinctive VOICE_EXEMPLARS phrases
+chill: on "chill"/"softer"/"stop roasting" → roast_energy soft floor ~0.2 for session
+time-speak: answers use prefs.preferred_tz plain speech (e.g. 5:12am NZST, Wed 12 Aug);
+  keep ISO/HH:MM only when writing FACTS or when Aryan asks for exact metal
+"""
+
+CHILL_SESSION_OVERRIDE = (
+    "Session override: chill_active — keep roast_energy soft (~0.2); stay useful."
+)
+
+_REGISTER_DIAL_KEYS = (
+    "roast_energy",
+    "humor_density",
+    "chill_immediate",
+    "humor_banned_topics",
+    "tease_ok",
+)
 
 
 class CharterError(Exception):
@@ -50,6 +89,45 @@ def load_section_14_extract(constitution_path: Path | None = None) -> str:
         if "Never claim consciousness" not in extract:
             raise CharterError("§14 extract missing consciousness refusal cue")
     return extract
+
+
+def load_register_contract(path: Path | None = None, *, max_chars: int = 1200) -> str:
+    """Load compact register dials + intent/humor gates (M05)."""
+    p = path or _DEFAULT_VOICE_REGISTER
+    if not p.is_file():
+        text = REGISTER_CONTRACT_FALLBACK.strip()
+    else:
+        raw = p.read_text(encoding="utf-8")
+        fence = _REGISTER_FENCE_RE.search(raw)
+        text = fence.group(1).strip() if fence else raw.strip()
+    if len(text) > max_chars:
+        text = text[: max_chars - 20] + "\n…(truncated)"
+    return text
+
+
+def _fact_register_overrides() -> str | None:
+    """Emit live FACT dial line when prefs differ from contract defaults."""
+    try:
+        from ada.memory.facts import DEFAULT_PREFS, load_prefs
+        from ada.memory.facts import get_paths_soft
+
+        paths = get_paths_soft()
+        if paths is None:
+            return None
+        prefs = load_prefs(paths) if paths.prefs_yaml.is_file() else dict(DEFAULT_PREFS)
+        bits: list[str] = []
+        for k in _REGISTER_DIAL_KEYS:
+            if k not in prefs:
+                continue
+            val = prefs[k]
+            default = DEFAULT_PREFS.get(k)
+            if val != default:
+                bits.append(f"{k}={val!r}")
+        if not bits:
+            return None
+        return "FACT register overrides (standing): " + "; ".join(bits)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def load_voice_exemplars(path: Path | None = None, *, max_chars: int = 2400) -> str:
@@ -133,8 +211,9 @@ def build_system_charter(
     mode: str = "observe",
     constitution_path: Path | None = None,
     include_worldview: bool = True,
+    chill_active: bool = False,
 ) -> str:
-    """Full system prompt: §14 + mode + identity + anti-fluff + exemplars + FACT slice."""
+    """Full system prompt: §14 + anti-fluff + register + exemplars + FACT slice."""
     parts = [
         load_section_14_extract(constitution_path),
         "",
@@ -143,10 +222,21 @@ def build_system_charter(
         "",
         ANTI_FLUFF_ADDENDUM.strip(),
         "",
-        load_voice_exemplars(),
-        "",
-        _fact_boot_slice(),
+        load_register_contract(),
     ]
+    overrides = _fact_register_overrides()
+    if overrides:
+        parts.extend(["", overrides])
+    if chill_active:
+        parts.extend(["", CHILL_SESSION_OVERRIDE])
+    parts.extend(
+        [
+            "",
+            load_voice_exemplars(),
+            "",
+            _fact_boot_slice(),
+        ]
+    )
     if include_worldview:
         parts.extend(["", _worldview_boot_slice()])
     parts.extend(

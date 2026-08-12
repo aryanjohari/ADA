@@ -1,4 +1,4 @@
-"""Boot pack includes FACT slice, voice exemplars, anti-fluff (M04)."""
+"""Boot pack includes FACT slice, voice exemplars, anti-fluff (M04/M05)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 from ada.cortex.charter import (
     ANTI_FLUFF_ADDENDUM,
     build_system_charter,
+    load_register_contract,
     load_voice_exemplars,
 )
 from ada.io.paths import get_paths
@@ -32,6 +33,14 @@ def test_charter_includes_anti_fluff_and_facts(data_root: Path) -> None:
     assert "Voice exemplars" in text
     assert "WORLDVIEW" in text
     assert "memory_facts_append" in text
+    assert "REGISTER CONTRACT" in text
+    assert text.find("REGISTER CONTRACT") < text.find("Voice exemplars")
+
+
+def test_register_contract_loads() -> None:
+    block = load_register_contract()
+    assert "roast_energy" in block
+    assert "tease_ok" in block
 
 
 def test_fluff_ban_list_present() -> None:

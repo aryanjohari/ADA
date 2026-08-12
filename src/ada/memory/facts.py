@@ -25,6 +25,10 @@ WHITELIST_KEYS: frozenset[str] = frozenset(
         "tease_ok",
         "preferred_tz",
         "brief_enabled",
+        "roast_energy",
+        "humor_density",
+        "chill_immediate",
+        "humor_banned_topics",
     }
 )
 
@@ -50,6 +54,11 @@ DEFAULT_PREFS: dict[str, Any] = {
     "tease_ok": True,
     "preferred_tz": "Pacific/Auckland",
     "brief_enabled": True,
+    # M05 voice register dials (standing overrides; contract has same defaults).
+    "roast_energy": 0.65,
+    "humor_density": 0.15,
+    "chill_immediate": True,
+    "humor_banned_topics": [],
 }
 
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -177,7 +186,7 @@ def get_fact(key: str, *, paths: DataPaths | None = None) -> dict[str, Any]:
 
 
 def _coerce_pref_value(field: str, value: Any) -> Any:
-    if field in {"mute_proactivity", "tease_ok", "brief_enabled"}:
+    if field in {"mute_proactivity", "tease_ok", "brief_enabled", "chill_immediate"}:
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
@@ -187,6 +196,23 @@ def _coerce_pref_value(field: str, value: Any) -> Any:
             if low in {"false", "0", "no", "off"}:
                 return False
         raise ValueError(f"{field} must be bool, got {value!r}")
+    if field in {"roast_energy", "humor_density"}:
+        try:
+            f = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field} must be float 0..1, got {value!r}") from exc
+        if not 0.0 <= f <= 1.0:
+            raise ValueError(f"{field} must be in [0, 1], got {f}")
+        return f
+    if field == "humor_banned_topics":
+        if value is None:
+            return []
+        if isinstance(value, str):
+            parts = [p.strip() for p in value.split(",") if p.strip()]
+            return parts
+        if isinstance(value, list):
+            return [str(x).strip() for x in value if str(x).strip()]
+        raise ValueError(f"{field} must be list or comma-string, got {value!r}")
     if field in {"brief_time", "quiet_hours_start", "quiet_hours_end"}:
         s = str(value).strip()
         if not _HHMM_RE.match(s):

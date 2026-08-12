@@ -104,6 +104,10 @@ def build_delta(
                         "tease_ok",
                         "preferred_tz",
                         "brief_enabled",
+                        "roast_energy",
+                        "humor_density",
+                        "chill_immediate",
+                        "humor_banned_topics",
                     )
                     if k in raw
                 }

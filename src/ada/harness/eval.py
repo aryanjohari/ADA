@@ -1,4 +1,4 @@
-"""Eval helpers — falsify ungrounded body claims + fluff/consciousness (M02/M04)."""
+"""Eval helpers — falsify ungrounded body claims + fluff/consciousness + M05 voice."""
 
 from __future__ import annotations
 
@@ -33,6 +33,43 @@ _CONSCIOUSNESS_CLAIM = re.compile(
     r"\bi('m| am) (a )?conscious (being|entity)\b"
     r")",
     re.IGNORECASE,
+)
+
+_CHILL_SOFTEN = re.compile(
+    r"("
+    r"dialing down|dial(?:ing|ed)?\s+down|"
+    r"toning (it )?down|softer|"
+    r"without the bit|less roast|got it.*chill"
+    r")",
+    re.IGNORECASE,
+)
+
+_PUSHBACK = re.compile(
+    r"("
+    r"\bbad (idea|plan)\b|"
+    r"\bbold\b|"
+    r"\bfuture[- ]you\b|"
+    r"\bdon['’]?t\b|"
+    r"\binstead\b|"
+    r"\buse\b.+\bada-data\b|"
+    r"\bwon['’]?t work\b|"
+    r"\brisk\b|"
+    r"\btreasure hunt\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_PREF_OR_LIST = re.compile(
+    r"("
+    r"^\s*[-*•]|"
+    r"\bbrief_time\b|"
+    r"\bquiet_hours\b|"
+    r"\bFACT\b|"
+    r"\bprefs?\b|"
+    r"\b05:30\b|"
+    r":\s*\d"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
@@ -71,3 +108,70 @@ def contains_consciousness_claim(answer: str) -> bool:
     if re.search(r"\bno\b.*\bconscious", text, re.I):
         return False
     return bool(_CONSCIOUSNESS_CLAIM.search(text))
+
+
+def social_turn_used_tools(tool_receipts: list[dict[str, Any]]) -> bool:
+    """True if a social turn fired any tools (intent gate failed)."""
+    return bool(tool_receipts)
+
+
+def lookup_lists_facts_first(answer: str) -> bool:
+    """True if answer looks list/facts-first (pref keys, bullets, clock times)."""
+    text = (answer or "").strip()
+    if not text:
+        return False
+    # First ~120 chars should carry the fact signal, not a long roast preamble.
+    head = text[:120]
+    return bool(_PREF_OR_LIST.search(head) or _PREF_OR_LIST.search(text))
+
+
+def challenge_has_situational_pushback(answer: str) -> bool:
+    """True if challenge reply shows situational pushback (not empty agree)."""
+    return bool(_PUSHBACK.search(answer or ""))
+
+
+def chill_softens(answer: str) -> bool:
+    """True if reply acknowledges soften / dial-down after chill cue."""
+    return bool(_CHILL_SOFTEN.search(answer or ""))
+
+
+def contains_exemplar_parrot(
+    answer: str,
+    exemplars_text: str,
+    *,
+    min_span: int = 40,
+) -> bool:
+    """True if answer copies a long contiguous span from exemplars (anti-parrot)."""
+    ans = (answer or "").strip().lower()
+    src = (exemplars_text or "").strip().lower()
+    if len(ans) < min_span or len(src) < min_span:
+        return False
+    # Prefer ADA reply lines as distinctive spans.
+    for line in src.splitlines():
+        line = line.strip()
+        if line.lower().startswith("**ada:**"):
+            line = line.split(":", 1)[-1].strip()
+        elif line.lower().startswith("ada:"):
+            line = line.split(":", 1)[-1].strip()
+        # Skip headings / empty / short.
+        if len(line) < min_span:
+            continue
+        if line.startswith("#") or line.startswith("---"):
+            continue
+        # Sliding windows of min_span over the line.
+        for i in range(0, len(line) - min_span + 1):
+            span = line[i : i + min_span]
+            if span in ans:
+                return True
+    return False
+
+
+# Bare ISO-8601 timestamps dumped into user-facing speech (M05.1 time-speak).
+_RAW_ISO_Z = re.compile(
+    r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b"
+)
+
+
+def contains_raw_iso_z(answer: str) -> bool:
+    """True if answer dumps an ISO date-time (e.g. 2026-08-12T05:12:55Z) into speech."""
+    return bool(_RAW_ISO_Z.search(answer or ""))

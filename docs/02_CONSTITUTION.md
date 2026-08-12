@@ -120,7 +120,7 @@ Default for risky novelty: **Plan** then escalate. Default for normal chat with 
 - Append durable FACT notes (“remember this”).  
 - Write WORLDVIEW digests that cite FACTS/receipts (never overwrite FACTS).  
 - Run local Dream seal (`dream.run`): fsync, package, checksum, light manage-pass.  
-- Auto-merge Dream FACT candidates **only** on the body whitelist (`brief_time`, quiet-hour keys, `mute_proactivity`, `tease_ok`, `preferred_tz`, `brief_enabled`, …).  
+- Auto-merge Dream FACT candidates **only** on the body whitelist (`brief_time`, quiet-hour keys, `mute_proactivity`, `tease_ok`, `preferred_tz`, `brief_enabled`, register dials `roast_energy` / `humor_density` / `chill_immediate` / `humor_banned_topics`, …).  
 - User-facing proactive briefs/nudges **outside quiet hours** (subject to mute).  
 - Overnight heal/retry/cleanup without waking Aryan when successful.
 

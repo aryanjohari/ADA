@@ -3,15 +3,27 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from ada.cortex.adapter import CortexAdapter, CortexTurn
-from ada.cortex.charter import build_system_charter
+from ada.cortex.charter import CHILL_SESSION_OVERRIDE, build_system_charter
 from ada.cortex.cost import estimate_usd
 from ada.cortex.gemini import observation_to_content, user_content
 from ada.harness.session import ChatSession
 from ada.harness.stream_events import CallbackSink, NullSink, StreamSink
+
+# Narrow chill cues (M05) — sticky for the session once matched.
+_CHILL_CUE = re.compile(
+    r"\b(chill|softer|stop roasting|tone it down|less roast)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_chill_cue(user_text: str) -> bool:
+    """True if user asked to soften roast for the session."""
+    return bool(_CHILL_CUE.search(user_text or ""))
 
 
 @dataclass
@@ -44,6 +56,14 @@ def _append_usage(session: ChatSession, turn: CortexTurn, sink: StreamSink) -> d
     return usage
 
 
+def _apply_chill_to_system(system_prompt: str, *, chill_active: bool) -> str:
+    if not chill_active:
+        return system_prompt
+    if CHILL_SESSION_OVERRIDE in system_prompt:
+        return system_prompt
+    return system_prompt.rstrip() + "\n\n" + CHILL_SESSION_OVERRIDE
+
+
 def run_turn(
     session: ChatSession,
     user_text: str,
@@ -65,7 +85,16 @@ def run_turn(
     sink.emit("mode_info", {"mode": session.mode})
     sink.emit("session_receipt_path", {"path": str(session.run_path)})
 
-    system_prompt = system or build_system_charter(mode=session.mode)
+    if detect_chill_cue(user_text):
+        session.chill_active = True
+
+    if system is None:
+        system_prompt = build_system_charter(
+            mode=session.mode, chill_active=session.chill_active
+        )
+    else:
+        system_prompt = _apply_chill_to_system(system, chill_active=session.chill_active)
+
     history: list[Any] = contents if contents is not None else []
     history.append(user_content(user_text))
 

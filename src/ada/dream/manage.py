@@ -17,7 +17,8 @@ Given a DELTA summary only, return ONE JSON object with keys:
   digest: string (short interpretive daily digest; must not claim consciousness)
   fact_candidates: list of {key, value} — ONLY prefer whitelist keys:
     brief_time, quiet_hours_start, quiet_hours_end, mute_proactivity,
-    tease_ok, preferred_tz, brief_enabled
+    tease_ok, preferred_tz, brief_enabled,
+    roast_energy, humor_density, chill_immediate, humor_banned_topics
   worldview_notes: list of strings
   open_loops: list of {text, status}
   conflicts: list of strings
