@@ -1,4 +1,4 @@
-"""Body sense + chat harness CLI (M00 organs + M02 cortex)."""
+"""Body sense + chat harness + HUD CLI (M00/M02/M03)."""
 
 from __future__ import annotations
 
@@ -16,14 +16,21 @@ from ada.body import identity as identity_mod
 from ada.body import lifecycle as lifecycle_mod
 from ada.body import narrative
 from ada.body.vitals import VitalsSnapshot, collect_vitals, urgent_faults
+from ada.hud import DEFAULT_HOST, DEFAULT_PORT, assert_loopback_host
 from ada.io.paths import BodyFault, ada_data_mounted, get_paths, require_ada_data
 
 console = Console(stderr=False)
 err_console = Console(stderr=True)
 
-app = typer.Typer(name="ada", help="ADA — body organs + chat harness.", no_args_is_help=True)
+app = typer.Typer(
+    name="ada",
+    help="ADA — body organs + chat harness + HUD.",
+    no_args_is_help=True,
+)
 body_app = typer.Typer(help="Body sense: vitals, identity, lifecycle.", no_args_is_help=True)
+hud_app = typer.Typer(help="Control-plane HUD (localhost + Tailscale Serve).", no_args_is_help=True)
 app.add_typer(body_app, name="body")
+app.add_typer(hud_app, name="hud")
 
 
 def _exit_body_fault(exc: BodyFault) -> None:
@@ -360,9 +367,43 @@ def chat(
     raise typer.Exit(code=exit_code)
 
 
+@hud_app.command("serve")
+def hud_serve(
+    host: str = typer.Option(
+        DEFAULT_HOST,
+        "--host",
+        help="Bind address (loopback only; default 127.0.0.1).",
+    ),
+    port: int = typer.Option(
+        DEFAULT_PORT,
+        "--port",
+        help="Local port (Tailscale Serve proxies here).",
+    ),
+) -> None:
+    """Serve the control-plane HUD on localhost (use Tailscale Serve; Funnel NO)."""
+    try:
+        bind_host = assert_loopback_host(host)
+    except ValueError as exc:
+        err_console.print(f"[red]bind refused:[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    import uvicorn
+
+    from ada.hud.app import create_app
+
+    console.print(
+        f"[bold]ADA HUD[/bold] http://{bind_host}:{port}/  "
+        f"(Tailscale: [dim]tailscale serve --bg {port}[/dim]; Funnel off)"
+    )
+    console.print(
+        "[dim]v1: one interactive run writer — avoid concurrent `ada chat` on same session.[/dim]"
+    )
+    uvicorn.run(create_app(), host=bind_host, port=port, log_level="info")
+
+
 @app.callback()
 def main_callback() -> None:
-    """ADA — body sense + chat harness."""
+    """ADA — body sense + chat harness + HUD."""
 
 
 def main() -> None:

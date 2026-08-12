@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>ADA</h1>
+    <p class="tag">control plane · Tailscale Serve · she/her</p>
+  </header>
+
+  <main class="panes">
+    <section class="pane" id="pane-stream" aria-label="Stream">
+      <h2>Stream</h2>
+      <div id="stream" class="stream"></div>
+      <form id="chat-form" class="chat-form">
+        <label class="sr-only" for="chat-input">Message</label>
+        <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
+        <button type="submit" id="chat-send">Send</button>
+      </form>
+    </section>
+
+    <section class="pane" id="pane-vitals" aria-label="Body vitals">
+      <h2>Body vitals</h2>
+      <pre id="vitals" class="mono">loading…</pre>
+    </section>
+
+    <section class="pane" id="pane-lifecycle" aria-label="Lifecycle">
+      <h2>Lifecycle</h2>
+      <pre id="lifecycle" class="mono">loading…</pre>
+    </section>
+
+    <section class="pane" id="pane-mode" aria-label="Mode and permissions">
+      <h2>Mode + perms</h2>
+      <div class="mode-row">
+        <label for="mode-select">Mode</label>
+        <select id="mode-select">
+          <option value="observe" selected>observe</option>
+          <option value="agent">agent</option>
+          <option value="plan">plan</option>
+        </select>
+        <span id="auth-badge" class="badge">auth=mesh</span>
+      </div>
+      <form id="login-form" class="login-form">
+        <label class="sr-only" for="password">Session password</label>
+        <input type="password" id="password" placeholder="session password" autocomplete="current-password" />
+        <button type="submit">Login</button>
+        <button type="button" id="logout-btn">Logout</button>
+      </form>
+      <p id="auth-msg" class="msg"></p>
+      <pre id="mode-detail" class="mono">loading…</pre>
+    </section>
+
+    <section class="pane" id="pane-raw" aria-label="Raw run tail">
+      <h2>Raw run tail</h2>
+      <p id="run-path" class="path"></p>
+      <pre id="raw-tail" class="mono">loading…</pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ada"
 version = "0.1.0"
-description = "ADA body sense + chat harness (M00/M02)"
+description = "ADA body sense + chat harness + Tailscale Serve HUD (M00/M02/M03)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,16 +14,22 @@ dependencies = [
   "typer",
   "rich",
   "google-genai>=1,<3",
+  "fastapi",
+  "uvicorn[standard]",
+  "jinja2",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "httpx"]
 
 [project.scripts]
 ada = "ada.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"ada.hud" = ["templates/*", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

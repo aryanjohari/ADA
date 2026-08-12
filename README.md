@@ -1,6 +1,6 @@
-# ADA (M00 — Body Sense)
+# ADA (M00–M03)
 
-Vitals, identity (birth once), and crash-safe lifecycle on the Pi. No Gemini, Dream, or HUD in this slice.
+Body sense, Gemini chat harness, and a Tailscale Serve control-plane HUD on the Pi.
 
 ## Install
 
@@ -17,7 +17,7 @@ Data root defaults to `/mnt/ada-data`. Override for tests/sandboxes:
 export ADA_DATA_ROOT=/tmp/ada-sandbox
 ```
 
-## CLI
+## CLI — body
 
 ```bash
 ada body birth          # write identity.yaml once + lifecycle birth
@@ -32,15 +32,47 @@ ada body story -n 20    # plain autobiography from ledger only
 ada body doctor         # mount + probes; exit 3 if ada-data missing
 ```
 
+## CLI — chat
+
+```bash
+ada chat                # REPL (observe default)
+ada chat -q "how is the body?"
+ada chat --mode agent
+```
+
+Requires `GEMINI_API_KEY` or `/mnt/ada-data/secrets/gemini.env`.
+
+## CLI — HUD (M03)
+
+Localhost-only control plane (five panes). Expose with **Tailscale Serve** — **Funnel NO**.
+
+```bash
+# secrets for Agent mode (mode 0600; never commit)
+# /mnt/ada-data/secrets/hud.env
+#   ADA_HUD_SESSION_SECRET=...
+#   ADA_HUD_PASSWORD=...
+
+ada hud serve --host 127.0.0.1 --port 8787
+
+# on the Pi (tailnet HTTPS / MagicDNS enabled):
+tailscale serve --bg 8787
+tailscale serve status          # expect proxy → 127.0.0.1; Funnel off
+```
+
+- Bind defaults to `127.0.0.1`; non-loopback hosts are refused.
+- Observe chat works with mesh presence via Serve; Agent/Plan need session login.
+- Vitals panes call the same organs as `ada body doctor`.
+- Chat uses the same `harness.run_turn` / `runs/` JSONL as `ada chat` (one interactive writer at a time).
+
+Equivalent without the Typer wrapper:
+
+```bash
+uvicorn ada.hud.app:create_app --factory --host 127.0.0.1 --port 8787
+```
+
 ## Tests
 
 ```bash
 pytest -q
-# optional manual smoke (uses a temp ADA_DATA_ROOT unless you export one)
-bash scripts/smoke_body.sh
+pytest -q tests/test_hud_*.py
 ```
-
-After a real birth on the HDD substrate you should see:
-
-- `/mnt/ada-data/memory/facts/identity.yaml`
-- `/mnt/ada-data/memory/lifecycle.jsonl`
