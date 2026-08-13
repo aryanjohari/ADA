@@ -119,6 +119,16 @@ def apply_manage_result(
                 stage_candidate(cand, reason=result.get("reason") or "merge_denied", paths=p)
             )
 
+    # M06: stage all open_loops / campaign proposals — never auto-upsert or auto-done.
+    for raw in manage_result.get("open_loops") or []:
+        staged.append(
+            stage_candidate(
+                {"open_loop": raw} if not isinstance(raw, dict) else dict(raw),
+                reason="dream_open_loop_proposal",
+                paths=p,
+            )
+        )
+
     digest = (manage_result.get("digest") or "").strip()
     notes = manage_result.get("worldview_notes") or []
     if digest or notes:

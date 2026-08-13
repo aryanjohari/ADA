@@ -1,0 +1,15 @@
+# Optional pointer — NOT an acceptance gate (M06).
+# Same shape as ada-dream.timer: OS wakes a oneshot, then idle.
+# Default ~05:30 local (morning brief density); heal-first quiet hours mute nudges.
+
+[Unit]
+Description=ADA campaign / brief check timer (~05:30)
+Requires=ada-brief.service
+
+[Timer]
+OnCalendar=*-*-* 05:30:00
+Persistent=true
+Unit=ada-brief.service
+
+[Install]
+WantedBy=timers.target

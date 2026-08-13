@@ -20,7 +20,8 @@ Given a DELTA summary only, return ONE JSON object with keys:
     tease_ok, preferred_tz, brief_enabled,
     roast_energy, humor_density, chill_immediate, humor_banned_topics
   worldview_notes: list of strings
-  open_loops: list of {text, status}
+  open_loops: list of {text, status, kind?} — kind todo|campaign; optional stage notes only.
+    Proposals are STAGED (never auto-done). Do not mark campaigns done without receipts.
   conflicts: list of strings
 Never rewrite born_at. Never invent people. Never claim feelings.
 Return JSON only."""

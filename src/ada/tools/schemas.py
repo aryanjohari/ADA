@@ -154,13 +154,23 @@ def function_declarations() -> list[dict[str, Any]]:
         },
         {
             "name": "memory_open_loops_list",
-            "description": "List open loops (projects/promises/TODOs).",
+            "description": (
+                "List open loops / campaigns (projects, TODOs, long-horizon STATUS). "
+                "Filter by status and kind (todo|campaign)."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "status": {
                         "type": "string",
-                        "description": "Filter status (default open)",
+                        "description": (
+                            "Filter status (default open for todos). "
+                            "Campaigns use active|blocked|waiting_on_aryan|paused|done|failed."
+                        ),
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "todo | campaign (omit for both)",
                     },
                     "limit": {"type": "integer"},
                 },
@@ -169,7 +179,9 @@ def function_declarations() -> list[dict[str, Any]]:
         {
             "name": "memory_open_loops_upsert",
             "description": (
-                "Create/update an open loop (Agent). Delete requires confirmed=true."
+                "Create/update a todo or campaign (Agent). "
+                "Delete and gated stage/campaign done require confirmed=true "
+                "(or last_receipt for gated completion)."
             ),
             "parameters": {
                 "type": "object",
@@ -177,6 +189,35 @@ def function_declarations() -> list[dict[str, Any]]:
                     "text": {"type": "string"},
                     "id": {"type": "string"},
                     "status": {"type": "string"},
+                    "kind": {
+                        "type": "string",
+                        "description": "todo (default) | campaign",
+                    },
+                    "title": {"type": "string"},
+                    "stages": {
+                        "type": "array",
+                        "description": (
+                            "Campaign stages: [{id, state, gate?}]. "
+                            "state=pending|active|done|skipped; gate=confirm for side effects."
+                        ),
+                        "items": {"type": "object"},
+                    },
+                    "current_stage": {"type": "string"},
+                    "blocked_reason": {"type": "string"},
+                    "next_wake_at": {
+                        "type": "string",
+                        "description": "ISO8601 wake time",
+                    },
+                    "last_progress_at": {"type": "string"},
+                    "last_receipt": {
+                        "type": "string",
+                        "description": "runs/ receipt pointer for claimed progress",
+                    },
+                    "cadence": {
+                        "type": "string",
+                        "description": "on_open_only | daily",
+                    },
+                    "nudge_attribution": {"type": "object"},
                     "delete": {"type": "boolean"},
                     "confirmed": {"type": "boolean"},
                 },

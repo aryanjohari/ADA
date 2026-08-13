@@ -31,10 +31,15 @@ body_app = typer.Typer(help="Body sense: vitals, identity, lifecycle.", no_args_
 hud_app = typer.Typer(help="Control-plane HUD (localhost + Tailscale Serve).", no_args_is_help=True)
 memory_app = typer.Typer(help="FACTS / WORLDVIEW / open loops (M04).", no_args_is_help=True)
 dream_app = typer.Typer(help="Dream seal / status (M04).", no_args_is_help=True)
+campaigns_app = typer.Typer(
+    help="Campaign STATUS on disk (M06) — metal truth, no Gemini.",
+    no_args_is_help=True,
+)
 app.add_typer(body_app, name="body")
 app.add_typer(hud_app, name="hud")
 app.add_typer(memory_app, name="memory")
 app.add_typer(dream_app, name="dream")
+app.add_typer(campaigns_app, name="campaigns")
 
 
 def _exit_body_fault(exc: BodyFault) -> None:
@@ -479,12 +484,30 @@ def memory_append(
 @memory_app.command("loops")
 def memory_loops(
     json_out: bool = typer.Option(False, "--json"),
+    campaigns: bool = typer.Option(
+        False, "--campaigns", help="List campaigns only (any non-done STATUS)."
+    ),
+    kind: Optional[str] = typer.Option(
+        None, "--kind", help="Filter kind: todo | campaign"
+    ),
+    status: Optional[str] = typer.Option(
+        None,
+        "--status",
+        help="Filter status (default: open for todos; omit with --campaigns).",
+    ),
 ) -> None:
-    """List open loops."""
-    from ada.memory.open_loops import list_loops
+    """List open loops / campaigns (metal truth)."""
+    from ada.memory.open_loops import list_campaigns, list_loops
 
     try:
-        loops = list_loops(status="open")
+        if campaigns or kind == "campaign":
+            loops = list_campaigns(
+                status=status,
+                include_done=bool(status in {"done", "failed"}),
+            )
+        else:
+            status_filter = "open" if status is None else status
+            loops = list_loops(status=status_filter, kind=kind)
     except BodyFault as exc:
         _exit_body_fault(exc)
         return
@@ -492,10 +515,101 @@ def memory_loops(
         console.print_json(data={"loops": loops, "count": len(loops)})
     else:
         if not loops:
-            console.print("(no open loops)")
+            console.print("(no loops)")
             return
         for loop in loops:
-            console.print(f"- [{loop.get('id')}] {loop.get('text')}")
+            if loop.get("kind") == "campaign":
+                title = loop.get("title") or loop.get("text")
+                console.print(
+                    f"- [{loop.get('id')}] {title} "
+                    f"STATUS={loop.get('status')} stage={loop.get('current_stage') or '-'}"
+                )
+            else:
+                console.print(f"- [{loop.get('id')}] {loop.get('text')}")
+
+
+@campaigns_app.command("status")
+def campaigns_status(
+    loop_id: Optional[str] = typer.Option(None, "--id", help="Campaign id"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show campaign STATUS from disk (no Gemini)."""
+    from ada.memory.open_loops import format_campaign_head, get_loop, list_campaigns
+
+    try:
+        if loop_id:
+            item = get_loop(loop_id)
+            if item is None or item.get("kind") != "campaign":
+                err_console.print(f"[red]campaign not found:[/red] {loop_id}")
+                raise typer.Exit(code=1)
+            camps = [item]
+        else:
+            camps = list_campaigns(include_done=True, limit=100)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data={"campaigns": camps, "count": len(camps)})
+        return
+    if not camps:
+        console.print("(no campaigns)")
+        return
+    for c in camps:
+        console.print(format_campaign_head(c, max_len=400))
+        if c.get("blocked_reason"):
+            console.print(f"    blocked_reason: {c.get('blocked_reason')}")
+        if c.get("next_wake_at"):
+            console.print(f"    next_wake_at: {c.get('next_wake_at')}")
+        if c.get("last_receipt"):
+            console.print(f"    last_receipt: {c.get('last_receipt')}")
+        stages = c.get("stages") or []
+        if stages:
+            for s in stages:
+                gate = f" gate={s.get('gate')}" if s.get("gate") else ""
+                console.print(f"    - {s.get('id')}: {s.get('state')}{gate}")
+
+
+@campaigns_app.command("check")
+def campaigns_check(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Local due/stale/blocked campaign list — no LLM. Quiet/mute suppress nudges."""
+    from ada.memory.open_loops import campaign_check
+    from ada.memory.proactivity import proactivity_suppressed
+
+    try:
+        suppress = proactivity_suppressed()
+        if suppress.get("suppressed"):
+            payload = {
+                "ok": True,
+                "outcome": "ok",
+                "suppressed": True,
+                "reasons": suppress.get("reasons"),
+                "count": 0,
+                "due": [],
+            }
+        else:
+            payload = campaign_check()
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=payload)
+        return
+    if payload.get("suppressed"):
+        console.print(
+            f"(suppressed: {', '.join(payload.get('reasons') or [])})"
+        )
+        return
+    due = payload.get("due") or []
+    if not due:
+        console.print("(no due campaigns)")
+        return
+    for item in due:
+        console.print(
+            f"- [{item.get('id')}] {item.get('title')} "
+            f"STATUS={item.get('status')} due={item.get('due_reason')}"
+        )
 
 
 @dream_app.command("status")

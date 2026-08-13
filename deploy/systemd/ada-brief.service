@@ -1,0 +1,19 @@
+# Optional pointer — NOT an acceptance gate (M06).
+# Local campaign check only (due/stale/blocked); no Gemini.
+# Respects quiet hours + mute_proactivity inside `ada campaigns check`.
+
+[Unit]
+Description=ADA campaign / brief check (local STATUS surfacer)
+After=local-fs.target
+# Refuse if ada-data missing — organ raises BodyFault.
+
+[Service]
+Type=oneshot
+User=ada-pi5
+WorkingDirectory=/mnt/ada-data/ADA
+Environment=ADA_DATA_ROOT=/mnt/ada-data
+ExecStart=/mnt/ada-data/ADA/.venv/bin/ada campaigns check --json
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

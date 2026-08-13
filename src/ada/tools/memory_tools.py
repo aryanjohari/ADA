@@ -51,17 +51,38 @@ def run_memory_facts_propose_edit(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_memory_open_loops_list(args: dict[str, Any]) -> dict[str, Any]:
+    # Default status=open preserves todo list; pass status=null/"" for all.
     status = args.get("status", "open")
+    if status is None or status == "":
+        status_filter: str | None = None
+    else:
+        status_filter = str(status)
+    kind = args.get("kind")
     limit = int(args.get("limit") or 50)
-    loops = loops_mod.list_loops(status=status, limit=limit)
+    loops = loops_mod.list_loops(
+        status=status_filter,
+        kind=str(kind) if kind else None,
+        limit=limit,
+    )
     return {"loops": loops, "count": len(loops)}
 
 
 def run_memory_open_loops_upsert(args: dict[str, Any]) -> dict[str, Any]:
+    status_arg = args.get("status")
     return loops_mod.upsert_loop(
         text=args.get("text"),
         loop_id=args.get("id") or args.get("loop_id"),
-        status=str(args.get("status") or "open"),
+        status=str(status_arg) if status_arg is not None else None,
+        kind=str(args["kind"]) if args.get("kind") is not None else None,
+        title=args.get("title"),
+        stages=args.get("stages"),
+        current_stage=args.get("current_stage"),
+        blocked_reason=args.get("blocked_reason"),
+        next_wake_at=args.get("next_wake_at"),
+        last_progress_at=args.get("last_progress_at"),
+        last_receipt=args.get("last_receipt"),
+        cadence=args.get("cadence"),
+        nudge_attribution=args.get("nudge_attribution"),
         delete=bool(args.get("delete", False)),
         confirmed=bool(args.get("confirmed", False)),
     )

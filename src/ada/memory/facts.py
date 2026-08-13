@@ -480,17 +480,31 @@ def boot_fact_slice(*, paths: DataPaths | None = None, max_chars: int = 3200) ->
         lines.append(f"- (prefs unavailable: {exc})")
 
     try:
-        from ada.memory.open_loops import list_loops
+        from ada.memory.open_loops import (
+            K_CAMPAIGN_HEADS,
+            K_TODO_HEADS,
+            campaign_heads,
+            format_campaign_head,
+            list_loops,
+        )
 
-        loops = list_loops(paths=p, status="open", limit=5)
-        if loops:
+        heads = campaign_heads(paths=p, limit=K_CAMPAIGN_HEADS)
+        if heads:
+            lines.append("- campaigns:")
+            for camp in heads:
+                lines.append(f"  - {format_campaign_head(camp)}")
+        else:
+            lines.append("- campaigns: (none)")
+
+        todos = list_loops(paths=p, status="open", kind="todo", limit=K_TODO_HEADS)
+        if todos:
             lines.append("- open_loops:")
-            for loop in loops:
+            for loop in todos:
                 lines.append(f"  - [{loop.get('id', '?')}] {loop.get('text', '')[:120]}")
         else:
             lines.append("- open_loops: (none)")
     except Exception as exc:  # noqa: BLE001
-        lines.append(f"- open_loops: unavailable ({exc})")
+        lines.append(f"- campaigns/open_loops: unavailable ({exc})")
 
     text = "\n".join(lines)
     if len(text) > max_chars:
