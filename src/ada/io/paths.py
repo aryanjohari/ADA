@@ -72,6 +72,21 @@ class DataPaths:
         return self.memory / "staging"
 
     @property
+    def cites(self) -> Path:
+        """Durable web cite library (M07)."""
+        return self.memory / "cites"
+
+    @property
+    def scratch(self) -> Path:
+        """Disposable scratch (not default-backed-up)."""
+        return self.root / "scratch"
+
+    @property
+    def scratch_web(self) -> Path:
+        """Optional raw HTML bodies for web fetch (never boot)."""
+        return self.scratch / "web"
+
+    @property
     def lifecycle_jsonl(self) -> Path:
         return self.memory / "lifecycle.jsonl"
 
@@ -107,6 +122,11 @@ class DataPaths:
             self.memory_staging,
         ):
             d.mkdir(parents=True, exist_ok=True)
+
+    def ensure_cite_dirs(self) -> None:
+        """Create memory/cites + scratch/web lazily on first web_fetch."""
+        self.cites.mkdir(parents=True, exist_ok=True)
+        self.scratch_web.mkdir(parents=True, exist_ok=True)
 
     def ensure_dream_dirs(self) -> None:
         """Create dream/{staging,outbox,sent} lazily on first dream.run."""

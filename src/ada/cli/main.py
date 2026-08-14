@@ -35,11 +35,16 @@ campaigns_app = typer.Typer(
     help="Campaign STATUS on disk (M06) — metal truth, no Gemini.",
     no_args_is_help=True,
 )
+web_app = typer.Typer(
+    help="Allowlisted web fetch + cite library (M07).",
+    no_args_is_help=True,
+)
 app.add_typer(body_app, name="body")
 app.add_typer(hud_app, name="hud")
 app.add_typer(memory_app, name="memory")
 app.add_typer(dream_app, name="dream")
 app.add_typer(campaigns_app, name="campaigns")
+app.add_typer(web_app, name="web")
 
 
 def _exit_body_fault(exc: BodyFault) -> None:
@@ -555,7 +560,7 @@ def campaigns_status(
         console.print("(no campaigns)")
         return
     for c in camps:
-        console.print(format_campaign_head(c, max_len=400))
+        console.print(format_campaign_head(c, max_len=400), markup=False)
         if c.get("blocked_reason"):
             console.print(f"    blocked_reason: {c.get('blocked_reason')}")
         if c.get("next_wake_at"):
@@ -683,9 +688,160 @@ def dream_run_cmd(
         console.print(f"  outbox={result.get('seal', {}).get('outbox_path')}")
 
 
+@web_app.command("fetch")
+def web_fetch_cmd(
+    url: str = typer.Argument(..., help="Absolute https URL"),
+    force: bool = typer.Option(False, "--force", help="Bypass TTL / skip 304"),
+    ignore_robots: bool = typer.Option(
+        False, "--ignore-robots", help="User-intent robots override"
+    ),
+    confirm_host: bool = typer.Option(
+        False, "--confirm-host", help="Allowlist new host after confirm"
+    ),
+    user_pasted: bool = typer.Option(
+        True,
+        "--user-pasted/--no-user-pasted",
+        help="Treat URL as pasted this turn (default true for CLI)",
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Allowlisted GET + extract + durable cite (gateway-equivalent)."""
+    from ada.web.fetch import web_fetch
+
+    try:
+        require_ada_data()
+        result = web_fetch(
+            url,
+            force=force,
+            user_pasted=user_pasted,
+            ignore_robots=ignore_robots,
+            confirm_host=confirm_host,
+        )
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+    else:
+        if result.get("needs_confirm"):
+            console.print(
+                f"[yellow]needs_confirm[/yellow] host={result.get('host')} "
+                f"— re-run with --confirm-host"
+            )
+            raise typer.Exit(code=2)
+        if not result.get("ok"):
+            err_console.print(f"[red]fetch failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
+        console.print(
+            f"[green]ok[/green] cite_id={result.get('cite_id')} "
+            f"cache={result.get('cache')} truncated={result.get('truncated')}"
+        )
+        if result.get("title"):
+            console.print(f"  title: {result.get('title')}")
+        console.print(f"  url: {result.get('final_url') or result.get('url')}")
+
+
+@web_app.command("cite")
+def web_cite_cmd(
+    cite_id: str = typer.Argument(..., help="Cite id (c_…) or cite:c_…"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Read a durable cite from disk (no network; cortex-down OK)."""
+    from ada.web.fetch import web_cite_get
+
+    try:
+        require_ada_data()
+        result = web_cite_get(cite_id)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+    else:
+        if not result.get("ok"):
+            err_console.print(f"[red]cite failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
+        console.print(f"[green]cite[/green] {result.get('cite_id')}")
+        console.print(f"  title: {result.get('title')}")
+        console.print(f"  url: {result.get('url')}")
+        console.print(f"  fetched_at: {result.get('fetched_at')}")
+        for i, ex in enumerate(result.get("excerpts") or [], 1):
+            preview = ex if len(ex) <= 240 else ex[:240] + "…"
+            console.print(f"  excerpt[{i}]: {preview}")
+
+
+@web_app.command("search")
+def web_search_cmd(
+    query: str = typer.Argument(..., help="Substring over title/url/cite id"),
+    max_hits: int = typer.Option(10, "--max", help="Max hits"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Search local cite library (no network — not vendor web_search)."""
+    from ada.web.fetch import web_cite_search
+
+    try:
+        require_ada_data()
+        result = web_cite_search(query, max_hits=max_hits)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+        return
+    if not result.get("ok"):
+        err_console.print(f"[red]search failed:[/red] {result.get('error')}")
+        raise typer.Exit(code=1)
+    hits = result.get("hits") or []
+    if not hits:
+        console.print(f"(no cites matching {query!r})")
+        return
+    for h in hits:
+        console.print(
+            f"- {h.get('cite_id')}  {h.get('title') or '(no title)'}  "
+            f"{h.get('url')}"
+        )
+
+
+@web_app.command("allowlist")
+def web_allowlist_cmd(
+    action: str = typer.Argument("list", help="list | add"),
+    host: Optional[str] = typer.Argument(None, help="Host for add"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """List or add prefs.web_allowlist hosts."""
+    from ada.web import allowlist as allowlist_mod
+
+    try:
+        paths = require_ada_data()
+        if action == "list":
+            entries = allowlist_mod.load_allowlist(paths)
+            if json_out:
+                console.print_json(data={"allowlist": entries})
+            else:
+                if not entries:
+                    console.print("(empty allowlist)")
+                for e in entries:
+                    console.print(f"- {e.get('host')} ttl={e.get('ttl_seconds')}")
+            return
+        if action == "add":
+            if not host:
+                err_console.print("[red]host required for add[/red]")
+                raise typer.Exit(code=2)
+            result = allowlist_mod.add_host(host, paths=paths)
+            if json_out:
+                console.print_json(data=result)
+            else:
+                console.print(f"[green]allowlisted[/green] {result.get('host')}")
+            return
+        err_console.print(f"[red]unknown action:[/red] {action}")
+        raise typer.Exit(code=2)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+
+
 @app.callback()
 def main_callback() -> None:
-    """ADA — body sense + chat harness + HUD + memory/Dream."""
+    """ADA — body sense + chat harness + HUD + memory/Dream + web."""
 
 
 def main() -> None:

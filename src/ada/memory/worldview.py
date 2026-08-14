@@ -29,7 +29,11 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def validate_cites(cites: list[Any] | None) -> list[str]:
+def validate_cites(
+    cites: list[Any] | None,
+    *,
+    paths: DataPaths | None = None,
+) -> list[str]:
     if not cites:
         raise WorldviewError("WORLDVIEW write requires non-empty cites[]")
     out: list[str] = []
@@ -37,7 +41,19 @@ def validate_cites(cites: list[Any] | None) -> list[str]:
         s = str(c).strip()
         if not s:
             continue
-        # Never allow cites that pretend to rewrite sacred identity as metal.
+        # cite:c_… must resolve to an on-disk cite (M07 honesty).
+        if s.startswith("cite:"):
+            try:
+                from ada.web.cites import cite_exists, normalize_cite_id
+
+                cid = normalize_cite_id(s)
+                if not cite_exists(cid, paths=paths):
+                    raise WorldviewError(f"cite not found on disk: {cid}")
+                s = f"cite:{cid}"
+            except WorldviewError:
+                raise
+            except ValueError as exc:
+                raise WorldviewError(str(exc)) from exc
         out.append(s)
     if not out:
         raise WorldviewError("WORLDVIEW write requires non-empty cites[]")
@@ -56,7 +72,15 @@ def write_digest(
     """Write a dated WORLDVIEW markdown with cite header. Never mutates FACTS."""
     p = _require(paths)
     p.ensure_memory_dirs()
-    cite_list = validate_cites(cites)
+    if body and len(body) > 50_000:
+        raise WorldviewError(
+            "WORLDVIEW body too large (>50k chars); cite excerpts via cite: ids, not HTML dumps"
+        )
+    if body and ("<html" in body.lower() or "<!doctype html" in body.lower()):
+        raise WorldviewError(
+            "WORLDVIEW must not embed raw HTML; use web_fetch cites instead"
+        )
+    cite_list = validate_cites(cites, paths=p)
     day = date or _today()
     folder = p.dreams if dream else p.worldview
     folder.mkdir(parents=True, exist_ok=True)

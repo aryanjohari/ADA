@@ -59,6 +59,8 @@ DEFAULT_PREFS: dict[str, Any] = {
     "humor_density": 0.15,
     "chill_immediate": True,
     "humor_banned_topics": [],
+    # M07 web egress — list of {host, ttl_seconds?, note?} or bare host strings.
+    "web_allowlist": [],
 }
 
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -220,6 +222,12 @@ def _coerce_pref_value(field: str, value: Any) -> Any:
         return s
     if field == "preferred_tz":
         return str(value).strip()
+    if field == "web_allowlist":
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        raise ValueError(f"{field} must be a list, got {value!r}")
     return value
 
 

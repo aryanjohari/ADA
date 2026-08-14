@@ -1,7 +1,7 @@
 """Tool gateway: schema validate → mode allowlist → execute → receipt.
 
 Consent Integrity: denials and confirms render gateway {tool, args}, never
-model prose alone (M02 §6.2).
+model prose alone (M02 §6.2). ToolSpec drives side_effect / egress (M07).
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from typing import Any, Literal
 from ada.body.vitals import utc_now_iso
 from ada.io.paths import BodyFault
 from ada.runs.append import new_receipt_id
-from ada.tools import body_tools, memory_tools
-from ada.tools.schemas import TOOL_NAMES, WRITE_TOOL_NAMES
+from ada.tools import body_tools, memory_tools, web_tools
+from ada.tools.schemas import TOOL_NAMES, WRITE_TOOL_NAMES, spec_for
 
 Mode = Literal["observe", "agent", "plan"]
 
@@ -87,6 +87,26 @@ class Gateway:
                 outcome="denied",
             )
 
+        # ToolSpec mode gate (web_fetch denied in plan; etc.)
+        spec = spec_for(tool)
+        if (
+            spec is not None
+            and tool not in self.extra_handlers
+            and self.mode not in spec.modes
+        ):
+            return GatewayResult(
+                ok=False,
+                tool=tool,
+                args=args,
+                receipt_id=receipt_id,
+                ts=ts,
+                denied_reason=(
+                    f"tool '{tool}' not allowed in {self.mode.capitalize()} mode "
+                    f"(side_effect={spec.side_effect})"
+                ),
+                outcome="denied",
+            )
+
         if tool not in self.allowed_tools() and tool not in self.extra_handlers:
             return GatewayResult(
                 ok=False,
@@ -126,7 +146,9 @@ class Gateway:
                 )
         if tool == "memory_worldview_write":
             cites = args.get("cites")
-            if not cites or (isinstance(cites, list) and not any(str(c).strip() for c in cites)):
+            if not cites or (
+                isinstance(cites, list) and not any(str(c).strip() for c in cites)
+            ):
                 return GatewayResult(
                     ok=False,
                     tool=tool,
@@ -138,8 +160,13 @@ class Gateway:
                     outcome="denied",
                 )
 
+        # Pass gateway receipt_id into web_fetch for cite linkage.
+        if tool == "web_fetch" and "receipt_id" not in args:
+            args = {**args, "receipt_id": receipt_id}
+
         handler = (
             self.extra_handlers.get(tool)
+            or web_tools.DISPATCH.get(tool)
             or memory_tools.DISPATCH.get(tool)
             or body_tools.DISPATCH.get(tool)
         )
@@ -177,7 +204,7 @@ class Gateway:
                 outcome="error",
             )
 
-        # Propagate needs_confirm from memory organs.
+        # Propagate needs_confirm from memory / web organs.
         needs_confirm = False
         outcome = "ok"
         ok = True
@@ -199,6 +226,20 @@ class Gateway:
                     error=data.get("error") or data.get("denied_reason"),
                     denied_reason=data.get("denied_reason"),
                     outcome="error",
+                )
+            elif data.get("ok") is False and data.get("outcome") == "denied":
+                ok = False
+                outcome = "denied"
+                return GatewayResult(
+                    ok=False,
+                    tool=tool,
+                    args=args,
+                    receipt_id=receipt_id,
+                    ts=ts,
+                    data=data,
+                    error=data.get("error") or data.get("denied_reason"),
+                    denied_reason=data.get("denied_reason"),
+                    outcome="denied",
                 )
 
         return GatewayResult(
