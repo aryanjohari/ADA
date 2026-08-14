@@ -36,7 +36,7 @@ campaigns_app = typer.Typer(
     no_args_is_help=True,
 )
 web_app = typer.Typer(
-    help="Allowlisted web fetch + cite library (M07).",
+    help="Allowlisted web fetch + cite library (M07) + pack seed (M08).",
     no_args_is_help=True,
 )
 app.add_typer(body_app, name="body")
@@ -804,12 +804,15 @@ def web_search_cmd(
 
 @web_app.command("allowlist")
 def web_allowlist_cmd(
-    action: str = typer.Argument("list", help="list | add"),
-    host: Optional[str] = typer.Argument(None, help="Host for add"),
+    action: str = typer.Argument("list", help="list | add | packs | seed"),
+    host: Optional[str] = typer.Argument(
+        None, help="Host for add, or pack id for seed (e.g. lab.papers; alias: lab)"
+    ),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
-    """List or add prefs.web_allowlist hosts."""
+    """List/add live prefs hosts, list catalog packs, or seed a named pack (M08)."""
     from ada.web import allowlist as allowlist_mod
+    from ada.web.packs import list_pack_summaries, seed_pack
 
     try:
         paths = require_ada_data()
@@ -821,7 +824,10 @@ def web_allowlist_cmd(
                 if not entries:
                     console.print("(empty allowlist)")
                 for e in entries:
-                    console.print(f"- {e.get('host')} ttl={e.get('ttl_seconds')}")
+                    line = f"- {e.get('host')} ttl={e.get('ttl_seconds')}"
+                    if e.get("note"):
+                        line += f" note={e.get('note')}"
+                    console.print(line)
             return
         if action == "add":
             if not host:
@@ -831,9 +837,56 @@ def web_allowlist_cmd(
             if json_out:
                 console.print_json(data=result)
             else:
-                console.print(f"[green]allowlisted[/green] {result.get('host')}")
+                if not result.get("ok"):
+                    err_console.print(f"[red]refused:[/red] {result.get('error')}")
+                    raise typer.Exit(code=2)
+                mark = "already" if result.get("already") else "allowlisted"
+                console.print(f"[green]{mark}[/green] {result.get('host')}")
+            if not result.get("ok"):
+                raise typer.Exit(code=2)
             return
-        err_console.print(f"[red]unknown action:[/red] {action}")
+        if action == "packs":
+            rows = list_pack_summaries()
+            if json_out:
+                console.print_json(data={"packs": rows, "count": len(rows)})
+                return
+            if not rows:
+                console.print("(no packs in catalog)")
+                return
+            for row in rows:
+                extra = ""
+                if row.get("inherits"):
+                    extra = f" inherits={','.join(row['inherits'])}"
+                day = " day-one" if row.get("day_one") else ""
+                console.print(
+                    f"- {row['id']}  {row['host_count']} hosts{day}  {row['title']}{extra}"
+                )
+            return
+        if action == "seed":
+            if not host:
+                err_console.print(
+                    "[red]pack id required for seed[/red] "
+                    "(e.g. lab.papers, nz.law, or alias lab)"
+                )
+                raise typer.Exit(code=2)
+            result = seed_pack(host, paths=paths)
+            if json_out:
+                console.print_json(data=result)
+            else:
+                if not result.get("ok"):
+                    err_console.print(f"[red]seed failed:[/red] {result.get('error')}")
+                    raise typer.Exit(code=2)
+                ids = ", ".join(result.get("pack_ids") or [])
+                console.print(
+                    f"[green]seeded[/green] {ids} "
+                    f"added={len(result.get('added') or [])} "
+                    f"already={len(result.get('already') or [])} "
+                    f"total={result.get('count')}"
+                )
+            if not result.get("ok"):
+                raise typer.Exit(code=2)
+            return
+        err_console.print(f"[red]unknown action:[/red] {action} (list|add|packs|seed)")
         raise typer.Exit(code=2)
     except BodyFault as exc:
         _exit_body_fault(exc)

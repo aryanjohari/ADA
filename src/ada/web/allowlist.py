@@ -2,18 +2,91 @@
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from typing import Any
 from urllib.parse import urlparse
 
 from ada.io.paths import DataPaths, require_ada_data
 from ada.memory import facts as facts_mod
-from ada.web.ssrf import parse_url_strict
+from ada.web.ssrf import is_blocked_ip, parse_url_strict
 
 DEFAULT_TTL_SECONDS = 900  # 15 minutes interactive
 
+# Layer 0 named-host complement (M08). SSRF IP denylist stays the runtime backstop.
+_WONT_ALLOW_EXACT = frozenset(
+    {
+        "localhost",
+        "ada-pi5",
+        "metadata.google.internal",
+    }
+)
+_SHORTENER_HOSTS = frozenset(
+    {
+        "bit.ly",
+        "t.co",
+        "tinyurl.com",
+        "lnkd.in",
+    }
+)
+_DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def normalize_host(host: str) -> str:
+    return host.lower().strip().rstrip(".")
+
 
 def _normalize_host(host: str) -> str:
-    return host.lower().strip().rstrip(".")
+    return normalize_host(host)
+
+
+def _literal_ip(host: str) -> str | None:
+    raw = host.strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    try:
+        ipaddress.ip_address(raw)
+        return raw
+    except ValueError:
+        return None
+
+
+def wont_allow_reason(host: str) -> str | None:
+    """Return a Layer 0 refusal reason, or None if the name may be stored.
+
+    Exact hostname only. Runtime SSRF still denies private IPs even if FACTS
+    is later poisoned (F2).
+    """
+    raw = (host or "").strip()
+    if not raw:
+        return "won't-allow: empty host"
+    if any(sep in raw for sep in ("://", "/", "?", "#", "@", " ")):
+        return "won't-allow: host only (no URL, path, or credentials)"
+    if "*" in raw:
+        return "won't-allow: wildcards are not a pack"
+    ip = _literal_ip(raw)
+    if ip is not None:
+        if is_blocked_ip(ip):
+            return f"won't-allow: blocked address {ip}"
+        return f"won't-allow: IP literal {ip} (use a hostname)"
+    h = _normalize_host(raw)
+    if not h:
+        return "won't-allow: empty host"
+    try:
+        h.encode("ascii")
+    except UnicodeEncodeError:
+        return "won't-allow: ASCII hosts only"
+    if h in _WONT_ALLOW_EXACT or h.startswith("localhost.") or h.endswith(".local"):
+        return f"won't-allow: loopback/HUD/metadata host {h}"
+    for short in _SHORTENER_HOSTS:
+        if h == short or h.endswith("." + short):
+            return f"won't-allow: shortener {h}"
+    if "." not in h:
+        return f"won't-allow: single-label hostname {h} (localhost/LAN)"
+    labels = h.split(".")
+    if any(not lab or not _DNS_LABEL_RE.match(lab) for lab in labels):
+        return f"won't-allow: invalid hostname {h}"
+    return None
 
 
 def host_from_url(url: str) -> str:
@@ -67,25 +140,60 @@ def add_host(
     paths: DataPaths | None = None,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
     note: str | None = None,
+    update_existing: bool = False,
 ) -> dict[str, Any]:
-    """Append host to prefs.web_allowlist (idempotent)."""
+    """Append host to prefs.web_allowlist (idempotent). Layer 0 won't-allow applies."""
+    refused = wont_allow_reason(host)
+    if refused:
+        return {"ok": False, "outcome": "error", "error": refused, "denied_reason": refused}
     p = paths or require_ada_data()
     facts_mod.ensure_prefs(p)
     prefs = facts_mod.load_prefs(p)
     h = _normalize_host(host)
-    if not h:
-        return {"ok": False, "outcome": "error", "error": "empty host"}
     entries = load_allowlist(p)
     for e in entries:
         if e["host"] == h:
-            return {"ok": True, "outcome": "ok", "host": h, "already": True, "allowlist": entries}
+            if not update_existing:
+                return {
+                    "ok": True,
+                    "outcome": "ok",
+                    "host": h,
+                    "already": True,
+                    "updated": False,
+                    "allowlist": entries,
+                }
+            new_ttl = int(ttl_seconds)
+            changed = int(e.get("ttl_seconds") or DEFAULT_TTL_SECONDS) != new_ttl
+            if note and e.get("note") != note:
+                changed = True
+            if changed:
+                e["ttl_seconds"] = new_ttl
+                if note:
+                    e["note"] = note
+                prefs["web_allowlist"] = entries
+                facts_mod.save_prefs(prefs, p)
+            return {
+                "ok": True,
+                "outcome": "ok",
+                "host": h,
+                "already": True,
+                "updated": changed,
+                "allowlist": entries,
+            }
     entry: dict[str, Any] = {"host": h, "ttl_seconds": int(ttl_seconds)}
     if note:
         entry["note"] = note
     entries.append(entry)
     prefs["web_allowlist"] = entries
     facts_mod.save_prefs(prefs, p)
-    return {"ok": True, "outcome": "ok", "host": h, "already": False, "allowlist": entries}
+    return {
+        "ok": True,
+        "outcome": "ok",
+        "host": h,
+        "already": False,
+        "updated": False,
+        "allowlist": entries,
+    }
 
 
 def pasted_hosts_from_text(text: str | None) -> set[str]:
@@ -169,7 +277,15 @@ def check_host_access(
         }
 
     if confirm_host:
-        add_host(host, paths=paths, note="confirmed via web_fetch")
+        added = add_host(host, paths=paths, note="confirmed via web_fetch")
+        if not added.get("ok"):
+            return {
+                "ok": False,
+                "outcome": "error",
+                "error": added.get("error"),
+                "denied_reason": added.get("denied_reason") or added.get("error"),
+                "host": host,
+            }
         return {
             "ok": True,
             "outcome": "ok",

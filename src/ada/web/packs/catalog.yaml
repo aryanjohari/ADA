@@ -1,0 +1,129 @@
+# M08 day-one source library. Canonical host list (not a Python URL dict).
+# Research tables stay in docs/modules/M08_WEB_ALLOWLIST_BASEPACK.md §7.1.
+# Exact hostnames only — no *, no suffix matching, no confirm-later (§7.2).
+schema_version: 1
+ttl_vibes:
+  interactive: 900
+  feed: 3600
+  release: 14400
+  stable: 86400
+
+packs:
+  lab.papers:
+    title: Generic research bench
+    day_one: true
+    hosts:
+      - {host: arxiv.org, ttl: stable}
+      - {host: export.arxiv.org, ttl: feed}
+      - {host: rss.arxiv.org, ttl: feed}
+      - {host: info.arxiv.org, ttl: stable}
+      - {host: aclanthology.org, ttl: stable}
+      - {host: proceedings.mlr.press, ttl: stable}
+
+  lab.code:
+    title: Engineering docs
+    day_one: true
+    hosts:
+      - {host: github.com, ttl: stable}
+      - {host: docs.github.com, ttl: stable}
+      - {host: docs.python.org, ttl: stable}
+      - {host: pypi.org, ttl: release}
+      - {host: peps.python.org, ttl: stable}
+      - {host: developer.mozilla.org, ttl: stable}
+
+  lab.standards:
+    title: RFCs / IETF
+    day_one: true
+    hosts:
+      - {host: www.rfc-editor.org, ttl: stable}
+      - {host: datatracker.ietf.org, ttl: stable}
+
+  lab.encyclopedia:
+    title: Global encyclopedia (NZ encyclopedias live in nz.place)
+    day_one: true
+    hosts:
+      - {host: en.wikipedia.org, ttl: stable}
+      - {host: www.wikidata.org, ttl: stable}
+
+  lab.cortex-docs:
+    title: Vendor tool docs (lab hygiene, not a personality cult)
+    day_one: true
+    hosts:
+      - {host: ai.google.dev, ttl: stable}
+      - {host: www.anthropic.com, ttl: stable}
+      - {host: platform.claude.com, ttl: stable}
+
+  nz.law:
+    title: Primary law / Treaty / justice orientation
+    day_one: true
+    redirect_pairs:
+      - [legislation.govt.nz, www.legislation.govt.nz]
+    hosts:
+      - {host: www.legislation.govt.nz, ttl: stable}
+      - {host: legislation.govt.nz, ttl: stable}
+      - {host: api.legislation.govt.nz, ttl: stable}
+      - {host: waitangitribunal.govt.nz, ttl: stable}
+      - {host: www.justice.govt.nz, ttl: stable}
+
+  nz.civic:
+    title: Executive releases / Māori Crown policy
+    day_one: true
+    hosts:
+      - {host: www.beehive.govt.nz, ttl: feed}
+      - {host: www.tpk.govt.nz, ttl: stable}
+
+  nz.economy:
+    title: Fiscal / statistics / registers / conduct
+    day_one: true
+    redirect_pairs:
+      - [treasury.govt.nz, www.treasury.govt.nz]
+      - [stats.govt.nz, www.stats.govt.nz]
+      - [comcom.govt.nz, www.comcom.govt.nz]
+    hosts:
+      - {host: www.treasury.govt.nz, ttl: feed}
+      - {host: treasury.govt.nz, ttl: feed}
+      - {host: www.stats.govt.nz, ttl: release}
+      - {host: stats.govt.nz, ttl: release}
+      - {host: www.companiesoffice.govt.nz, ttl: stable}
+      - {host: companies-register.companiesoffice.govt.nz, ttl: release}
+      - {host: www.fma.govt.nz, ttl: release}
+      - {host: www.comcom.govt.nz, ttl: release}
+      - {host: comcom.govt.nz, ttl: release}
+      - {host: www.interest.co.nz, ttl: feed}
+
+  nz.data:
+    title: data.govt.nz catalogue
+    day_one: true
+    hosts:
+      - {host: www.data.govt.nz, ttl: release}
+      - {host: catalogue.data.govt.nz, ttl: release}
+
+  nz.place:
+    title: Geography, hazards, Aotearoa encyclopedias
+    day_one: true
+    hosts:
+      - {host: teara.govt.nz, ttl: stable}
+      - {host: nzhistory.govt.nz, ttl: stable}
+      - {host: www.mch.govt.nz, ttl: stable}
+      - {host: www.linz.govt.nz, ttl: stable}
+      - {host: www.geonet.org.nz, ttl: release}
+      - {host: api.geonet.org.nz, ttl: feed}
+
+  nz.news:
+    title: Finite current-events lens (not a content mill)
+    day_one: true
+    redirect_pairs:
+      - [newsroom.co.nz, www.newsroom.co.nz]
+    hosts:
+      - {host: www.rnz.co.nz, ttl: feed}
+      - {host: newsroom.co.nz, ttl: feed}
+      - {host: www.newsroom.co.nz, ttl: feed}
+      - {host: thespinoff.co.nz, ttl: feed}
+
+  field.agents:
+    title: Starter field desk — inherits lab.papers + lab.cortex-docs (no extra hosts)
+    day_one: true
+    inherits:
+      - lab.papers
+      - lab.cortex-docs
+    hosts: []

@@ -32,6 +32,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ada.hud" = ["templates/*", "static/*"]
+"ada.web.packs" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
