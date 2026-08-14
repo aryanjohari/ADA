@@ -1,6 +1,9 @@
-# Optional pointer — NOT an acceptance gate (M06).
-# Local campaign check only (due/stale/blocked); no Gemini.
-# Respects quiet hours + mute_proactivity inside `ada campaigns check`.
+# Optional pointer — NOT an acceptance gate (M06/M09).
+# Recommended timer sequence (operator choice):
+#   1. ada watch run --ingest-only   (03:30 heal slot — feed pull + cites, no nudges)
+#   2. ada campaigns check --json    (05:30 brief surfacer — respects quiet/mute)
+# Or use a dedicated ada-watch.timer for step 1 only.
+# Respects quiet hours + mute_proactivity inside `ada campaigns check` (not ingest-only watch).
 
 [Unit]
 Description=ADA campaign / brief check (local STATUS surfacer)
@@ -12,6 +15,8 @@ Type=oneshot
 User=ada-pi5
 WorkingDirectory=/mnt/ada-data/ADA
 Environment=ADA_DATA_ROOT=/mnt/ada-data
+# Uncomment ingest before brief check when ada-watch.timer is not used:
+# ExecStart=/bin/sh -c '/mnt/ada-data/ADA/.venv/bin/ada watch run --ingest-only --json && /mnt/ada-data/ADA/.venv/bin/ada campaigns check --json'
 ExecStart=/mnt/ada-data/ADA/.venv/bin/ada campaigns check --json
 Nice=10
 

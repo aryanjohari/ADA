@@ -29,6 +29,12 @@ CAMPAIGN_STATUSES = frozenset(
 STAGE_STATES = frozenset({"pending", "active", "done", "skipped"})
 CADENCES = frozenset({"on_open_only", "daily"})
 
+# M09 watches on campaigns (optional field).
+WATCH_KINDS = frozenset({"rss", "atom", "fixed_urls"})
+DEFAULT_MAX_ITEMS_PER_WAKE = 5
+DEFAULT_MAX_AGE_HOURS = 168
+SEEN_GUIDS_CAP = 2000
+
 # Boot / check caps (scalability via caps, not a new framework).
 K_CAMPAIGN_HEADS = 3
 K_TODO_HEADS = 2
@@ -78,6 +84,11 @@ def _normalize_item(raw: Any) -> dict[str, Any] | None:
         item["status"] = status
         if not item.get("title") and item.get("text"):
             item["title"] = item["text"]
+        if item.get("watches") is not None:
+            try:
+                item["watches"] = _normalize_watches(item.get("watches"))
+            except ValueError:
+                pass  # load-time lenient; upsert validates strictly
     return item
 
 
@@ -140,6 +151,75 @@ def _validate_status(kind: str, status: str) -> str:
             f"todo status must be one of {sorted(TODO_STATUSES)}; got {status!r}"
         )
     return status
+
+
+def _normalize_watch_cursor(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("watch.cursor must be a mapping")
+    cursor = dict(raw)
+    seen = cursor.get("seen_guids")
+    if seen is None:
+        cursor["seen_guids"] = []
+    elif not isinstance(seen, list):
+        raise ValueError("watch.cursor.seen_guids must be a list")
+    else:
+        cursor["seen_guids"] = [str(x) for x in seen if str(x).strip()][-SEEN_GUIDS_CAP:]
+    if cursor.get("last_checked_at") is not None:
+        cursor["last_checked_at"] = str(cursor["last_checked_at"]).strip() or None
+    if cursor.get("etag") is not None:
+        cursor["etag"] = str(cursor["etag"]).strip() or None
+    if cursor.get("last_error") is not None:
+        cursor["last_error"] = str(cursor["last_error"]).strip() or None
+    return cursor
+
+
+def _normalize_watches(watches: Any) -> list[dict[str, Any]]:
+    """Validate watches[] on a campaign (M09 §7.1)."""
+    if watches is None:
+        return []
+    if not isinstance(watches, list):
+        raise ValueError("watches must be a list")
+    out: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for raw in watches:
+        if not isinstance(raw, dict):
+            raise ValueError("each watch must be a mapping")
+        wid = str(raw.get("id") or "").strip()
+        if not wid:
+            raise ValueError("watch.id required")
+        if wid in seen_ids:
+            raise ValueError(f"duplicate watch.id: {wid}")
+        seen_ids.add(wid)
+        kind = str(raw.get("kind") or "rss").strip()
+        if kind not in WATCH_KINDS:
+            raise ValueError(
+                f"watch.kind must be one of {sorted(WATCH_KINDS)}; got {kind!r}"
+            )
+        watch: dict[str, Any] = {"id": wid, "kind": kind}
+        if kind == "fixed_urls":
+            urls_raw = raw.get("urls")
+            if not isinstance(urls_raw, list) or not urls_raw:
+                raise ValueError("fixed_urls watch requires non-empty urls[]")
+            watch["urls"] = [str(u).strip() for u in urls_raw if str(u).strip()]
+            if not watch["urls"]:
+                raise ValueError("fixed_urls watch requires non-empty urls[]")
+        else:
+            feed_url = str(raw.get("url") or "").strip()
+            if not feed_url:
+                raise ValueError(f"watch {wid!r} requires url")
+            watch["url"] = feed_url
+        cap = int(raw.get("max_items_per_wake") or DEFAULT_MAX_ITEMS_PER_WAKE)
+        if cap < 1:
+            raise ValueError("watch.max_items_per_wake must be >= 1")
+        watch["max_items_per_wake"] = cap
+        watch["max_age_hours"] = int(raw.get("max_age_hours") or DEFAULT_MAX_AGE_HOURS)
+        if raw.get("pack"):
+            watch["pack"] = str(raw.get("pack")).strip()
+        watch["cursor"] = _normalize_watch_cursor(raw.get("cursor"))
+        out.append(watch)
+    return out
 
 
 def _normalize_stages(stages: Any) -> list[dict[str, Any]]:
@@ -261,6 +341,43 @@ def list_loops(
     return loops[: max(0, limit)]
 
 
+def list_watch_campaigns(
+    *,
+    paths: DataPaths | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    include_done: bool = False,
+) -> list[dict[str, Any]]:
+    """Campaigns with non-empty watches[] (M09)."""
+    camps = list_campaigns(
+        paths=paths, status=status, limit=limit, include_done=include_done
+    )
+    return [c for c in camps if c.get("watches")]
+
+
+def due_watch_campaigns(
+    *,
+    paths: DataPaths | None = None,
+    now: datetime | None = None,
+    limit: int = 1,
+) -> list[dict[str, Any]]:
+    """Due campaigns that have watches — at most one per timer tick (M09 F7)."""
+    due = due_campaigns(paths=paths, now=now, limit=200)
+    watch_due = [c for c in due if c.get("watches")]
+    return watch_due[: max(0, limit)]
+
+
+def mark_guid_seen(cursor: dict[str, Any], guid: str) -> None:
+    """Ring-buffer append for watch cursor (M09 §7.2)."""
+    seen = list(cursor.get("seen_guids") or [])
+    if guid in seen:
+        seen.remove(guid)
+    seen.append(guid)
+    if len(seen) > SEEN_GUIDS_CAP:
+        seen = seen[-SEEN_GUIDS_CAP:]
+    cursor["seen_guids"] = seen
+
+
 def list_campaigns(
     *,
     paths: DataPaths | None = None,
@@ -380,6 +497,7 @@ def upsert_loop(
     last_receipt: str | None = None,
     cadence: str | None = None,
     nudge_attribution: Any = None,
+    watches: Any = None,
     delete: bool = False,
     confirmed: bool = False,
     paths: DataPaths | None = None,
@@ -459,6 +577,10 @@ def upsert_loop(
     if cadence is not None and str(cadence) not in CADENCES:
         raise ValueError(f"cadence must be one of {sorted(CADENCES)}")
 
+    new_watches: list[dict[str, Any]] | None = None
+    if watches is not None:
+        new_watches = _normalize_watches(watches)
+
     if loop_id and existing is not None:
         if text is not None:
             existing["text"] = str(text).strip()
@@ -486,6 +608,8 @@ def upsert_loop(
             existing["cadence"] = cadence
         if nudge_attribution is not None:
             existing["nudge_attribution"] = nudge_attribution
+        if new_watches is not None:
+            existing["watches"] = new_watches
         existing["updated_at"] = utc_now_iso()
         data["loops"] = loops
         data["schema_version"] = SCHEMA_VERSION
@@ -513,6 +637,8 @@ def upsert_loop(
         item["last_receipt"] = last_receipt
         item["cadence"] = cadence or "on_open_only"
         item["nudge_attribution"] = nudge_attribution
+        if new_watches is not None:
+            item["watches"] = new_watches
     elif title is not None:
         item["title"] = str(title).strip()
 

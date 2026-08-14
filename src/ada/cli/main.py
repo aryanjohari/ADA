@@ -35,6 +35,10 @@ campaigns_app = typer.Typer(
     help="Campaign STATUS on disk (M06) — metal truth, no Gemini.",
     no_args_is_help=True,
 )
+watch_app = typer.Typer(
+    help="RSS/feed watches on campaigns (M09) — ingest + wake.",
+    no_args_is_help=True,
+)
 web_app = typer.Typer(
     help="Allowlisted web fetch + cite library (M07) + pack seed (M08).",
     no_args_is_help=True,
@@ -44,6 +48,7 @@ app.add_typer(hud_app, name="hud")
 app.add_typer(memory_app, name="memory")
 app.add_typer(dream_app, name="dream")
 app.add_typer(campaigns_app, name="campaigns")
+app.add_typer(watch_app, name="watch")
 app.add_typer(web_app, name="web")
 
 
@@ -615,6 +620,138 @@ def campaigns_check(
             f"- [{item.get('id')}] {item.get('title')} "
             f"STATUS={item.get('status')} due={item.get('due_reason')}"
         )
+
+
+@watch_app.command("list")
+def watch_list(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Campaigns with non-empty watches[] (M09)."""
+    from ada.memory.open_loops import list_watch_campaigns
+
+    try:
+        camps = list_watch_campaigns(include_done=False, limit=100)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data={"campaigns": camps, "count": len(camps)})
+        return
+    if not camps:
+        console.print("(no watch campaigns)")
+        return
+    for c in camps:
+        n = len(c.get("watches") or [])
+        console.print(
+            f"- [{c.get('id')}] {c.get('title') or c.get('text')} "
+            f"STATUS={c.get('status')} watches={n}",
+            markup=False,
+        )
+
+
+@watch_app.command("status")
+def watch_status(
+    loop_id: Optional[str] = typer.Option(None, "--campaign", "--id", help="Campaign id"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Watch cursors, last_error, last_receipt (M09)."""
+    from ada.memory.open_loops import get_loop, list_watch_campaigns
+
+    try:
+        if loop_id:
+            item = get_loop(loop_id)
+            if item is None or not item.get("watches"):
+                err_console.print(f"[red]watch campaign not found:[/red] {loop_id}")
+                raise typer.Exit(code=1)
+            camps = [item]
+        else:
+            camps = list_watch_campaigns(include_done=True, limit=100)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data={"campaigns": camps, "count": len(camps)})
+        return
+    if not camps:
+        console.print("(no watch campaigns)")
+        return
+    for c in camps:
+        console.print(f"[{c.get('id')}] {c.get('title') or c.get('text')}", markup=False)
+        if c.get("last_receipt"):
+            console.print(f"  last_receipt: {c.get('last_receipt')}")
+        for w in c.get("watches") or []:
+            cur = w.get("cursor") or {}
+            seen_n = len(cur.get("seen_guids") or [])
+            console.print(
+                f"  - {w.get('id')} kind={w.get('kind')} "
+                f"seen_guids={seen_n} last_checked={cur.get('last_checked_at') or '-'}"
+            )
+            if cur.get("last_error"):
+                console.print(f"      last_error: {cur.get('last_error')}")
+
+
+@watch_app.command("run")
+def watch_run_cmd(
+    campaign_id: Optional[str] = typer.Option(
+        None, "--campaign", help="Run one campaign by id (default: one due watch)"
+    ),
+    ingest_only: bool = typer.Option(
+        True,
+        "--ingest-only/--digest",
+        help="Phase A ingest only (default). Digest harness deferred (M09 Phase B).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Triage + list would-fetch; no article web_fetch"
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Execute one campaign watch wake — bounded fetch → cites (M09)."""
+    from ada.memory.proactivity import proactivity_suppressed
+    from ada.watch.run import watch_run
+
+    try:
+        # Ingest-only runs during quiet hours (heal-first). Digest/nudges defer.
+        if not ingest_only:
+            suppress = proactivity_suppressed()
+            if suppress.get("suppressed"):
+                payload = {
+                    "ok": True,
+                    "outcome": "suppressed",
+                    "reasons": suppress.get("reasons"),
+                }
+                if json_out:
+                    console.print_json(data=payload)
+                else:
+                    console.print(
+                        f"(suppressed digest: {', '.join(suppress.get('reasons') or [])})"
+                    )
+                return
+        result = watch_run(
+            campaign_id=campaign_id,
+            ingest_only=ingest_only,
+            dry_run=dry_run,
+        )
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+        return
+    if not result.get("ok"):
+        err_console.print(f"[red]watch failed:[/red] {result.get('error')}")
+        raise typer.Exit(code=1)
+    if result.get("outcome") == "idle" and result.get("reason") == "no_due_watch_campaign":
+        console.print("(no due watch campaigns)")
+        return
+    mode = "dry-run" if dry_run else "live"
+    console.print(
+        f"[green]watch_ok[/green] campaign={result.get('campaign_id')} "
+        f"mode={mode} fetched={result.get('fetched')} skipped={result.get('skipped')}"
+    )
+    if result.get("session"):
+        console.print(f"  session: {result.get('session')}")
+    if result.get("last_receipt"):
+        console.print(f"  last_receipt: {result.get('last_receipt')}")
 
 
 @dream_app.command("status")
