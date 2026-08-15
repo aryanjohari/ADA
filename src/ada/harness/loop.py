@@ -81,6 +81,7 @@ def run_turn(
     """
     sink = sink or NullSink()
     session.ensure_started()
+    session.reset_wall_clock()
     session.writer.append("user", {"text": user_text})
     sink.emit("mode_info", {"mode": session.mode})
     sink.emit("session_receipt_path", {"path": str(session.run_path)})

@@ -70,6 +70,10 @@ class ChatSession:
         )
         self._started = True
 
+    def reset_wall_clock(self) -> None:
+        """Restart the per-turn wall budget (HUD/REPL reuse one ChatSession)."""
+        self.started_monotonic = time.monotonic()
+
     def elapsed(self) -> float:
         return time.monotonic() - self.started_monotonic
 
