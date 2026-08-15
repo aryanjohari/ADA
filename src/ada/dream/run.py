@@ -78,6 +78,7 @@ def dream_run(
         "merged_count": len(merge_info.get("merged") or []),
         "staged_count": len(merge_info.get("staged") or []),
         "digest_path": merge_info.get("digest_path"),
+        "campaign_digest_paths": merge_info.get("campaign_digest_paths") or [],
         "push": push.get("push"),
         "push_reason": push.get("reason"),
         "delta_since": delta.get("since"),

@@ -184,6 +184,26 @@ def web_fetch(
     existing = cites_mod.newest_cite_for_url(url, paths=p)
 
     if existing and not force and cites_mod.is_fresh(existing, ttl_seconds=ttl):
+        # M11-B: stamp campaign/watch on TTL hit when watch wake provides ids.
+        if (campaign_id and not existing.get("campaign_id")) or (
+            watch_id and not existing.get("watch_id")
+        ):
+            updated = cites_mod.update_cite_fetched_at(
+                str(existing["id"]),
+                fetched_at=existing.get("fetched_at") or utc_now_iso(),
+                etag=existing.get("etag"),
+                last_modified=existing.get("last_modified"),
+                status=existing.get("status"),
+                receipt_id=rid or existing.get("receipt_id"),
+                campaign_id=campaign_id,
+                watch_id=watch_id,
+                paths=p,
+            )
+            cite = updated["cite"]
+            obs = cites_mod.observation_from_cite(
+                cite, cache="hit", receipt_id=rid or None
+            )
+            return {"ok": True, "outcome": "ok", **obs}
         obs = cites_mod.observation_from_cite(existing, cache="hit", receipt_id=rid or None)
         return {"ok": True, "outcome": "ok", **obs}
 
@@ -243,6 +263,8 @@ def web_fetch(
             last_modified=last_mod or existing.get("last_modified"),
             status=304,
             receipt_id=rid or existing.get("receipt_id"),
+            campaign_id=campaign_id,
+            watch_id=watch_id,
             paths=p,
         )
         cite = updated["cite"]
@@ -276,6 +298,8 @@ def web_fetch(
             last_modified=last_mod,
             status=200,
             receipt_id=rid or existing.get("receipt_id"),
+            campaign_id=campaign_id,
+            watch_id=watch_id,
             paths=p,
         )
         cite = updated["cite"]

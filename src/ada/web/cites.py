@@ -275,9 +275,15 @@ def update_cite_fetched_at(
     last_modified: str | None = None,
     status: int | None = None,
     receipt_id: str | None = None,
+    campaign_id: str | None = None,
+    watch_id: str | None = None,
     paths: DataPaths | None = None,
 ) -> dict[str, Any]:
-    """Refresh freshness metadata on an existing cite (304 / same-hash)."""
+    """Refresh freshness metadata on an existing cite (304 / same-hash).
+
+    M11-B: optional *campaign_id* / *watch_id* stamps watch provenance when
+    missing or when the caller provides ids (watch wake paths).
+    """
     p = ensure_cite_dirs(paths)
     cid = normalize_cite_id(cite_id)
     existing = get_cite(cid, paths=p)
@@ -293,6 +299,10 @@ def update_cite_fetched_at(
         data["status"] = status
     if receipt_id is not None:
         data["receipt_id"] = receipt_id
+    if campaign_id:
+        data["campaign_id"] = campaign_id
+    if watch_id:
+        data["watch_id"] = watch_id
     excerpts = list(data.get("excerpts") or [])
     md = _render_cite_md(data, excerpts)
     path = cite_md_path(p, cid)

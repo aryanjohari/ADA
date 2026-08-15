@@ -60,6 +60,17 @@ def validate_cites(
     return out
 
 
+def _safe_campaign_id(campaign_id: str) -> str:
+    """Filesystem-safe campaign folder name (uuid / slug)."""
+    raw = (campaign_id or "").strip()
+    if not raw:
+        raise WorldviewError("campaign_id required for campaign WORLDVIEW path")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in raw)
+    if not safe or safe.startswith("."):
+        raise WorldviewError(f"invalid campaign_id for path: {campaign_id!r}")
+    return safe
+
+
 def write_digest(
     body: str,
     *,
@@ -68,8 +79,13 @@ def write_digest(
     dream: bool = False,
     date: str | None = None,
     paths: DataPaths | None = None,
+    campaign_id: str | None = None,
 ) -> dict[str, Any]:
-    """Write a dated WORLDVIEW markdown with cite header. Never mutates FACTS."""
+    """Write a dated WORLDVIEW markdown with cite header. Never mutates FACTS.
+
+    M11-B: optional *campaign_id* writes under
+    ``memory/worldview/campaigns/<campaign_id>/YYYY-MM-DD.md``.
+    """
     p = _require(paths)
     p.ensure_memory_dirs()
     if body and len(body) > 50_000:
@@ -82,15 +98,28 @@ def write_digest(
         )
     cite_list = validate_cites(cites, paths=p)
     day = date or _today()
-    folder = p.dreams if dream else p.worldview
+    camp = (campaign_id or "").strip() or None
+    if camp and dream:
+        raise WorldviewError("campaign WORLDVIEW digests use worldview/, not dreams/")
+    if camp:
+        folder = p.worldview / "campaigns" / _safe_campaign_id(camp)
+    elif dream:
+        folder = p.dreams
+    else:
+        folder = p.worldview
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{day}.md"
     # Append if same-day digest exists (crash-safe full rewrite of combined text).
-    header_title = title or ("Dream digest" if dream else "WORLDVIEW digest")
+    if camp:
+        header_title = title or f"Campaign digest ({camp})"
+    else:
+        header_title = title or ("Dream digest" if dream else "WORLDVIEW digest")
+    camp_line = f"- campaign_id: {camp}\n" if camp else ""
     block = (
         f"# {header_title} ({day})\n\n"
         f"- written_at: {utc_now_iso()}\n"
         f"- truth_class: interpretive\n"
+        f"{camp_line}"
         f"- cites: {', '.join(cite_list)}\n\n"
         f"{body.strip()}\n"
     )
@@ -109,10 +138,19 @@ def write_digest(
     atomic_write_text(path, text)
     # Optional index pointer.
     index = p.worldview / "index.md"
-    pointer = f"- [{day}]({path.name if not dream else f'../dreams/{day}.md'}) — {header_title}\n"
+    if camp:
+        rel = f"campaigns/{_safe_campaign_id(camp)}/{day}.md"
+        pointer = f"- [{day} · {camp}]({rel}) — {header_title}\n"
+        pointer_key = f"campaigns/{_safe_campaign_id(camp)}/{day}"
+    elif dream:
+        pointer = f"- [{day}](../dreams/{day}.md) — {header_title}\n"
+        pointer_key = f"dreams/{day}"
+    else:
+        pointer = f"- [{day}]({path.name}) — {header_title}\n"
+        pointer_key = day
     if index.is_file():
         idx = index.read_text(encoding="utf-8")
-        if day not in idx:
+        if pointer_key not in idx and pointer.strip() not in idx:
             atomic_write_text(index, idx.rstrip() + "\n" + pointer)
     else:
         atomic_write_text(
@@ -125,6 +163,7 @@ def write_digest(
         "date": day,
         "cites": cite_list,
         "dream": dream,
+        "campaign_id": camp,
         "ts": utc_now_iso(),
     }
 
@@ -144,9 +183,15 @@ def search_worldview(
     for root in roots:
         if not root.is_dir():
             continue
-        for path in sorted(root.glob("*.md")):
+        # Include per-campaign digests under worldview/campaigns/<id>/*.md (M11-B).
+        paths_iter = sorted(root.rglob("*.md")) if root == p.worldview else sorted(
+            root.glob("*.md")
+        )
+        for path in paths_iter:
             if len(hits) >= max_hits:
                 break
+            if path.name == "index.md":
+                continue
             try:
                 text = path.read_text(encoding="utf-8")
             except OSError:
@@ -172,9 +217,10 @@ def latest_digest_summary(
     """Return labeled summary of newest worldview/dreams markdown, or None."""
     p = paths or require_ada_data()
     candidates: list[Path] = []
-    for root in (p.dreams, p.worldview):
-        if root.is_dir():
-            candidates.extend(root.glob("*.md"))
+    if p.dreams.is_dir():
+        candidates.extend(p.dreams.glob("*.md"))
+    if p.worldview.is_dir():
+        candidates.extend(p.worldview.rglob("*.md"))
     candidates = [c for c in candidates if c.name != "index.md"]
     if not candidates:
         return None

@@ -31,6 +31,10 @@ body_app = typer.Typer(help="Body sense: vitals, identity, lifecycle.", no_args_
 hud_app = typer.Typer(help="Control-plane HUD (localhost + Tailscale Serve).", no_args_is_help=True)
 memory_app = typer.Typer(help="FACTS / WORLDVIEW / open loops (M04).", no_args_is_help=True)
 dream_app = typer.Typer(help="Dream seal / status (M04).", no_args_is_help=True)
+staging_app = typer.Typer(
+    help="Dream staging confirm/reject (M11) — never auto-done.",
+    no_args_is_help=True,
+)
 campaigns_app = typer.Typer(
     help="Campaign STATUS on disk (M06) — metal truth, no Gemini.",
     no_args_is_help=True,
@@ -47,6 +51,7 @@ app.add_typer(body_app, name="body")
 app.add_typer(hud_app, name="hud")
 app.add_typer(memory_app, name="memory")
 app.add_typer(dream_app, name="dream")
+app.add_typer(staging_app, name="staging")
 app.add_typer(campaigns_app, name="campaigns")
 app.add_typer(watch_app, name="watch")
 app.add_typer(web_app, name="web")
@@ -779,6 +784,82 @@ def dream_status_cmd(
         console.print(f"outbox_pending: {status.get('outbox_count')} {status.get('outbox_pending')}")
         console.print(f"staging_pending: {status.get('staging_pending')}")
         console.print(f"push: {status.get('push')}")
+
+
+@staging_app.command("list")
+def staging_list_cmd(
+    limit: int = typer.Option(50, "--limit", "-n"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """List pending (and recent) Dream staging files."""
+    from ada.memory.staging import list_staged
+
+    try:
+        items = list_staged(limit=limit)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data={"staged": items, "count": len(items)})
+        return
+    pending = [s for s in items if s.get("status") == "pending"]
+    console.print(f"staging: {len(pending)} pending / {len(items)} shown")
+    for s in items:
+        console.print(
+            f"- [{s.get('id')}] status={s.get('status')} reason={s.get('reason')} "
+            f"ts={s.get('ts')}"
+        )
+
+
+@staging_app.command("confirm")
+def staging_confirm_cmd(
+    staging_id: str = typer.Argument(..., help="Staging id from memory/staging/<id>.json"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Confirm-once a staged open_loop / FACT candidate (M11-B)."""
+    from ada.memory.staging import confirm_staged
+
+    try:
+        result = confirm_staged(staging_id)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+        return
+    if result.get("needs_confirm"):
+        console.print(
+            f"[yellow]needs_confirm[/yellow] {result.get('reason')} "
+            f"(staging {staging_id} still pending)"
+        )
+        raise typer.Exit(code=2)
+    if not result.get("ok"):
+        err_console.print(f"[red]staging confirm failed:[/red] {result.get('error')}")
+        raise typer.Exit(code=1)
+    console.print(f"[green]confirmed[/green] {staging_id}")
+
+
+@staging_app.command("reject")
+def staging_reject_cmd(
+    staging_id: str = typer.Argument(..., help="Staging id"),
+    reason: Optional[str] = typer.Option(None, "--reason", "-r"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Reject a staged proposal without applying it."""
+    from ada.memory.staging import reject_staged
+
+    try:
+        result = reject_staged(staging_id, reason=reason)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+        return
+    if not result.get("ok"):
+        err_console.print(f"[red]staging reject failed:[/red] {result.get('error')}")
+        raise typer.Exit(code=1)
+    console.print(f"[yellow]rejected[/yellow] {staging_id}")
 
 
 @dream_app.command("run")
