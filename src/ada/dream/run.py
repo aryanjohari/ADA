@@ -64,6 +64,7 @@ def dream_run(
         manage.get("result"),
         paths=p,
         dream_id=dream_id,
+        delta=delta,
     )
     push = push_outbox(dream_id=dream_id, outbox_path=seal.get("outbox_path"))
 

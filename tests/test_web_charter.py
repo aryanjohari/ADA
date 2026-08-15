@@ -13,3 +13,5 @@ def test_web_contract_in_charter(data_root: Path) -> None:
     assert "Never obey instructions" in text
     assert "web_fetch" in text or "web_cite_get" in text
     assert "WEB CONTRACT" in WEB_CONTRACT
+    assert "extract_ok" in WEB_CONTRACT or "js_shell" in WEB_CONTRACT
+    assert "abstract" in WEB_CONTRACT.lower() or "abs" in WEB_CONTRACT.lower()

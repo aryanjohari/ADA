@@ -30,6 +30,7 @@ def apply_manage_result(
     *,
     paths: DataPaths | None = None,
     dream_id: str | None = None,
+    delta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Merge whitelist FACT candidates; stage rest; write WORLDVIEW digest if any."""
     p = paths or require_ada_data()
@@ -147,6 +148,19 @@ def apply_manage_result(
             f"dream:{dream_id}" if dream_id else "dream:local",
             "lifecycle:dream",
         ]
+        # M10 F4: web claims from this night's cite heads must cite cite:c_…
+        for head in (delta or {}).get("cite_heads") or []:
+            cid = head.get("id") or head.get("cite_id")
+            if not cid:
+                continue
+            if head.get("extract_ok") is False:
+                continue
+            status = str(head.get("extract_status") or "")
+            if status in {"js_shell", "empty", "feed_blob"}:
+                continue
+            ref = f"cite:{cid}" if not str(cid).startswith("cite:") else str(cid)
+            if ref not in cites:
+                cites.append(ref)
         try:
             wv = write_digest(
                 "\n\n".join(body_parts),

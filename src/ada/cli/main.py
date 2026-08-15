@@ -939,6 +939,34 @@ def web_search_cmd(
         )
 
 
+@web_app.command("reclassify")
+def web_reclassify_cmd(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report only; do not rewrite"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Mark legacy js_shell / feed_blob cites (tombstone; no delete) — M10."""
+    from ada.web.cites import reclassify_existing_cites
+
+    try:
+        require_ada_data()
+        result = reclassify_existing_cites(dry_run=dry_run)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    if json_out:
+        console.print_json(data=result)
+        return
+    console.print(
+        f"[green]reclassify[/green] updated={result.get('count')} "
+        f"dry_run={result.get('dry_run')}"
+    )
+    for row in result.get("updated") or []:
+        console.print(
+            f"  - {row.get('cite_id')} kind={row.get('kind')} "
+            f"status={row.get('extract_status')} ({row.get('reason')})"
+        )
+
+
 @web_app.command("allowlist")
 def web_allowlist_cmd(
     action: str = typer.Argument("list", help="list | add | packs | seed"),

@@ -34,6 +34,7 @@ class FeedItem:
     url: str
     title: str | None
     published_at: datetime | None
+    summary: str | None = None
 
 
 def normalize_url(url: str) -> str:
@@ -73,6 +74,34 @@ def _parse_pubdate(value: str | None) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _strip_html(text: str) -> str:
+    import re
+
+    bare = re.sub(r"<[^>]+>", " ", text or "")
+    return " ".join(bare.split()).strip()
+
+
+def _entry_summary(entry: dict[str, Any]) -> str | None:
+    """RSS/Atom description/summary as plain text (M10 feed fallback)."""
+    for key in ("summary", "description"):
+        val = entry.get(key)
+        if not val:
+            continue
+        if isinstance(val, dict):
+            val = val.get("value") or val.get("content") or ""
+        text = _strip_html(str(val))
+        if text:
+            return text
+    # feedparser content list
+    for block in entry.get("content") or []:
+        if not isinstance(block, dict):
+            continue
+        text = _strip_html(str(block.get("value") or ""))
+        if text:
+            return text
+    return None
 
 
 def _item_guid(entry: dict[str, Any], *, fallback_url: str) -> str:
@@ -126,6 +155,7 @@ def parse_feed_bytes(
                 url=url,
                 title=str(title).strip() if title else None,
                 published_at=pub,
+                summary=_entry_summary(entry),
             )
         )
     items.sort(

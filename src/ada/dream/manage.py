@@ -24,6 +24,11 @@ Given a DELTA summary only, return ONE JSON object with keys:
     Proposals are STAGED (never auto-done). Do not mark campaigns done without receipts.
   conflicts: list of strings
 Never rewrite born_at. Never invent people. Never claim feelings.
+When DELTA includes cite_heads about the web:
+  - WORLDVIEW digest/notes about those pages MUST include cite:c_… ids from the heads.
+  - If extract_ok is false / extract_status is js_shell|empty|feed_blob: say the page was not readable — do not invent Beehive/stats/paper claims.
+  - abs_html means abstract page only — never claim you read the PDF/paper body.
+  - Keep digests short; never paste full page text into WORLDVIEW.
 Return JSON only."""
 
 

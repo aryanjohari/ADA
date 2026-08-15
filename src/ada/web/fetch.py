@@ -1,6 +1,7 @@
-"""Allowlisted HTTPS GET + extract + cite/TTL (M07).
+"""Allowlisted HTTPS GET + extract + cite/TTL (M07 + M10).
 
 httpx client with redirect SSRF revalidation. Observations never include HTML.
+Disk may store full extract + chunks; Gemini sees OBSERVATION_CHAR_CAP only.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from ada.body.vitals import utc_now_iso
 from ada.io.paths import DataPaths, require_ada_data
 from ada.web import allowlist as allowlist_mod
 from ada.web import cites as cites_mod
+from ada.web.chunk import STORE_EXTRACT_CHAR_CAP, chunk_text
+from ada.web.classify import classify_fetch
 from ada.web.extract import extract_main
 from ada.web.ssrf import (
     MAX_REDIRECTS,
@@ -34,6 +37,7 @@ def _content_hash(body: bytes) -> str:
 
 
 def _cap_excerpts(text: str, *, cap: int = OBSERVATION_CHAR_CAP) -> tuple[list[str], bool]:
+    """Observation head only — not the library document (M10 F3)."""
     text = (text or "").strip()
     if not text:
         return [], False
@@ -131,6 +135,8 @@ def web_fetch(
     question: str | None = None,  # noqa: ARG001 — reserved for excerpt bias
     paths: DataPaths | None = None,
     http_get=None,  # test seam
+    campaign_id: str | None = None,
+    watch_id: str | None = None,
 ) -> dict[str, Any]:
     """Fetch URL → extract → durable cite. Returns observation-shaped data."""
     p = paths or require_ada_data()
@@ -284,8 +290,20 @@ def web_fetch(
         html = body.decode("utf-8", errors="replace")
 
     extracted = extract_main(html, url=final_url)
-    excerpts, trunc_text = _cap_excerpts(extracted.get("text") or "")
-    truncated = truncated_download or trunc_text
+    full_text = (extracted.get("text") or "").strip()
+    if len(full_text) > STORE_EXTRACT_CHAR_CAP:
+        full_text = full_text[:STORE_EXTRACT_CHAR_CAP]
+
+    classified = classify_fetch(
+        url=final_url or url,
+        raw_body=html,
+        extracted_text=full_text,
+        truncated_download=truncated_download,
+    )
+    excerpts, trunc_obs = _cap_excerpts(full_text, cap=OBSERVATION_CHAR_CAP)
+    # truncated = observation (or download) was cut — not "library complete" (M10 F3).
+    truncated = truncated_download or trunc_obs
+    chunks = chunk_text(full_text) if full_text else []
 
     cite = cites_mod.write_cite(
         url=url,
@@ -302,6 +320,14 @@ def web_fetch(
         receipt_id=rid,
         paths=p,
         save_raw_html=html if len(html) <= MAX_BODY_BYTES else None,
+        kind=classified.kind,
+        extract_status=classified.extract_status,
+        extract_ok=classified.extract_ok,
+        extract_source="html",
+        chunks=chunks,
+        full_extract=full_text or None,
+        campaign_id=campaign_id,
+        watch_id=watch_id,
     )
     obs = cites_mod.observation_from_cite(cite, cache="miss", receipt_id=rid or None)
     return {"ok": True, "outcome": "ok", **obs}
@@ -321,6 +347,12 @@ def web_cite_search(
     *,
     max_hits: int = 10,
     paths: DataPaths | None = None,
+    include_non_knowledge: bool = False,
 ) -> dict[str, Any]:
-    """Local cite-index search — library discovery before network (M07)."""
-    return cites_mod.search_cites(query, max_hits=max_hits, paths=paths)
+    """Local cite-index search — library discovery before network (M07/M10)."""
+    return cites_mod.search_cites(
+        query,
+        max_hits=max_hits,
+        paths=paths,
+        include_non_knowledge=include_non_knowledge,
+    )

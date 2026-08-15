@@ -245,7 +245,28 @@ def watch_run(
                 receipt_id=start_evt["id"],
                 paths=p,
                 http_get=http_get,
+                campaign_id=cid,
+                watch_id=str(wcopy.get("id") or "") or None,
             )
+            # M10: Beehive-class WAF shell → use RSS description as fallback extract.
+            if (
+                result.get("ok")
+                and not result.get("extract_ok")
+                and result.get("extract_status") == "js_shell"
+                and item.summary
+                and result.get("cite_id")
+            ):
+                from ada.web import cites as cites_mod
+
+                fb = cites_mod.apply_feed_item_fallback(
+                    str(result["cite_id"]),
+                    summary=item.summary,
+                    title=item.title or result.get("title"),
+                    paths=p,
+                )
+                if fb.get("ok"):
+                    result = {**result, **fb, "ok": True, "outcome": "ok"}
+
             evt_payload: dict[str, Any] = {
                 "guid": item.guid,
                 "url": item.url,
@@ -253,6 +274,8 @@ def watch_run(
                 "fetch_ok": result.get("ok"),
                 "cite_id": result.get("cite_id"),
                 "cache": result.get("cache"),
+                "extract_ok": result.get("extract_ok"),
+                "extract_status": result.get("extract_status"),
                 "error": result.get("error"),
                 "needs_confirm": result.get("needs_confirm"),
             }

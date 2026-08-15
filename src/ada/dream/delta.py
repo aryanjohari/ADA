@@ -1,4 +1,7 @@
-"""Delta since last dream_ok — not full history replay."""
+"""Delta since last dream_ok — not full history replay.
+
+M10: include per-watch/campaign cite heads (not prefs-only mush).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +11,11 @@ from typing import Any
 
 from ada.body.lifecycle import LifecycleEvent, read_events
 from ada.io.paths import DataPaths, require_ada_data
+
+# Library section budget inside the manage input (prefs/lifecycle stay small).
+MAX_CITE_HEADS = 20
+MAX_LIBRARY_SUMMARY_CHARS = 8_000
+FIRST_CHUNK_CHARS = 400
 
 
 def last_dream_ok(paths: DataPaths | None = None) -> LifecycleEvent | None:
@@ -24,6 +32,14 @@ def _mtime_iso(path: Path) -> float:
         return 0.0
 
 
+def _group_cite_heads(heads: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for h in heads:
+        key = str(h.get("campaign_id") or h.get("watch_id") or "ungrouped")
+        grouped.setdefault(key, []).append(h)
+    return grouped
+
+
 def build_delta(
     *,
     paths: DataPaths | None = None,
@@ -32,7 +48,8 @@ def build_delta(
     """Collect a bounded delta package summary since last dream_ok (or *since_ts*).
 
     Caps: recent lifecycle events, recent run files by mtime, FACT/WORLDVIEW
-    file listing — never dumps entire runs/ history into manage.
+    file listing, per-campaign cite heads — never dumps entire runs/ or full
+    extracts into manage.
     """
     p = paths or require_ada_data()
     last = last_dream_ok(p)
@@ -114,6 +131,21 @@ def build_delta(
         except Exception:  # noqa: BLE001
             prefs_snapshot = {}
 
+    cite_heads: list[dict[str, Any]] = []
+    try:
+        from ada.web.cites import cite_heads_since
+
+        cite_heads = cite_heads_since(
+            paths=p,
+            since=since,
+            max_heads=MAX_CITE_HEADS,
+            first_chunk_chars=FIRST_CHUNK_CHARS,
+        )
+    except Exception:  # noqa: BLE001 — delta must not fail closed on cites
+        cite_heads = []
+
+    cite_heads_by_campaign = _group_cite_heads(cite_heads)
+
     return {
         "since": since,
         "last_dream_ok_id": last.id if last else None,
@@ -123,6 +155,9 @@ def build_delta(
         "worldview_files": worldview_files,
         "run_files": run_files,
         "prefs_snapshot": prefs_snapshot,
+        "cite_heads": cite_heads,
+        "cite_heads_by_campaign": cite_heads_by_campaign,
+        "cite_head_count": len(cite_heads),
         "summary_text": _summary_text(
             since=since,
             lifecycle_count=len(lifecycle_new),
@@ -131,8 +166,39 @@ def build_delta(
             run_n=len(run_files),
             prefs=prefs_snapshot,
             lifecycle_tail=lifecycle_new[-10:],
+            cite_heads_by_campaign=cite_heads_by_campaign,
         ),
     }
+
+
+def _format_cite_library_section(
+    cite_heads_by_campaign: dict[str, list[dict[str, Any]]],
+    *,
+    max_chars: int = MAX_LIBRARY_SUMMARY_CHARS,
+) -> str:
+    if not cite_heads_by_campaign:
+        return "cite_heads: (none since last dream)"
+    lines = ["cite_heads_by_campaign:"]
+    used = 0
+    for camp, heads in cite_heads_by_campaign.items():
+        header = f"  campaign/watch={camp}:"
+        lines.append(header)
+        used += len(header) + 1
+        for h in heads:
+            status = h.get("extract_status") or "?"
+            ok = h.get("extract_ok")
+            chunk = (h.get("first_chunk") or "").replace("\n", " ")
+            row = (
+                f"    - cite:{h.get('id')} status={status} extract_ok={ok} "
+                f"title={h.get('title')!r} url={h.get('url')} "
+                f"chunk={chunk!r}"
+            )
+            if used + len(row) + 1 > max_chars:
+                lines.append("    - …(cite heads truncated)")
+                return "\n".join(lines)
+            lines.append(row)
+            used += len(row) + 1
+    return "\n".join(lines)
 
 
 def _summary_text(
@@ -144,6 +210,7 @@ def _summary_text(
     run_n: int,
     prefs: dict[str, Any],
     lifecycle_tail: list[dict[str, Any]],
+    cite_heads_by_campaign: dict[str, list[dict[str, Any]]] | None = None,
 ) -> str:
     lines = [
         f"Dream delta since={since or 'BEGINNING'}",
@@ -153,4 +220,12 @@ def _summary_text(
     ]
     for ev in lifecycle_tail:
         lines.append(f"  - {ev.get('ts')} {ev.get('type')}: {ev.get('summary')}")
+    lines.append(
+        _format_cite_library_section(cite_heads_by_campaign or {})
+    )
+    lines.append(
+        "Rules: web claims in digest/notes MUST cite cite:c_… ids from cite_heads; "
+        "do not invent numbers when extract_ok is false; abs_html = abstract page not PDF; "
+        "keep digests short — never paste full page text."
+    )
     return "\n".join(lines)
