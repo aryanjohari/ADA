@@ -1,7 +1,7 @@
 # M05 — Voice Personality Control (register + intent, not soul)
 
-**Status:** module research card — **design locked; register + time-speak shipped (text-first); audio still later**  
-**Date:** 2026-08-13  
+**Status:** module research card — **design locked; register + time-speak + friend-first (M05.2) shipped (text-first); audio still later**  
+**Date:** 2026-08-16 (M05.2 friend-register smooth)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB)  
 **Depends on:** [`M02_CHAT_HARNESS.md`](./M02_CHAT_HARNESS.md), [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md), [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md), [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md), [`../VOICE_EXEMPLARS.md`](../VOICE_EXEMPLARS.md), [`../VOICE_REGISTER.md`](../VOICE_REGISTER.md)
 
@@ -82,14 +82,26 @@ Personality dials — small, tunable, language-agnostic. Store defaults in FACTS
 
 | Intent | Tools | Length | Roast |
 |--------|-------|--------|-------|
-| `social` (hi / catch-up) | usually **none** | 1–3 short sentences | optional light |
-| `lookup` (prefs, projects, vitals) | yes if needed | list/facts first | usually off |
+| `social` (hi / catch-up / **about me**) | usually **none** (boot FACT slice OK) | 1–3 short sentences | optional light |
+| `lookup` (prefs, projects, vitals) | yes if needed | **plain speech first**; facts not path inventory | usually off |
 | `task` (do X) | as required | result first; optional details | only if plan deserves it |
 | `challenge` (bad plan / laziness bit) | maybe | short pushback | **on** if tease_ok |
 | `refuse` (consciousness, guest command) | no | ≤2 sentences | dry wit OK |
 | `deep_dive` | yes | structured; ask before essay | low |
 
 Success ≠ hitting a token quota. Success = **right class for the turn**.
+
+### Friend-first (M05.2 lock) — not curator dumps
+
+**Falsifier (live):** “hi” / “tell me about me” → tool spam + laundry list of `identity.yaml`, `people/aryan.yaml`, open loops as inventory — sounds like a librarian, not a friend catching up.
+
+**Lock:**
+- **Social / catch-up / about-me** → warm short human summary from boot FACT slice; **minimal or no tools** unless boot slice is insufficient; **no file-path inventory** by default.
+- **Lookup / task** may use tools + receipts, but answers **lead with plain speech**; paths only if Aryan asks for inventory or as a quiet receipt crumb.
+- Truth stays (FACTS / receipts). Presentation must not dump metal paths like a curator.
+- Consent Integrity / gateway / modes unchanged. No Funnel. No consciousness cosplay. Truth > charm.
+
+**Curator dump OUT** unless the user explicitly asks for inventory / “which files” / raw store paths.
 
 Token caps remain **safety nets** against verbosity compensation (VC), not the goal:
 
@@ -230,12 +242,13 @@ per turn
 ## Falsifiers / learning goals
 
 1. **Intent falsifier:** “hi what’s up” triggers unnecessary tool dump → intent gate failed.  
-2. **Humor falsifier:** every reply contains a roast → density gate failed.  
-3. **Anti-parrot:** output reuses distinctive exemplar punchlines → exemplars must be abstracted further.  
-4. **Grounding:** witty reply invents a FACT → restrict humor to non-claim spans / dry→wet.  
-5. **Chill:** “chill” does not soften → session override broken.  
-6. **Consciousness / fluff:** existing M04 smokes still pass.  
-7. **Time-speak:** answers dump bare ISO-Z (`…T05:12:55Z`) when speaking → render gate failed (metal OK in tools/FACTS).
+2. **Curator falsifier (M05.2):** “about me” / catch-up dumps `identity.yaml` / `people/*.yaml` / open_loops as inventory → friend-first failed.  
+3. **Humor falsifier:** every reply contains a roast → density gate failed.  
+4. **Anti-parrot:** output reuses distinctive exemplar punchlines → exemplars must be abstracted further.  
+5. **Grounding:** witty reply invents a FACT → restrict humor to non-claim spans / dry→wet.  
+6. **Chill:** “chill” does not soften → session override broken.  
+7. **Consciousness / fluff:** existing M04 smokes still pass.  
+8. **Time-speak:** answers dump bare ISO-Z (`…T05:12:55Z`) when speaking → render gate failed (metal OK in tools/FACTS).
 
 ### Evidence that would prove the approach wrong
 
@@ -277,26 +290,28 @@ per turn
 | `roast_energy` | **0.65** |
 | Humor density | **low default + gate** |
 | Verbosity | **intent-class caps** (60 / 160 / 320) |
-| Receipts phrasing | lookup/task: facts first; social: no fake receipts |
+| Receipts phrasing | lookup/task: plain speech first + quiet crumbs; social/about-me: no path inventory |
 | Rollout | **text → PTT** |
 | Exemplars | **hybrid (B)** contract + micro-shots |
 | Humor when | challenge / invited social; never on missing evidence |
 | Time-speak | **answers** in `preferred_tz` plain speech; metal stays ISO/`HH:MM` |
+| Friend-first (M05.2) | social/about-me = friend summary; curator dump OUT unless inventory asked |
 | Geo/weather | **out of M05** (separate Tier B+) |
 
 ---
 
 ## Evidence requirements (acceptance)
 
-- [ ] Social smoke: no tool spam; short human reply.  
-- [ ] Lookup smoke: list/facts; low roast; receipts when claiming metal.  
-- [ ] Challenge smoke: situational roast; non-cruel.  
-- [ ] Chill smoke: immediate soften.  
-- [ ] Consciousness / anti-fluff smokes still green.  
-- [ ] Exemplar parrot smoke: no long copied spans from `VOICE_EXEMPLARS.md`.  
-- [ ] Register dial change (FACT/session) visibly shifts tone on fixed prompts.  
-- [ ] Time-speak: dream/lookup answers use local plain time — no bare ISO-Z dumps unless Aryan asks for exact metal.  
-- [ ] No audio required to call M05 coding slice done.
+- [x] Social smoke: no tool spam; short human reply.  
+- [x] About-me / friend-first smoke: no yaml path laundry list; FACT accuracy OK.  
+- [x] Lookup smoke: list/facts; low roast; receipts when claiming metal (no path dump required).  
+- [x] Challenge smoke: situational roast; non-cruel.  
+- [x] Chill smoke: immediate soften.  
+- [x] Consciousness / anti-fluff smokes still green.  
+- [x] Exemplar parrot smoke: no long copied spans from `VOICE_EXEMPLARS.md`.  
+- [x] Register dial change (FACT/session) visibly shifts tone on fixed prompts.  
+- [x] Time-speak: dream/lookup answers use local plain time — no bare ISO-Z dumps unless Aryan asks for exact metal.  
+- [x] No audio required to call M05 coding slice done.
 
 ---
 
@@ -304,9 +319,10 @@ per turn
 
 ### Prompt / charter
 
-- Extend `build_system_charter()` / `charter.py`: inject **REGISTER CONTRACT** block (dials + intent table + ban stubs + chill rule + **time-speak**) before exemplars.
-- Keep `VOICE_EXEMPLARS.md` but diversify pairs by intent; include one time-speak demo; shorten if boot budget tight.
+- Extend `build_system_charter()` / `charter.py`: inject **REGISTER CONTRACT** block (dials + intent table + ban stubs + chill rule + **time-speak** + **friend-first**) before exemplars.
+- Keep `VOICE_EXEMPLARS.md` but diversify pairs by intent; include time-speak + **about-me friend summary**; shorten if boot budget tight.
 - Anti-copy one-liner in contract.
+- Tool-use footer: intent-gated — social/about-me prefer boot FACT slice; no path laundry lists.
 
 ### FACTS vs WORLDVIEW
 
@@ -317,7 +333,7 @@ per turn
 
 ### Eval
 
-- Add smokes for intent classes + chill + parrot + **time-speak (no raw ISO-Z in answers)**; reuse consciousness/fluff tests.
+- Add smokes for intent classes + chill + parrot + **time-speak (no raw ISO-Z in answers)** + **friend-first (no curator path dump)**; reuse consciousness/fluff tests.
 - Meter optional later: tokens by intent class in `runs/`.
 
 ### Channel
@@ -335,9 +351,10 @@ per turn
 4. Diversify `VOICE_EXEMPLARS.md` to cover social / lookup / challenge / chill / refuse (still original pairs).  
 5. Smokes: social-no-tools, lookup-list, challenge-roast, chill, parrot, consciousness.  
 5b. **M05.1 time-speak:** register `time-speak` line + time exemplar + `contains_raw_iso_z` eval; use existing `preferred_tz` — no geo/weather.  
+5c. **M05.2 friend-first:** register `friend-first` + about-me exemplar + `contains_curator_path_dump` / `about_me_is_friend_shaped` evals; intent→tools footer in charter.  
 6. Stop. Do **not** start STT/TTS until text register smokes pass.
 
-**Coding plan should implement first:** steps **1–5** (contract in boot + prefs + exemplar diversify + smokes), then **5b** time-speak.
+**Coding plan should implement first:** steps **1–5** (contract in boot + prefs + exemplar diversify + smokes), then **5b** time-speak, then **5c** friend-first.
 
 ---
 
@@ -358,4 +375,4 @@ per turn
 
 ---
 
-*End of M05. Design locked 2026-08-13 — register + intent/humor + time-speak shipped text-first (`preferred_tz` plain speech + `contains_raw_iso_z` eval); audio later.*
+*End of M05. Design locked 2026-08-13 — register + intent/humor + time-speak shipped text-first; **M05.2 friend-first** (2026-08-16) locks social/about-me as friend summary (no curator path dumps). Audio later.*

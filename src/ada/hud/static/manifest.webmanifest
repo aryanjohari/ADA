@@ -1,0 +1,17 @@
+{
+  "name": "ADA",
+  "short_name": "ADA",
+  "description": "ADA agent control plane — Tailscale Serve",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0f0d",
+  "theme_color": "#0c0f0d",
+  "icons": [
+    {
+      "src": "/static/icons/ada-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

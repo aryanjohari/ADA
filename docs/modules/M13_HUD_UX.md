@@ -1,12 +1,13 @@
 # M13 — HUD UX / living agent surface
 
-**Status:** living surface doc — **metal P0–P2 shipped** (2026-08-15): chat-first shell + vitals cards; stream tool/receipt cards + mode/lifecycle chips; read-only `/api/xray/list|read` + md/cite preview. **P3 last-dream API wired** from `dream_status` / ledger; campaign hints / brief product still **OUT**. SSE tool-result summary enrichment deferred.  
-**Date:** 2026-08-15  
+**Status:** living surface doc — **metal P0–P2 shipped** (2026-08-15). **Packaged wave P0′/P1′ shipped** (2026-08-16): chat = home; Body `<dialog>` drawer; moss CSS modules; session welcome; Plan Accept + Agent Confirm (with M14).  
+**Date:** 2026-08-15 (IA + packaged metal 2026-08-16)  
 **Host:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1, Debian trixie, ~8 GiB RAM)  
 **Branch:** `rewrite/v1-body`  
 **Depends on:** [`M03_HUD.md`](./M03_HUD.md) (**architecture authority** — panes, bind, Serve, auth, harness wiring), [`M02_CHAT_HARNESS.md`](./M02_CHAT_HARNESS.md) (stream events + `run_turn`), [`M00_BODY_SENSE.md`](./M00_BODY_SENSE.md) + [`M12_BODY_PROPRIOCEPTION.md`](./M12_BODY_PROPRIOCEPTION.md) (vitals fields / doctor parity), [`M11_DREAM_CONSOLIDATION.md`](./M11_DREAM_CONSOLIDATION.md) (**pointer only** — last dream / campaign digests for P3 stubs)  
-**METAL present (2026-08-15):** `src/ada/hud/` ASGI on `127.0.0.1:8787`; Tailscale Serve → `https://ada-pi5.tailbc896a.ts.net` (tailnet only); Funnel not the control-plane path. UI is chat-primary + organism cards + optional x-ray (not five equal JSON panes).  
-**OUT of implement gate unless explicitly phased later:** Dream manage editor, WORLDVIEW editor, voice, sandboxed shell, vendor search UI, full brief product, Funnel, unrestricted FS, Node/Next rewrite, holographic face / consciousness FANFICTION.
+**Access / session / Mac packaging / agent ask→accept:** [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) — **co-implement**; M13 owns chrome + Body drawer + CSS pack.  
+**METAL present (2026-08-15/16):** `src/ada/hud/` ASGI on `127.0.0.1:8787`; Serve → `https://ada-pi5.tailbc896a.ts.net`; chat-first shell but organism still a **peer column** (gap vs new IA); moss CSS vars live in `app.css`.  
+**OUT of implement gate unless explicitly phased later (or earned in M14):** Dream manage editor, WORLDVIEW editor, sandboxed shell, vendor search UI, full brief product, Funnel, unrestricted FS, Node/Next **on Pi**, holographic face / consciousness FANFICTION. Voice / Mac hybrid / pretext: see M14 tiers.
 
 **Name justification:** **`M13_HUD_UX.md`** next to other modules (not `docs/HUD_SURFACE.md`). M03 locked control-plane **truth**; M13 owns **presentation + IA + phased UI**. Keeping the module number makes implement chats find it beside M03/M12.
 
@@ -52,10 +53,14 @@
 | Cortex | Chat drives existing M02 harness — UI is a **channel**, not ADA herself |
 | Body numbers | M00/M12 organs; parity with `ada body doctor` / vitals; **library ≠ body** |
 | Stack | Python ASGI + Jinja + static CSS/JS (no Next/React default path) |
+| **Home** | **Chat is the product.** First viewport = brand + session/mode + stream + composer |
+| **Body HUD** | Vitals / lifecycle / x-ray / audit behind **[Body]** button → drawer/panel — **not** peer home column |
+| **CSS pack** | Fixed moss palette + Plex (self-host) + packaged density in next P0 — cool app, not ops dump |
 | Voice in copy | she/her; witty/roast OK in **chat stream**, not in chrome that lies |
 | Secrets | Never-to-cloud / never in x-ray: `secrets/`, `~/.ssh`, env key files, Tailscale auth material, full machine-id dumps |
-| Auth | Observe = mesh (Serve + localhost); Agent/Plan = session password (existing) |
-| Raw honesty | Keep audit escape (run tail); don’t let it own the first viewport forever |
+| Auth | Observe = mesh; Agent/Plan = session password (M14); after login stay on chat |
+| Ask / accept | Plan card + Accept; Agent Confirm — owned with M14, rendered in this chrome |
+| Raw honesty | Audit escape inside Body drawer; never owns first viewport |
 | Pasted-path honesty | Unchanged — host must appear in user text for `user_pasted` (M12 harden) |
 
 ---
@@ -195,71 +200,81 @@ Later UI may **show**:
 | 8 | No way to browse dreams/cites/runs without SSH — FS browser still OUT of M12, owed here as **P2 x-ray** |
 | 9 | Stale HUD process can show thinner vitals than CLI (ops, not design) |
 
-**Target (one sentence):** a **chat-first AI agent control plane** that still feels like a **Pi organism** — readable body vitals + honest tool/receipt cards + an optional read-only x-ray — not a five-equal ops dashboard.
+**Target (one sentence):** a **packaged ADA chat agent** (home = stream after login/session) with organism truth one **Body** click away — not a peer ops dashboard, not a bare Tailscale site.
 
 ---
 
 ## 6. Target IA + visual principles
 
-### 6.1 Information architecture
+### 6.1 Information architecture (2026-08-16 LOCKED with M14)
 
 | Priority | Surface | Role |
 |----------|---------|------|
-| **Primary** | Chat / stream | Turns, tool/receipt cards, faults — same harness truth as CLI |
-| **Secondary** | Organism vitals strip/cards | M12 metrics as structured UI, not JSON wall |
-| **Tertiary** | Lifecycle + mode/perms | Born/wake/fault stubs; mode select; auth badge; denials |
-| **Audit escape** | Raw run tail | Collapsed by default on mobile; expandable honesty |
-| **P2** | ADA x-ray + doc preview | Allowlisted browse → markdown/cite preview; raw JSON opt-in |
+| **Primary / home** | Chat / stream + composer | Full ADA agent conversation after (or without) login — turns, plan cards, tool/receipt/confirm cards |
+| **Chrome** | Brand + session welcome + mode dial + **[Body]** | Compact top bar — not a second column of ops |
+| **Secondary / on demand** | **Body drawer** | Vitals cards, lifecycle, x-ray, audit/raw — opened by button; closed by default |
+| **Tertiary inside Body** | Mode detail denials / doctor badge | Still truthful; not competing with chat |
+| **Not home** | Observe mode | Gateway read-only mode — **not** a separate Observe dashboard |
 
-### 6.2 Visual direction (implement locks)
+```text
+┌─────────────────────────────────────────────┐
+│ ADA · session · Plan|Agent|Observe · [Body] │
+├─────────────────────────────────────────────┤
+│                                             │
+│   STREAM  (flex grow — the product)         │
+│   … plan card / tool cards / bubbles …      │
+│                                             │
+├─────────────────────────────────────────────┤
+│   composer ………………………… [Send]       │
+└─────────────────────────────────────────────┘
+         [Body] open →
+┌──────────────────────┐
+│ Vitals · Lifecycle   │
+│ X-ray · Audit        │
+└──────────────────────┘
+```
 
-**CSS variables (proposed)**
+### 6.2 Visual direction — CSS pack (LOCKED for next P0)
+
+Moss variables already **METAL** in `app.css` (`--bg0` … `--accent` leaf green). Next pack **polishes**, does not invent a new theme:
+
+| Rule | Spec |
+|------|------|
+| Palette | Keep moss-black / leaf accent; **no** purple→indigo SaaS clone |
+| Type | IBM Plex (self-host `/static/fonts/`); display weight for **ADA** |
+| Density | Chat-first; generous stream; compact chrome; Body drawer denser OK |
+| Composer | Sticky, clear focus ring, packaged height |
+| Cards | Plan / tool / confirm share one card family; radius `--radius` |
+| Motion | Keep 2–3 intentional motions; honor `prefers-reduced-motion` |
 
 ```css
 :root {
-  --bg0: #0f1210;          /* deep moss-black */
+  --bg0: #0f1210;
   --bg1: #171b18;
   --surface: #1e2420;
   --surface-2: #262d28;
   --line: #343c36;
   --fg: #e6ebe4;
   --muted: #8b968c;
-  --accent: #8fbc6b;       /* leaf — not neon purple */
+  --accent: #8fbc6b;
   --accent-dim: #4a6340;
   --warn: #c9a227;
   --deny: #c97070;
-  --user: #6a8f9e;         /* cool slate, not purple glow */
+  --user: #6a8f9e;
   --radius: 6px;
-  --space-1: 0.35rem;
-  --space-2: 0.65rem;
-  --space-3: 1rem;
-  --space-4: 1.5rem;
-  --font-ui: "IBM Plex Sans", "Source Sans 3", ui-sans-serif, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-  --font-display: "IBM Plex Sans", var(--font-ui); /* weight 600 for ADA */
+  /* … spaces + fonts as already in app.css … */
 }
 ```
 
-Load Plex (or similar) once via self-hosted `/static/fonts/` — avoid Inter/Roboto/Arial defaults; **no** purple→indigo gradient theme; **no** holographic face.
+**Spacing / density (updated)**
 
-**Spacing / density**
+- First viewport: **only** brand/session/mode/Body + stream + composer.  
+- No always-visible vitals strip competing with chat (strip may move into Body or become a one-line fault badge when urgent).  
+- Body drawer: vitals grid + lifecycle + x-ray tabs + audit disclosure.
 
-- First viewport desktop: brand + stream (tall) + vitals strip; mode/lifecycle compact; raw collapsed.
-- Cards use `--space-2` padding; avoid nested card-in-card.
-- Mono reserved for receipts, paths, hex — not body copy.
+**2–3 intentional motions** — unchanged (stream append, tool settle, urgent vitals pulse in Body).
 
-**2–3 intentional motions (not noise)**
-
-1. **Stream append** — new bubble/card fades/slides in ~150–200ms (`opacity` + `translateY(4px)`).
-2. **Tool card settle** — on `tool_call_finished`, border/status chip transitions to ok/fail (~120ms).
-3. **Vitals pulse (subtle)** — urgent fault badge soft opacity pulse only when `urgent_faults` non-empty; respect `prefers-reduced-motion: reduce` → instant.
-
-**Mobile**
-
-- Sticky composer at bottom; stream fills remaining height.
-- Vitals = horizontal scroll strip or 2×2 metric grid under header.
-- Mode/auth in a compact top bar; raw + lifecycle behind “More / Audit” disclosure.
-- Usable on phone via Tailscale Serve HTTPS (existing path).
+**Mobile** — sticky composer; Body = full-screen sheet; stream fills rest.
 
 ---
 
@@ -439,23 +454,30 @@ Entry: tab or “X-ray” beside Audit — does **not** replace chat as default 
 
 ## 9. Phased roadmap + API deltas
 
+### 9a. Already shipped (2026-08-15 metal)
+
+| Phase | Shipped |
+|-------|---------|
+| **P0–P2** | Chat-first grid, vitals cards, tool cards, mode chips, x-ray list/read + md preview |
+| **P3 partial** | `last_dream_*` from `dream_status`; campaign hints / brief still OUT |
+
+### 9b. Next wave — packaged agent (with M14) — **plan → implement**
+
 | Phase | Ships | Does not ship |
 |-------|-------|---------------|
-| **P0** | Visual hierarchy + CSS polish + chat-first layout + vitals **cards** from existing `/api/vitals` (+ doctor badge) | FS/x-ray; fancy tool result bodies |
-| **P1** | Stream tool/receipt cards polish; mode/lifecycle readability (no JSON walls); optional SSE result summary | Editors; brief product |
-| **P2** | X-ray list/read APIs + md/cite/dream preview + raw toggle | Write paths; secrets; shell |
-| **P3** | Optional niceties: last-dream stub strip; campaign due **hints** from staging/index | Full brief product; Dream manage UI; WORLDVIEW editor |
+| **P0′** | **CSS pack** polish; **chat = sole home**; **[Body]** drawer (vitals/lifecycle/x-ray/audit); session welcome chrome; manifest/icons hook | Next rewrite; menu-bar app |
+| **P1′** | Plan **ask card + Accept/Revise**; Agent **Confirm/Deny** inline (M14); optional tool summary | Voice; Funnel; editors |
+| **P2′** | Optional: urgent one-line fault badge when Body closed; stop/cancel if harness allows | Always-listen; pretext face |
 
-**API deltas**
+**API deltas (prefer reuse)**
 
-| When | Change | Prefer reuse |
-|------|--------|--------------|
-| P0 | None required — reshape client render of `/api/vitals`, `/api/doctor`, `/api/lifecycle`, `/api/mode` | Yes |
-| P1 | Optional: enrich `tool_call_finished` with capped observation summary | Extend harness emit or HUD bridge only |
-| P2 | **New** `/api/xray/list`, `/api/xray/read` (allowlist + deny + realpath) | Thin FS read — not a second cortex |
-| P3 | Lifecycle `last_dream_*` from `dream_status` / ledger (**wired**); campaign hints still optional later | Prefer `dream_status()` — do not invent push success |
+| When | Change |
+|------|--------|
+| P0′ | Mostly client IA/CSS; optional `manifest.webmanifest` static |
+| P1′ | May need thin confirm API or confirm-via-chat turn — **must** bind to gateway `{tool,args}` (see M14 §9) |
+| Later | SSE `needs_confirm` event if not already derivable from tool_finished |
 
-**Stack stays:** FastAPI + Jinja + `app.css` / `app.js` (or split modules if needed). No Next/React default.
+**Stack stays:** FastAPI + Jinja + `app.css` / `app.js`. No Next/React on Pi.
 
 ---
 
@@ -463,49 +485,55 @@ Entry: tab or “X-ray” beside Audit — does **not** replace chat as default 
 
 | # | Falsifier | Pass if |
 |---|-----------|---------|
-| F1 | Mobile Tailnet | Phone on Tailscale opens Serve URL; usable chat + vitals; **no** LAN bind |
-| F2 | Doctor parity | Vitals cards match `ada body doctor` / organ JSON within tolerance |
+| F1 | Mobile Tailnet | Phone on Tailscale opens Serve URL; usable chat; **no** LAN bind |
+| F2 | Doctor parity | Body drawer vitals match `ada body doctor` / organ JSON within tolerance |
 | F3 | Funnel impossible | Control plane not on Funnel/public URL |
 | F4 | Chat = harness | HUD turn writes same-shaped `runs/` JSONL as `ada chat`; tool cards = gateway args |
-| F5 | X-ray deny | Requests under `secrets/`, ssh paths, env key files → refuse; no content leak |
-| F6 | Pasted-path honesty | Unchanged vs M12 — fake `user_pasted` still fail-closed |
+| F5 | X-ray deny | Requests under `secrets/` etc. → refuse |
+| F6 | Pasted-path honesty | Unchanged vs M12 |
 | F7 | No second brain | No parallel agent loop in HUD process |
 | F8 | Reduced motion | Motions disable under `prefers-reduced-motion` |
+| F9 | Chat is home | Body closed by default; stream+composer own first viewport |
+| F10 | Packaged CSS | Moss pack applied; Dock window does not read as bare ops site |
 
 ---
 
-## 11. OPEN for Aryan (≤7)
+## 11. OPEN for Aryan — **resolved for next wave**
 
-1. **Density** — compact vitals strip vs larger cards (phone-first preference)?  
-2. **Raw JSON** — keep raw run tail always one click away, or bury deeper after P1 cards feel enough?  
-3. **X-ray roots** — lock the three roots above, or also allow `dream/staging` + `scratch` in P2?  
-4. **Md vs raw default** — rendered markdown default for dreams/WORLDVIEW/cites (proposed), or raw-first for operator distrust?  
-5. **Brand voice in chrome** — keep dry ops (“control plane”) vs slightly warmer she/her line **without** lying about consciousness?  
-6. **First implement** — **P0 only** vs **P0+P1** in one coding chat?  
-7. **Tool result summary** — enrich SSE in P1, or wait until JSONL rebuild UI is enough?
+| # | Was | Now |
+|---|-----|-----|
+| 1 | Density strip vs cards | **Body drawer** denser cards; no always-on strip as home |
+| 2 | Raw JSON depth | **Inside Body** audit disclosure |
+| 3 | X-ray roots | Keep three roots (memory/runs/outbox) unless later card expands |
+| 4 | Md vs raw default | Rendered default (existing) |
+| 5 | Brand voice | Slightly warmer welcome OK; no consciousness lie — see M14 |
+| 6 | First implement | **P0′+P1′ with M14** in one coding chat |
+| 7 | Tool summary | Optional in P1′; not blocking |
 
----
-
-## 12. Ordered implement-next (after OPEN locks)
-
-**No code in this chat.** After Aryan locks §11:
-
-1. Restart long-lived `ada hud serve` when measuring vitals (avoid stale extras).  
-2. **P0:** restyle shell — chat-primary grid; vitals metric cards from existing APIs; collapse raw; mobile sticky composer; CSS variables + 2–3 motions.  
-3. Smoke F1–F2–F3 on phone + `ada body doctor`.  
-4. **P1:** tool/receipt card UX; mode/lifecycle without JSON walls; optional SSE summary.  
-5. Smoke F4 vs `ada chat -q`.  
-6. **P2:** `/api/xray/*` allowlist+deny; list→preview; md/cite modes; F5 secret refuse tests.  
-7. **P3** only if wanted: last-dream stub + campaign hints — still not brief product.  
-8. **Stop** before Dream editor, WORLDVIEW editor, voice, shell, Funnel, Next rewrite.
+**Residual:** drawer label `Body` (recommended) vs `HUD` — pick at implement start.
 
 ---
 
-## 13. Pointer from M03
+## 12. Ordered implement-next (with M14)
 
-M03 remains the **architecture** card (bind, Serve, five pane *truth sources*, auth, harness). Presentation/IA/phased polish live here:
+**Ready to plan.** After plan review, one coding chat:
 
-→ **[`M13_HUD_UX.md`](./M13_HUD_UX.md)** (living surface doc).
+1. Restart long-lived `ada hud serve` when measuring.  
+2. **P0′:** CSS pack + chat-home layout + Body drawer; session welcome; manifest; Mac open script (M14).  
+3. Smoke F1, F9, F10, F2 (Body open), F3.  
+4. **P1′:** Plan Accept card + Agent Confirm (M14 §9); smoke F4 + Consent Integrity.  
+5. **Stop** before Dream editor, WORLDVIEW editor, voice, Funnel, Next-on-Pi.
+
+Full checklist: [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) §13.
+
+---
+
+## 13. Pointer from M03 / to M14
+
+M03 remains the **architecture** card (bind, Serve, five pane *truth sources*, auth, harness). Presentation/IA/phased polish live here. Access, Mac packaging, session welcome, and agent-feel (intent→plan→execute) live in M14:
+
+→ **[`M13_HUD_UX.md`](./M13_HUD_UX.md)** (living surface / chrome).  
+→ **[`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md)** (access · session · Mac · agent interaction).
 
 ---
 
@@ -514,6 +542,7 @@ M03 remains the **architecture** card (bind, Serve, five pane *truth sources*, a
 | Kind | Cite |
 |------|------|
 | Architecture | [`M03_HUD.md`](./M03_HUD.md) |
+| Agent surface | [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) |
 | Harness | [`M02_CHAT_HARNESS.md`](./M02_CHAT_HARNESS.md); `src/ada/harness/loop.py`, `stream_events.py` |
 | Body | [`M00_BODY_SENSE.md`](./M00_BODY_SENSE.md), [`M12_BODY_PROPRIOCEPTION.md`](./M12_BODY_PROPRIOCEPTION.md); `src/ada/body/vitals.py` |
 | Dream stubs | [`M11_DREAM_CONSOLIDATION.md`](./M11_DREAM_CONSOLIDATION.md) — digests under `memory/dreams`, `memory/worldview` |
@@ -522,4 +551,4 @@ M03 remains the **architecture** card (bind, Serve, five pane *truth sources*, a
 
 ---
 
-*End of M13. P0–P2 presentation shipped in metal; Funnel, editors, and P3 brief product remain out.*
+*End of M13. Shipped P0–P2 metal remains. Next packaged wave (chat home + Body drawer + CSS pack + M14 ask/accept) is locked and ready to plan.*

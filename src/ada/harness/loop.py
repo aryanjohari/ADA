@@ -180,7 +180,14 @@ def run_turn(
 
             sink.emit(
                 "tool_call_finished",
-                {"tool": tc.name, "ok": result.ok, "receipt_id": result.receipt_id},
+                {
+                    "tool": tc.name,
+                    "ok": result.ok,
+                    "receipt_id": result.receipt_id,
+                    "outcome": result.outcome,
+                    "needs_confirm": bool(result.needs_confirm),
+                    "args": result.args,
+                },
             )
             history.append(observation_to_content(obs, call_id=tc.call_id))
 

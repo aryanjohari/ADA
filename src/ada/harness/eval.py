@@ -72,6 +72,35 @@ _PREF_OR_LIST = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Curator / librarian dump — memory file paths in user-facing speech (M05.2).
+_CURATOR_PATH_DUMP = re.compile(
+    r"("
+    r"\bidentity\.ya?ml\b|"
+    r"\bprefs\.ya?ml\b|"
+    r"\bopen_loops\.ya?ml\b|"
+    r"\bpeople/[a-z0-9_.-]+\.ya?ml\b|"
+    r"\bmemory/facts/\b|"
+    r"\bfacts/people/\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_ABOUT_ME_SIGNAL = re.compile(
+    r"("
+    r"\baryan\b|"
+    r"\boperator\b|"
+    r"\bbrief\b|"
+    r"\b5:30\b|"
+    r"\b05:30\b|"
+    r"\bquiet hours\b|"
+    r"\broast\b|"
+    r"\btease\b|"
+    r"\bprefs?\b|"
+    r"\bpi\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def claims_body_metric_without_receipt(
     answer: str,
@@ -122,10 +151,28 @@ def social_turn_used_tools(tool_receipts: list[dict[str, Any]]) -> bool:
     return bool(tool_receipts)
 
 
+def contains_curator_path_dump(answer: str) -> bool:
+    """True if answer laundry-lists memory yaml paths (friend-register fail)."""
+    return bool(_CURATOR_PATH_DUMP.search(answer or ""))
+
+
+def about_me_is_friend_shaped(answer: str, *, max_chars: int = 500) -> bool:
+    """True if about-me reply is a short human summary, not a path inventory."""
+    text = (answer or "").strip()
+    if not text or len(text) > max_chars:
+        return False
+    if contains_curator_path_dump(text):
+        return False
+    return bool(_ABOUT_ME_SIGNAL.search(text))
+
+
 def lookup_lists_facts_first(answer: str) -> bool:
     """True if answer looks list/facts-first (pref keys, bullets, clock times)."""
     text = (answer or "").strip()
     if not text:
+        return False
+    # Curator path dumps are not “facts first” — they fail friend/lookup speech.
+    if contains_curator_path_dump(text):
         return False
     # First ~120 chars should carry the fact signal, not a long roast preamble.
     head = text[:120]

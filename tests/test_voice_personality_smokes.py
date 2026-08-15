@@ -11,10 +11,12 @@ from ada.cortex.charter import (
     load_voice_exemplars,
 )
 from ada.harness.eval import (
+    about_me_is_friend_shaped,
     challenge_has_situational_pushback,
     chill_softens,
     contains_banned_fluff,
     contains_consciousness_claim,
+    contains_curator_path_dump,
     contains_exemplar_parrot,
     contains_raw_iso_z,
     lookup_lists_facts_first,
@@ -47,12 +49,16 @@ def test_register_contract_before_exemplars() -> None:
     assert "challenge:" in text
     assert "time-speak" in text.lower()
     assert "preferred_tz" in text
+    assert "friend-first" in text.lower()
+    assert "path dump" in text.lower() or "laundry-list" in text.lower()
+    assert "Intent→tools" in text or "friend-first" in text.lower()
 
 
 def test_load_register_contract_budget() -> None:
     block = load_register_contract()
     assert "REGISTER CONTRACT" in block
-    assert len(block) <= 1200
+    assert "friend-first" in block.lower()
+    assert len(block) <= 1800
 
 
 def test_exemplars_cover_intent_classes() -> None:
@@ -60,12 +66,13 @@ def test_exemplars_cover_intent_classes() -> None:
     low = text.lower()
     for label in ("social", "lookup", "refuse", "challenge", "chill", "anti-fluff", "time-speak"):
         assert label in low
+    assert "about me" in low
     assert "Aryan:" in text
     assert "ADA:" in text
     # Stay inside boot budget (loader caps at 2400 of file body + header).
     raw = Path(__file__).resolve().parents[1] / "docs" / "VOICE_EXEMPLARS.md"
     assert raw.is_file()
-    assert len(raw.read_text(encoding="utf-8")) < 2400
+    assert len(raw.read_text(encoding="utf-8")) < 2800
 
 
 def test_fact_register_prefs_in_boot_slice(data_root: Path) -> None:
@@ -107,12 +114,45 @@ def test_chill_session_override_in_charter(data_root: Path) -> None:
 def test_social_no_tools_smoke() -> None:
     assert social_turn_used_tools([]) is False
     assert social_turn_used_tools([{"tool": "body_vitals", "ok": True}]) is True
+    # “hi” shaped answers must not dump memory paths.
+    hi_ok = "Here. Quiet board, nothing on fire. What do you need?"
+    hi_bad = (
+        "I checked identity.yaml, people/aryan.yaml, and open_loops.yaml — "
+        "here's your inventory."
+    )
+    assert contains_curator_path_dump(hi_ok) is False
+    assert contains_curator_path_dump(hi_bad) is True
+    assert social_turn_used_tools([{"tool": "memory_facts_get", "ok": True}]) is True
+
+
+def test_about_me_friend_shaped_smoke() -> None:
+    good = (
+        "You're Aryan — operator on this Pi. Briefs at 5:30am, roast OK, "
+        "quiet hours overnight. Want prefs or open loops next?"
+    )
+    bad = (
+        "From identity.yaml and people/aryan.yaml: prefs.yaml has brief_time; "
+        "open_loops.yaml lists campaigns."
+    )
+    assert about_me_is_friend_shaped(good) is True
+    assert contains_curator_path_dump(bad) is True
+    assert about_me_is_friend_shaped(bad) is False
+    # Factual accuracy without path dump still passes.
+    factual = "Briefs at 5:30am NZST; tease_ok is on. Quiet hours overnight."
+    assert about_me_is_friend_shaped(factual) is True
 
 
 def test_lookup_list_smoke() -> None:
-    assert lookup_lists_facts_first("05:30 — FACT card. Say if you want it moved.") is True
+    assert lookup_lists_facts_first("05:30am — FACT card. Say if you want it moved.") is True
     assert lookup_lists_facts_first("- brief_time: 05:30\n- tease_ok: true") is True
     assert lookup_lists_facts_first("Sure thing buddy let's vibe about nothing.") is False
+    # Path laundry list is not a valid lookup shape.
+    assert (
+        lookup_lists_facts_first(
+            "See prefs.yaml and people/aryan.yaml for brief_time=05:30."
+        )
+        is False
+    )
 
 
 def test_challenge_roast_smoke() -> None:

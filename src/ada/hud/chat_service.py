@@ -137,3 +137,30 @@ class ChatService:
                 "steps": result.steps,
                 "run_path": result.run_path,
             }
+
+    def confirm_tool(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Operator confirm — gateway execute with confirmed=true (no model)."""
+        from ada.tools.gateway import Gateway
+
+        with self._lock:
+            self._ensure_session("agent")
+            assert self.session is not None
+            self.session.ensure_started()
+            merged = dict(args or {})
+            merged["confirmed"] = True
+            gateway = Gateway(mode="agent", turn_user_text="[hud confirm]")
+            result = gateway.execute(tool, merged)
+            obs = result.as_observation()
+            if result.outcome == "denied":
+                self.session.writer.append("tool_denied", obs)
+                self.last_denials.append(
+                    {
+                        "tool": obs.get("tool"),
+                        "args": obs.get("args"),
+                        "denied_reason": obs.get("denied_reason"),
+                        "receipt_id": obs.get("receipt_id"),
+                    }
+                )
+            else:
+                self.session.writer.append("tool_result", obs)
+            return obs

@@ -1,0 +1,109 @@
+/* Header chrome — brand, dial, session, Body button */
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem var(--space-3);
+  border-bottom: 1px solid var(--line-soft);
+  background: rgba(12, 15, 13, 0.82);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.brand-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.brand-block h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.45rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+}
+
+.welcome-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(28rem, 70vw);
+}
+
+.welcome-line.armed {
+  color: var(--accent);
+}
+
+.chrome-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.mode-dial {
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.mode-dial:focus-visible {
+  outline-offset: 3px;
+}
+
+.login-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.login-form.hidden {
+  display: none;
+}
+
+.login-form input[type="password"] {
+  min-width: 9rem;
+  background: var(--surface);
+}
+
+#body-open {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.home {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: var(--max-chat);
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+.home-stream {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}

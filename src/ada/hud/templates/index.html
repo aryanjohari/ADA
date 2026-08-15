@@ -2,113 +2,116 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0f0d" />
   <title>{{ title }}</title>
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="icon" href="/static/icons/ada-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/static/icons/ada-icon.svg" />
   <link rel="stylesheet" href="/static/app.css" />
 </head>
 <body>
   <header class="top">
     <div class="brand-block">
       <h1>ADA</h1>
-      <p class="tag">her control plane · Tailscale Serve · she/her</p>
+      <p id="welcome-line" class="welcome-line">her agent · Tailscale · she/her</p>
     </div>
-    <div class="chrome-bar" aria-label="Mode and auth">
+    <div class="chrome-bar" aria-label="Mode and session">
       <label class="sr-only" for="mode-select">Mode</label>
-      <select id="mode-select" title="Mode">
-        <option value="observe" selected>observe</option>
-        <option value="agent">agent</option>
-        <option value="plan">plan</option>
+      <select id="mode-select" class="mode-dial" title="Mode">
+        <option value="observe" selected>Observe</option>
+        <option value="plan">Plan</option>
+        <option value="agent">Agent</option>
       </select>
       <span id="auth-badge" class="badge mesh">auth=mesh</span>
-      <span id="armed-chip" class="chip muted">agent_armed=—</span>
+      <span id="armed-chip" class="chip muted">armed=—</span>
       <form id="login-form" class="login-form">
         <label class="sr-only" for="password">Session password</label>
         <input type="password" id="password" placeholder="session password" autocomplete="current-password" />
         <button type="submit">Login</button>
-        <button type="button" id="logout-btn">Logout</button>
+        <button type="button" id="logout-btn" class="ghost">Logout</button>
       </form>
       <p id="auth-msg" class="msg" role="status"></p>
+      <button type="button" id="body-open" class="ghost">Body</button>
     </div>
   </header>
 
-  <div id="vitals-strip" class="vitals-strip" aria-label="Body vitals strip"></div>
-
-  <main class="shell">
-    <section class="pane pane-stream" id="pane-stream" aria-label="Stream">
-      <div class="pane-head">
-        <h2>Stream</h2>
-        <nav class="view-tabs" aria-label="Secondary views">
-          <button type="button" class="tab active" data-view="chat" id="tab-chat">Chat</button>
-          <button type="button" class="tab" data-view="xray" id="tab-xray">X-ray</button>
-        </nav>
-      </div>
-
-      <div id="view-chat" class="view-chat">
-        <div id="stream" class="stream" role="log" aria-live="polite"></div>
-        <form id="chat-form" class="chat-form">
-          <label class="sr-only" for="chat-input">Message</label>
-          <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
-          <button type="submit" id="chat-send">Send</button>
-        </form>
-      </div>
-
-      <div id="view-xray" class="view-xray" hidden>
-        <div class="xray-layout">
-          <aside class="xray-roots" aria-label="X-ray roots">
-            <button type="button" class="root-btn active" data-root="memory">memory</button>
-            <button type="button" class="root-btn" data-root="runs">runs</button>
-            <button type="button" class="root-btn" data-root="outbox">outbox</button>
-          </aside>
-          <div class="xray-list-pane">
-            <p id="xray-path" class="path">memory/</p>
-            <ul id="xray-list" class="xray-list"></ul>
-          </div>
-          <div class="xray-preview-pane">
-            <div class="preview-toolbar">
-              <span id="xray-file" class="path">Select a file</span>
-              <div class="preview-toggles">
-                <button type="button" id="preview-rendered" class="tab active">Rendered</button>
-                <button type="button" id="preview-raw" class="tab">Raw</button>
-              </div>
-            </div>
-            <div id="xray-preview" class="xray-preview muted-empty">Choose a file under an allowlisted root.</div>
-          </div>
-        </div>
-      </div>
+  <main class="home" id="home">
+    <section class="home-stream" aria-label="Chat">
+      <div id="stream" class="stream" role="log" aria-live="polite"></div>
+      <form id="chat-form" class="chat-form">
+        <label class="sr-only" for="chat-input">Message</label>
+        <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
+        <button type="submit" id="chat-send" class="primary">Send</button>
+      </form>
     </section>
-
-    <aside class="organism" id="organism" aria-label="Organism">
-      <section class="pane" id="pane-vitals">
-        <h2>Organism</h2>
-        <div id="vitals-cards" class="vitals-grid"></div>
-        <div id="doctor-badge" class="doctor-badge">doctor: …</div>
-        <p id="vitals-meta" class="meta"></p>
-      </section>
-
-      <section class="pane compact" id="pane-lifecycle">
-        <h2>Lifecycle</h2>
-        <div id="lifecycle" class="lifecycle-cards"></div>
-      </section>
-
-      <section class="pane compact" id="pane-mode-detail">
-        <h2>Mode</h2>
-        <div id="mode-chips" class="chip-row"></div>
-        <p id="denial-line" class="denial-line"></p>
-      </section>
-
-      <details class="audit desktop-audit" id="pane-raw">
-        <summary>Audit / raw run tail</summary>
-        <p id="run-path" class="path"></p>
-        <pre id="raw-tail" class="mono">loading…</pre>
-      </details>
-    </aside>
   </main>
 
-  <details class="more-mobile" id="more-mobile">
-    <summary>More (lifecycle / mode / audit)</summary>
-    <div id="more-mobile-slot"></div>
-  </details>
+  <dialog id="body-drawer" aria-labelledby="body-drawer-title">
+    <div class="body-drawer-inner">
+      <div class="body-drawer-head">
+        <h2 id="body-drawer-title">Body</h2>
+        <button type="button" id="body-close" class="ghost" aria-label="Close Body">Close</button>
+      </div>
+      <div class="body-drawer-body">
+        <nav class="body-tabs" aria-label="Body sections">
+          <button type="button" class="tab active" data-body-tab="vitals">Vitals</button>
+          <button type="button" class="tab" data-body-tab="life">Lifecycle</button>
+          <button type="button" class="tab" data-body-tab="xray">X-ray</button>
+          <button type="button" class="tab" data-body-tab="audit">Audit</button>
+        </nav>
 
-  <script src="/static/app.js"></script>
+        <div id="body-panel-vitals" class="body-panel active body-section">
+          <h3>Organism</h3>
+          <div id="vitals-cards" class="vitals-grid"></div>
+          <div id="doctor-badge" class="doctor-badge">doctor: …</div>
+          <p id="vitals-meta" class="meta"></p>
+          <div id="mode-chips" class="chip-row" style="margin-top: 0.75rem"></div>
+          <p id="denial-line" class="denial-line"></p>
+        </div>
+
+        <div id="body-panel-life" class="body-panel body-section" hidden>
+          <h3>Lifecycle</h3>
+          <div id="lifecycle" class="lifecycle-cards"></div>
+        </div>
+
+        <div id="body-panel-xray" class="body-panel body-section" hidden>
+          <h3>X-ray</h3>
+          <div class="xray-layout">
+            <aside class="xray-roots" aria-label="X-ray roots">
+              <button type="button" class="root-btn active" data-root="memory">memory</button>
+              <button type="button" class="root-btn" data-root="runs">runs</button>
+              <button type="button" class="root-btn" data-root="outbox">outbox</button>
+            </aside>
+            <div>
+              <p id="xray-path" class="path">memory/</p>
+              <ul id="xray-list" class="xray-list"></ul>
+            </div>
+            <div>
+              <div class="preview-toolbar">
+                <span id="xray-file" class="path">Select a file</span>
+                <div class="preview-toggles">
+                  <button type="button" id="preview-rendered" class="tab active">Rendered</button>
+                  <button type="button" id="preview-raw" class="tab">Raw</button>
+                </div>
+              </div>
+              <div id="xray-preview" class="xray-preview muted-empty">Choose a file under an allowlisted root.</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="body-panel-audit" class="body-panel body-section" hidden>
+          <h3>Audit</h3>
+          <details class="audit" id="pane-raw" open>
+            <summary>Raw run tail</summary>
+            <p id="run-path" class="path"></p>
+            <pre id="raw-tail" class="mono">loading…</pre>
+          </details>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

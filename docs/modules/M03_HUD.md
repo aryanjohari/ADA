@@ -8,7 +8,8 @@
 
 **Slice rule:** this card admits **design** of the Tier A control-plane HUD — localhost-bound web app, Tailscale Serve exposure, five locked panes, chat that drives the **existing** harness, and auth stance. It does **not** admit Funnel, pretext face, Dream manage UI, WORLDVIEW editor, voice, sandboxed shell, or a second cortex implementation.
 
-**Living surface / UX (presentation + IA + phased polish):** [`M13_HUD_UX.md`](./M13_HUD_UX.md) — M03 stays architecture authority.
+**Living surface / UX (presentation + IA + phased polish):** [`M13_HUD_UX.md`](./M13_HUD_UX.md) — M03 stays architecture authority.  
+**Access / session / Mac packaging / agent-feel:** [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md).
 
 **Operator locks carried forward:** Tailscale-only control plane; Serve OK / Funnel NO; bind `127.0.0.1`; body §7.2 panes frozen; harness `stream_events` + `runs/` JSONL are the stream of truth; CLI `ada chat` remains valid; body numbers must match `ada body doctor` / organs.
 

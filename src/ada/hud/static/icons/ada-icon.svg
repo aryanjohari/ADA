@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="ADA">
+  <rect width="128" height="128" rx="24" fill="#0c0f0d"/>
+  <rect x="8" y="8" width="112" height="112" rx="20" fill="#1a211c" stroke="#8fbc6b" stroke-width="3"/>
+  <text x="64" y="78" text-anchor="middle" font-family="IBM Plex Sans, system-ui, sans-serif" font-size="42" font-weight="600" fill="#8fbc6b" letter-spacing="4">ADA</text>
+</svg>

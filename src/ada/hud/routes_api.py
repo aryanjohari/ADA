@@ -42,6 +42,20 @@ class ChatBody(BaseModel):
     mode: ModeName = "observe"
 
 
+class ConfirmBody(BaseModel):
+    tool: str = Field(min_length=1)
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+# Tools whose schemas accept confirmed=true (Consent Integrity re-drive).
+_CONFIRMABLE_TOOLS = frozenset(
+    {
+        "memory_facts_propose_edit",
+        "memory_open_loops_upsert",
+    }
+)
+
+
 def _chat_service(request: Request):
     return request.app.state.chat
 
@@ -257,3 +271,35 @@ def api_chat(request: Request, body: ChatBody) -> StreamingResponse | JSONRespon
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/confirm", response_model=None)
+def api_confirm(request: Request, body: ConfirmBody) -> JSONResponse:
+    """Operator Confirm — re-execute gateway tool with confirmed=true (no cortex)."""
+    gate = require_agent_session(request, "agent")
+    if gate is not None:
+        return gate
+
+    tool = body.tool.strip()
+    if tool not in _CONFIRMABLE_TOOLS:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "confirm_not_wired",
+                "message": (
+                    f"confirm path not wired for tool '{tool}' "
+                    "(deny only; no fake success)"
+                ),
+                "tool": tool,
+            },
+        )
+
+    chat = _chat_service(request)
+    try:
+        obs = chat.confirm_tool(tool, dict(body.args or {}))
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            status_code=500,
+            content={"error": "confirm_failed", "message": str(exc)},
+        )
+    return JSONResponse(content={"ok": True, "observation": obs})
