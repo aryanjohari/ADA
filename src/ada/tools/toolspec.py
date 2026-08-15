@@ -240,14 +240,18 @@ SPECS: tuple[ToolSpec, ...] = (
             "memory_open_loops_list",
             (
                 "List open loops / campaigns (projects, TODOs, long-horizon STATUS). "
-                "Filter by status and kind (todo|campaign)."
+                "For campaigns use kind=campaign — do not assume status=open "
+                "(todo vocab). Omit status for kind-aware defaults."
             ),
             {
                 "status": {
                     "type": "string",
                     "description": (
-                        "Filter status (default open for todos). "
-                        "Campaigns use active|blocked|waiting_on_aryan|paused|done|failed."
+                        "Filter status. When omitted: kind=todo → open; "
+                        "kind=campaign → non-terminal (active|blocked|waiting_on_aryan|"
+                        "paused; excludes done|failed); kind omitted → open todos + "
+                        "non-terminal campaigns. Pass null/\"\" for all statuses. "
+                        "Campaign vocab: active|blocked|waiting_on_aryan|paused|done|failed."
                     ),
                 },
                 "kind": {

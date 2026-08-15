@@ -1,6 +1,6 @@
 # M02 — Chat Harness / Cortex Loop (Gemini tool agent)
 
-**Status:** module research card (**complete for coding** — still **no** harness Python in this pass)  
+**Status:** module research card (**complete for coding** — **metal shipped:** `src/ada/harness/`, Gemini adapter, tool gateway, `ada chat`, `runs/` JSONL)  
 **Date:** 2026-08-12 (operator locks + model survey patch)  
 **Host:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1, Debian trixie, ~8 GiB RAM)  
 **Branch:** `rewrite/v1-body`  
@@ -10,7 +10,7 @@
 
 **Operator locks (2026-08-12):** model map via config (not per-turn shopping); secrets `/mnt/ada-data/secrets/gemini.env` + env override; CLI default Observe + local `--mode agent` OK; capped live smokes; tiny cost stub + real usage logs; **no `SOUL.md`**; cortex ≠ organism; learning = operational self-model. See §5.6, §5.7, §8, §15.
 
-**METAL prerequisite note (2026-08-12):** M00 organs already ship under `src/ada/body/` (`collect_vitals`, `load_identity` / `create_identity`, `append_event` / `story`, CLI `ada body doctor`). `/mnt/ada-data/runs/` exists (empty). `google-genai` is **not** installed yet. Tailscale CLI is present (M01 access path).
+**METAL (shipped):** `src/ada/harness/` (`loop.py`, stream events), Gemini adapter, tool gateway, `ada chat`, live `runs/` JSONL. Secrets via `secrets/gemini.env` / env.
 
 ---
 

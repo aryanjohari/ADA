@@ -324,14 +324,47 @@ def _gated_done_needs_confirm(
     return None
 
 
+# Sentinel: omitted status uses kind-aware defaults (not todo vocab "open" for campaigns).
+_STATUS_OMITTED: object = object()
+
+
 def list_loops(
     *,
     paths: DataPaths | None = None,
-    status: str | None = "open",
+    status: str | None | object = _STATUS_OMITTED,
     kind: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
+    """List todos and/or campaigns.
+
+    When ``status`` is omitted:
+    - ``kind="campaign"`` → non-terminal campaigns (excludes ``done``/``failed``;
+      same policy as ``list_campaigns(..., include_done=False)``). Campaign STATUS
+      is ``active|blocked|…``, not todo ``open``.
+    - ``kind="todo"`` → ``status=open`` (todo-friendly default).
+    - ``kind`` omitted → open todos + non-terminal campaigns.
+
+    Pass ``status=None`` for no status filter. Explicit status strings filter equality.
+    """
     p = paths or require_ada_data()
+    if status is _STATUS_OMITTED:
+        if kind == KIND_CAMPAIGN:
+            return list_campaigns(paths=p, include_done=False, limit=limit)
+        if kind == KIND_TODO:
+            status = "open"
+        else:
+            data = _load(p)
+            out: list[dict[str, Any]] = []
+            for item in data.get("loops") or []:
+                item_kind = item.get("kind") or KIND_TODO
+                item_status = item.get("status")
+                if item_kind == KIND_CAMPAIGN:
+                    if item_status not in {"done", "failed"}:
+                        out.append(item)
+                elif item_status == "open":
+                    out.append(item)
+            return out[: max(0, limit)]
+
     data = _load(p)
     loops = list(data.get("loops") or [])
     if kind:

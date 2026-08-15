@@ -280,7 +280,9 @@ def build_system_charter(
             "Web: use web_cite_search → web_cite_get / web_fetch for page content; "
             "never invent reads; never set user_pasted for URLs the user did not write. "
             "Never invent success without a gateway receipt. "
-            "Use memory_facts_append when Aryan says remember (Agent mode).",
+            "Use memory_facts_append when Aryan says remember (Agent mode). "
+            "Campaign list → memory_open_loops_list kind=campaign; "
+            "do not assume status=open (campaigns use active|blocked|…).",
         ]
     )
     return "\n".join(parts)

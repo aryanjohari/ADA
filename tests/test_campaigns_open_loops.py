@@ -315,3 +315,52 @@ def test_memory_loops_campaigns_flag(data_root: Path) -> None:
     assert result.exit_code == 0
     assert "Camp" in result.stdout
     assert "Todo" not in result.stdout
+
+
+def test_list_loops_campaign_default_not_todo_open(data_root: Path) -> None:
+    """kind=campaign with no status must not filter todo vocab status=open."""
+    paths = get_paths()
+    upsert_loop(text="Active A", kind="campaign", status="active", paths=paths)
+    upsert_loop(text="Blocked B", kind="campaign", status="blocked", paths=paths)
+    upsert_loop(text="Done C", kind="campaign", status="done", paths=paths)
+    upsert_loop(text="Buy milk", kind="todo", status="open", paths=paths)
+    upsert_loop(text="Old todo", kind="todo", status="done", paths=paths)
+
+    camps = list_loops(paths=paths, kind="campaign")
+    assert {c["text"] for c in camps} == {"Active A", "Blocked B"}
+
+    todos = list_loops(paths=paths, kind="todo")
+    assert [t["text"] for t in todos] == ["Buy milk"]
+
+    active = list_loops(paths=paths, kind="campaign", status="active")
+    assert [c["text"] for c in active] == ["Active A"]
+
+    mixed = list_loops(paths=paths)
+    assert {x["text"] for x in mixed} == {"Active A", "Blocked B", "Buy milk"}
+
+
+def test_memory_open_loops_list_campaign_no_status(data_root: Path) -> None:
+    """Tool call {\"kind\":\"campaign\"} alone returns active-ish campaigns."""
+    from ada.tools.memory_tools import run_memory_open_loops_list
+
+    paths = get_paths()
+    upsert_loop(text="field-papers", kind="campaign", status="active", paths=paths)
+    upsert_loop(text="nz-civic", kind="campaign", status="active", paths=paths)
+    upsert_loop(text="retired", kind="campaign", status="failed", paths=paths)
+    upsert_loop(text="Buy milk", kind="todo", status="open", paths=paths)
+
+    out = run_memory_open_loops_list({"kind": "campaign"})
+    assert out["count"] >= 2
+    texts = {x["text"] for x in out["loops"]}
+    assert "field-papers" in texts
+    assert "nz-civic" in texts
+    assert "retired" not in texts
+    assert "Buy milk" not in texts
+
+    todos = run_memory_open_loops_list({"kind": "todo"})
+    assert todos["count"] == 1
+    assert todos["loops"][0]["text"] == "Buy milk"
+
+    explicit = run_memory_open_loops_list({"kind": "campaign", "status": "active"})
+    assert explicit["count"] == 2
+    assert all(x["status"] == "active" for x in explicit["loops"])

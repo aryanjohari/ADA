@@ -1,6 +1,6 @@
 # M05 — Voice Personality Control (register + intent, not soul)
 
-**Status:** module research card — **design locked; register shipped (text-first); M05.1 time-speak next/in-flight**  
+**Status:** module research card — **design locked; register + time-speak shipped (text-first); audio still later**  
 **Date:** 2026-08-13  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB)  
 **Depends on:** [`M02_CHAT_HARNESS.md`](./M02_CHAT_HARNESS.md), [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md), [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md), [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md), [`../VOICE_EXEMPLARS.md`](../VOICE_EXEMPLARS.md), [`../VOICE_REGISTER.md`](../VOICE_REGISTER.md)
@@ -358,4 +358,4 @@ per turn
 
 ---
 
-*End of M05. Design locked 2026-08-13 — register + intent/humor shipped text-first; M05.1 time-speak (preferred_tz plain speech) next; audio later.*
+*End of M05. Design locked 2026-08-13 — register + intent/humor + time-speak shipped text-first (`preferred_tz` plain speech + `contains_raw_iso_z` eval); audio later.*

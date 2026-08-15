@@ -1,6 +1,6 @@
-# ADA (M00–M04)
+# ADA (M00–M13)
 
-Body sense, Gemini chat harness, Tailscale Serve control-plane HUD, and dual-store memory + Dream seal on the Pi.
+Body sense, Gemini chat harness, Tailscale Serve control-plane HUD (chat-first + vitals/x-ray), dual-store memory + Dream seal/consolidate, watches/RSS, and voice register (text-first) on the Pi.
 
 ## Install
 

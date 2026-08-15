@@ -1,6 +1,6 @@
 # M09 — Watches / RSS ingest + campaign wake
 
-**Status:** living research card — **design only** (2026-08-14): first next-stage organ after M07 hands + M08 doors. No implementation in this slice.  
+**Status:** living research card — **metal shipped** (2026-08-14+): `src/ada/watch/`, campaign watches, tests. Phase B harness digest / systemd timers still deferred.  
 **Date:** 2026-08-14  
 **Host:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1, Debian trixie, ~8 GiB RAM)  
 **Branch:** `rewrite/v1-body`  

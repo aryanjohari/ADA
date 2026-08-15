@@ -1,6 +1,6 @@
 # M03 — HUD / Control-plane Web UI (Tailscale Serve)
 
-**Status:** module research card (**complete for coding** — **no** HUD Python in this pass)  
+**Status:** module research card (**complete for coding** — **metal shipped:** `src/ada/hud/` ASGI + Serve path; presentation evolved in [`M13_HUD_UX.md`](./M13_HUD_UX.md))  
 **Date:** 2026-08-12  
 **Host:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1, Debian trixie, ~8 GiB RAM)  
 **Branch:** `rewrite/v1-body`  
@@ -8,9 +8,11 @@
 
 **Slice rule:** this card admits **design** of the Tier A control-plane HUD — localhost-bound web app, Tailscale Serve exposure, five locked panes, chat that drives the **existing** harness, and auth stance. It does **not** admit Funnel, pretext face, Dream manage UI, WORLDVIEW editor, voice, sandboxed shell, or a second cortex implementation.
 
+**Living surface / UX (presentation + IA + phased polish):** [`M13_HUD_UX.md`](./M13_HUD_UX.md) — M03 stays architecture authority.
+
 **Operator locks carried forward:** Tailscale-only control plane; Serve OK / Funnel NO; bind `127.0.0.1`; body §7.2 panes frozen; harness `stream_events` + `runs/` JSONL are the stream of truth; CLI `ada chat` remains valid; body numbers must match `ada body doctor` / organs.
 
-**METAL prerequisite note (2026-08-12):** M00 organs ship under `src/ada/body/` (`collect_vitals`, identity, lifecycle, `ada body doctor`). M02 harness ships (`harness/loop.py`, `stream_events.py`, `ada chat`, `/mnt/ada-data/runs/` with live JSONL). Tailscale CLI present (M01). **No** FastAPI/Starlette/uvicorn in deps yet; **no** Node toolchain observed. RAM ~7–8 GiB available at idle — plenty for a thin ASGI process.
+**METAL (shipped):** `src/ada/hud/` FastAPI ASGI (`ada hud serve` → `127.0.0.1:8787`); Tailscale Serve path; chat → harness `run_turn`. Presentation / IA: [`M13_HUD_UX.md`](./M13_HUD_UX.md).
 
 ---
 

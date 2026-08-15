@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from ada.body import identity as identity_mod
 from ada.body import lifecycle as lifecycle_mod
 from ada.body.vitals import collect_vitals, urgent_faults
+from ada.dream.run import dream_status
 from ada.hud.auth import (
     HudAuthError,
     clear_session_cookie,
@@ -23,7 +24,8 @@ from ada.hud.auth import (
     set_session_cookie,
 )
 from ada.hud.stream_bridge import run_with_bridge
-from ada.io.paths import BodyFault, get_paths
+from ada.hud.xray import XrayError, list_entries, read_file
+from ada.io.paths import BodyFault, DataPaths, get_paths
 from ada.tools.body_tools import run_body_doctor
 
 router = APIRouter(prefix="/api")
@@ -44,6 +46,43 @@ def _chat_service(request: Request):
     return request.app.state.chat
 
 
+def _lifecycle_dream_fields(paths: DataPaths) -> dict[str, Any]:
+    """HUD dream chips from dream_status — never invent S3 success."""
+    status = dream_status(paths=paths)
+    last_ok = status.get("last_dream_ok")
+    last_fail = status.get("last_dream_fail")
+    last_dream_at: str | None = None
+    last_dream_status = "n/a"
+    # Prefer latest by ts; ties / only-ok → dream_ok.
+    if last_ok and last_fail:
+        if str(last_ok.get("ts") or "") >= str(last_fail.get("ts") or ""):
+            last_dream_at = last_ok.get("ts")
+            last_dream_status = "dream_ok"
+        else:
+            last_dream_at = last_fail.get("ts")
+            last_dream_status = "dream_fail"
+    elif last_ok:
+        last_dream_at = last_ok.get("ts")
+        last_dream_status = "dream_ok"
+    elif last_fail:
+        last_dream_at = last_fail.get("ts")
+        last_dream_status = "dream_fail"
+    push = status.get("push") or "skipped"
+    push_reason = None
+    if isinstance(last_ok, dict):
+        receipts = last_ok.get("receipts") or {}
+        if isinstance(receipts, dict):
+            push_reason = receipts.get("push_reason")
+    out: dict[str, Any] = {
+        "last_dream_at": last_dream_at,
+        "last_dream_status": last_dream_status,
+        "push": push,
+    }
+    if push_reason:
+        out["push_reason"] = push_reason
+    return out
+
+
 @router.get("/vitals")
 def api_vitals() -> dict[str, Any]:
     snap = collect_vitals()
@@ -59,6 +98,11 @@ def api_lifecycle() -> dict[str, Any]:
     last_wake = None
     last_fault = None
     born_at = None
+    dream_fields: dict[str, Any] = {
+        "last_dream_at": None,
+        "last_dream_status": "n/a",
+        "push": "skipped",
+    }
     try:
         paths = get_paths()
         if identity_mod.identity_exists(paths):
@@ -67,6 +111,7 @@ def api_lifecycle() -> dict[str, Any]:
             born_at = card.born_at
         last_wake = lifecycle_mod.last_of_type("wake", paths)
         last_fault = lifecycle_mod.last_of_type("fault", paths)
+        dream_fields = _lifecycle_dream_fields(paths)
     except BodyFault:
         pass
     return {
@@ -74,9 +119,7 @@ def api_lifecycle() -> dict[str, Any]:
         "identity": identity,
         "last_wake": last_wake.model_dump() if last_wake else None,
         "last_fault": last_fault.model_dump() if last_fault else None,
-        "last_dream_at": None,
-        "last_dream_status": "n/a",
-        "push": "skipped",
+        **dream_fields,
     }
 
 
@@ -162,6 +205,34 @@ def api_logout() -> JSONResponse:
     resp = JSONResponse(content={"ok": True, "auth": "mesh"})
     clear_session_cookie(resp)
     return resp
+
+
+@router.get("/xray/list", response_model=None)
+def api_xray_list(root: str = "memory", path: str = "") -> dict[str, Any] | JSONResponse:
+    """Observe-only allowlisted directory list (M13 P2)."""
+    try:
+        return list_entries(root, path)
+    except XrayError as exc:
+        return JSONResponse(
+            status_code=exc.status,
+            content={"error": exc.code, "message": exc.message},
+        )
+
+
+@router.get("/xray/read", response_model=None)
+def api_xray_read(
+    root: str = "memory",
+    path: str = "",
+    max_bytes: int = 262144,
+) -> dict[str, Any] | JSONResponse:
+    """Observe-only allowlisted file read with size cap (M13 P2)."""
+    try:
+        return read_file(root, path, max_bytes=max_bytes)
+    except XrayError as exc:
+        return JSONResponse(
+            status_code=exc.status,
+            content={"error": exc.code, "message": exc.message},
+        )
 
 
 @router.post("/chat", response_model=None)

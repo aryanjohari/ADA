@@ -1,6 +1,6 @@
 # M10 — Memory as knowledge (learn / connect / retrieve+cite)
 
-**Status:** living research card — **design only** (2026-08-14): next organ after M07 hands + M08 doors + M09 clocks. Ingest works. Intelligence does not yet. No implementation in this slice.  
+**Status:** living research card — **metal shipped** (classify/chunks/search honesty + cite heads; see M11). Tier B FTS/NER/PDF still **OUT**. No implementation of embeddings/Neo4j in this card.  
 **Date:** 2026-08-14  
 **Host:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1, Debian trixie, ~8 GiB RAM)  
 **Branch:** `rewrite/v1-body`  

@@ -51,19 +51,29 @@ def run_memory_facts_propose_edit(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_memory_open_loops_list(args: dict[str, Any]) -> dict[str, Any]:
-    # Default status=open preserves todo list; pass status=null/"" for all.
-    status = args.get("status", "open")
-    if status is None or status == "":
-        status_filter: str | None = None
-    else:
-        status_filter = str(status)
+    """List loops/campaigns with kind-aware status defaults.
+
+    When status is omitted: campaign → non-terminal (not todo ``open``);
+    todo → open; both → open todos + non-terminal campaigns.
+    Pass status=null/"" for no status filter. Explicit status always honored.
+    """
     kind = args.get("kind")
+    kind_str = str(kind) if kind else None
     limit = int(args.get("limit") or 50)
-    loops = loops_mod.list_loops(
-        status=status_filter,
-        kind=str(kind) if kind else None,
-        limit=limit,
-    )
+    if "status" not in args:
+        loops = loops_mod.list_loops(kind=kind_str, limit=limit)
+    else:
+        status = args.get("status")
+        status_filter: str | None
+        if status is None or status == "":
+            status_filter = None
+        else:
+            status_filter = str(status)
+        loops = loops_mod.list_loops(
+            status=status_filter,
+            kind=kind_str,
+            limit=limit,
+        )
     return {"loops": loops, "count": len(loops)}
 
 
