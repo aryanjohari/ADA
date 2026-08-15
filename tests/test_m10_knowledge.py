@@ -350,3 +350,132 @@ def test_reclassify_tombstones_shells(data_root: Path) -> None:
     assert got["kind"] == "js_shell"
     assert got["knowledge_hidden"] is True
     assert cites_mod.cite_md_path(paths, cite["id"]).is_file()
+
+
+def test_reclassify_preserves_feed_item_fallback(data_root: Path) -> None:
+    """Reclassify must not stamp Incapsula scratch over honest feed fallback."""
+    _seed("www.beehive.govt.nz")
+    paths = get_paths()
+    shell_hash = "sha256:d02032286070b4dd9d8fbd985a7bdca8af8edf52b89ff177db3bfcb2c8a9c43d"
+    url = "https://www.beehive.govt.nz/release/overseas-visitor-numbers-keep-climbing"
+    cite = cites_mod.write_cite(
+        url=url,
+        final_url=url,
+        status=200,
+        etag=None,
+        last_modified=None,
+        content_hash=shell_hash,
+        title=None,
+        excerpts=[],
+        truncated=False,
+        robots="honored",
+        allowlist_host="www.beehive.govt.nz",
+        receipt_id="rid",
+        paths=paths,
+        save_raw_html=INCAPSULA_SHELL,
+        kind="js_shell",
+        extract_status="js_shell",
+        extract_ok=False,
+        knowledge_hidden=True,
+    )
+    summary = (
+        "New Zealand's tourism recovery maintains its momentum, with international "
+        "visitor arrivals for June reaching 95 per cent of 2019 levels."
+    )
+    fb = cites_mod.apply_feed_item_fallback(
+        cite["id"],
+        summary=summary,
+        title="Overseas visitor numbers keep climbing",
+        paths=paths,
+    )
+    assert fb["extract_status"] == "feed_item_fallback"
+    assert fb["extract_ok"] is True
+
+    # First reclassify must keep fallback (scratch Incapsula must not win).
+    out1 = cites_mod.reclassify_existing_cites(paths=paths, dry_run=False)
+    got = cites_mod.get_cite(cite["id"], paths=paths)["cite"]
+    assert got["extract_source"] == "feed_item"
+    assert got["extract_status"] == "feed_item_fallback"
+    assert got["extract_ok"] is True
+    assert got["knowledge_hidden"] is not True
+    assert got["kind"] == "page"
+    assert "visitor" in " ".join(got.get("excerpts") or []).lower()
+    hits = web_cite_search("visitor")
+    assert any(h["cite_id"] == cite["id"] for h in hits["hits"])
+
+    # Corrupt like metal regression, then reclassify restores honesty.
+    cites_mod.rewrite_cite_record(
+        cite["id"],
+        updates={
+            "kind": "js_shell",
+            "extract_status": "js_shell",
+            "extract_ok": False,
+            "knowledge_hidden": True,
+            "tombstone_reason": "challenge:_Incapsula_Resource",
+            # leave extract_source + excerpts intact
+        },
+        paths=paths,
+    )
+    assert cites_mod.get_cite(cite["id"], paths=paths)["cite"]["extract_source"] == "feed_item"
+    out2 = cites_mod.reclassify_existing_cites(paths=paths, dry_run=False)
+    assert out2["count"] >= 1
+    restored = cites_mod.get_cite(cite["id"], paths=paths)["cite"]
+    assert restored["extract_status"] == "feed_item_fallback"
+    assert restored["extract_ok"] is True
+    assert restored["knowledge_hidden"] is not True
+    assert restored.get("tombstone_reason") in (None, "")
+    hits2 = web_cite_search("visitor")
+    assert any(h["cite_id"] == cite["id"] and h.get("extract_ok") for h in hits2["hits"])
+
+    # Idempotent: second pass does not flip back to js_shell.
+    cites_mod.reclassify_existing_cites(paths=paths, dry_run=False)
+    again = cites_mod.get_cite(cite["id"], paths=paths)["cite"]
+    assert again["extract_status"] == "feed_item_fallback"
+    assert again["extract_ok"] is True
+    # silence unused if linters care
+    assert out1["ok"] and out2["ok"]
+
+
+def test_reclassify_backfills_abs_chunks(data_root: Path) -> None:
+    """Optional: abs cites with excerpt prose but empty chunks get a reversible backfill."""
+    _seed("arxiv.org")
+    paths = get_paths()
+    abstract = (
+        "We present ReAct, a method that synergizes reasoning and acting in language "
+        "models for interactive decision making tasks across several environments."
+    )
+    cite = cites_mod.write_cite(
+        url="https://arxiv.org/abs/2210.03629",
+        final_url="https://arxiv.org/abs/2210.03629",
+        status=200,
+        etag=None,
+        last_modified=None,
+        content_hash="sha256:reactabs",
+        title="ReAct: Synergizing Reasoning and Acting in Language Models",
+        excerpts=[abstract],
+        truncated=False,
+        robots="honored",
+        allowlist_host="arxiv.org",
+        receipt_id="rid",
+        paths=paths,
+        kind="abs_html",
+        extract_status="abs_html",
+        extract_ok=True,
+        extract_source="html",
+        chunks=[],
+    )
+    cites_mod.rewrite_cite_record(
+        cite["id"],
+        updates={"chunks": []},
+        paths=paths,
+    )
+    # Ensure frontmatter has empty chunks like metal same_hash rows.
+    got0 = cites_mod.get_cite(cite["id"], paths=paths)["cite"]
+    assert not got0.get("chunks")
+    out = cites_mod.reclassify_existing_cites(paths=paths, dry_run=False)
+    assert out["count"] >= 1
+    got = cites_mod.get_cite(cite["id"], paths=paths)["cite"]
+    assert got["kind"] == "abs_html"
+    assert got["extract_ok"] is True
+    assert got.get("chunks")
+    assert int(got.get("extract_chars") or 0) >= len(abstract)

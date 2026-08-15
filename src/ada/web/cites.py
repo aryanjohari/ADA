@@ -355,6 +355,9 @@ def rewrite_cite_record(
         if val is None and key in data:
             continue
         data[key] = val
+    # Un-hide restores knowledge; drop stale tombstone reason (None alone is a no-op).
+    if updates.get("knowledge_hidden") is False:
+        data.pop("tombstone_reason", None)
     excerpts = list(data.get("excerpts") or [])
     if "chunks" in updates and updates["chunks"] is not None:
         data["chunks"] = _normalize_chunks(updates["chunks"])
@@ -448,12 +451,43 @@ def mark_cite_hidden(
     return rewrite_cite_record(cite_id, updates=updates, paths=paths)
 
 
+def _cite_extract_body(cite: dict[str, Any]) -> str:
+    """Best on-disk prose for a cite (full extract → chunks → excerpts)."""
+    full = cite.get("full_extract")
+    if isinstance(full, str) and full.strip():
+        return full.strip()
+    chunks = _normalize_chunks(cite.get("chunks"))
+    if chunks:
+        return "\n\n".join(str(ch.get("text") or "") for ch in chunks).strip()
+    excerpts = list(cite.get("excerpts") or [])
+    return "\n\n".join(str(e) for e in excerpts if e).strip()
+
+
+def _is_honest_feed_fallback(cite: dict[str, Any]) -> bool:
+    """True when feed-item fallback provenance is already library-honest (M10 §8.2)."""
+    if cite.get("extract_source") != "feed_item":
+        return False
+    if not _cite_extract_body(cite):
+        return False
+    return (
+        cite.get("kind") == "page"
+        and cite.get("extract_status") == "feed_item_fallback"
+        and cite.get("extract_ok") is True
+        and cite.get("knowledge_hidden") is not True
+    )
+
+
 def reclassify_existing_cites(
     *,
     paths: DataPaths | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Mark legacy feed_blob / js_shell cites from on-disk md + scratch (M10 §17.5)."""
+    """Mark legacy feed_blob / js_shell cites from on-disk md + scratch (M10 §17.5).
+
+    Idempotent: does not overwrite honest feed_item_fallback cites with scratch
+    Incapsula js_shell labels. Restores corrupted fallback rows that still hold
+    RSS prose. Optionally backfills chunks/extract_chars from existing text.
+    """
     p = ensure_cite_dirs(paths)
     idx = index_path(p)
     if not idx.is_file():
@@ -479,8 +513,60 @@ def reclassify_existing_cites(
             continue
         cite = got["cite"]
         url = str(cite.get("url") or "")
-        excerpts = list(cite.get("excerpts") or [])
-        extract_text = "\n\n".join(str(e) for e in excerpts if e)
+        extract_text = _cite_extract_body(cite)
+        # Preserve / restore feed-item fallback before scratch HTML can stamp js_shell.
+        if cite.get("extract_source") == "feed_item" and extract_text:
+            if _is_honest_feed_fallback(cite):
+                # Still backfill missing chunks cheaply (same prose, no network).
+                chunks = _normalize_chunks(cite.get("chunks"))
+                if chunks and cite.get("extract_chars"):
+                    continue
+                entry = {
+                    "cite_id": cid,
+                    "url": url,
+                    "kind": "page",
+                    "extract_status": "feed_item_fallback",
+                    "reason": "feed_item_fallback_chunk_backfill",
+                    "knowledge_hidden": False,
+                }
+                if not dry_run:
+                    updates: dict[str, Any] = {}
+                    if not chunks:
+                        updates["chunks"] = chunk_text(extract_text)
+                    if not cite.get("extract_chars"):
+                        updates["extract_chars"] = len(extract_text)
+                    if updates:
+                        rewrite_cite_record(cid, updates=updates, paths=p)
+                        updated.append(entry)
+                elif not chunks or not cite.get("extract_chars"):
+                    updated.append(entry)
+                continue
+            entry = {
+                "cite_id": cid,
+                "url": url,
+                "kind": "page",
+                "extract_status": "feed_item_fallback",
+                "reason": "preserve_feed_item_fallback",
+                "knowledge_hidden": False,
+            }
+            if not dry_run:
+                updates = {
+                    "kind": "page",
+                    "extract_status": "feed_item_fallback",
+                    "extract_ok": True,
+                    "extract_source": "feed_item",
+                    "knowledge_hidden": False,
+                    "tombstone_reason": None,
+                }
+                chunks = _normalize_chunks(cite.get("chunks"))
+                if not chunks:
+                    updates["chunks"] = chunk_text(extract_text)
+                if not cite.get("extract_chars"):
+                    updates["extract_chars"] = len(extract_text)
+                rewrite_cite_record(cid, updates=updates, paths=p)
+            updated.append(entry)
+            continue
+
         raw = ""
         ch = str(cite.get("content_hash") or "").replace("sha256:", "")
         if ch:
@@ -498,38 +584,51 @@ def reclassify_existing_cites(
             raw_body=raw,
             extracted_text=extract_text,
         )
+        hide = classified.kind in NON_KNOWLEDGE_KINDS or not classified.extract_ok
+        chunks = _normalize_chunks(cite.get("chunks"))
+        need_chunk_backfill = (
+            classified.extract_ok
+            and bool(extract_text)
+            and (not chunks or not cite.get("extract_chars"))
+        )
         # Already correctly marked?
         if (
             cite.get("kind") == classified.kind
             and cite.get("extract_status") == classified.extract_status
             and bool(cite.get("extract_ok")) == classified.extract_ok
-            and bool(cite.get("knowledge_hidden")) == (
-                classified.kind in NON_KNOWLEDGE_KINDS or not classified.extract_ok
-            )
+            and bool(cite.get("knowledge_hidden")) == hide
+            and not need_chunk_backfill
         ):
             continue
         # Only auto-tombstone non-knowledge; still stamp abs_html / ok on good rows.
-        hide = classified.kind in NON_KNOWLEDGE_KINDS or not classified.extract_ok
         entry = {
             "cite_id": cid,
             "url": url,
             "kind": classified.kind,
             "extract_status": classified.extract_status,
-            "reason": classified.reason,
+            "reason": (
+                "chunk_backfill"
+                if need_chunk_backfill
+                and cite.get("kind") == classified.kind
+                and cite.get("extract_status") == classified.extract_status
+                else classified.reason
+            ),
             "knowledge_hidden": hide,
         }
         if not dry_run:
-            rewrite_cite_record(
-                cid,
-                updates={
-                    "kind": classified.kind,
-                    "extract_status": classified.extract_status,
-                    "extract_ok": classified.extract_ok,
-                    "knowledge_hidden": hide,
-                    "tombstone_reason": classified.reason if hide else None,
-                },
-                paths=p,
-            )
+            updates = {
+                "kind": classified.kind,
+                "extract_status": classified.extract_status,
+                "extract_ok": classified.extract_ok,
+                "knowledge_hidden": hide,
+                "tombstone_reason": classified.reason if hide else None,
+            }
+            if need_chunk_backfill:
+                if not chunks:
+                    updates["chunks"] = chunk_text(extract_text)
+                if not cite.get("extract_chars"):
+                    updates["extract_chars"] = len(extract_text)
+            rewrite_cite_record(cid, updates=updates, paths=p)
         updated.append(entry)
 
     return {
