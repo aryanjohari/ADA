@@ -85,7 +85,14 @@ def claims_body_metric_without_receipt(
         for r in tool_receipts
         if r.get("ok")
         and r.get("tool")
-        in {"body_vitals", "body_doctor", "body_whoami", "body_story"}
+        in {
+            "body_vitals",
+            "body_doctor",
+            "body_whoami",
+            "body_story",
+            "body_explain",
+            "body_readonly_cmd",
+        }
     }
     return not ok_tools
 

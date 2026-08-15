@@ -613,7 +613,7 @@ Metering promise (no fake numbers): log bytes fetched, cache hit/miss, observati
 
 Still optional polish (do not block fetch):
 
-1. **Every new host:** confirm-once then FACT allowlist **vs** static yaml **vs** “any public https Aryan pasted this turn”? **Recommend:** FACT allowlist + pasted-this-turn exception on the receipt.  
+1. **Every new host:** confirm-once then FACT allowlist **vs** static yaml **vs** “any public https Aryan pasted this turn”? **Recommend:** FACT allowlist + pasted-this-turn exception on the receipt. **Metal harden (2026-08-15):** `user_pasted=true` alone is insufficient — fetch host must appear in **this turn’s user message** (gateway injects turn text; model-invented paste fails closed → `needs_confirm`).  
 2. **HUD links later:** cite-id → clickable URL in stream **vs** CLI-only for v1? **Recommend:** CLI + JSONL first.  
 3. **Confirm density:** class once + new host once (**recommend**) vs every fetch.  
 4. **robots:** honor on campaign/timer; user-paste may override with flag (**recommend**).  

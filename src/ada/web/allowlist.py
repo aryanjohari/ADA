@@ -224,8 +224,9 @@ def check_host_access(
     url: str,
     *,
     paths: DataPaths | None = None,
-    user_pasted: bool = False,
+    user_pasted: bool = False,  # noqa: ARG001 — advisory only; never grants alone
     pasted_text: str | None = None,
+    turn_user_text: str | None = None,
     confirm_host: bool = False,
 ) -> dict[str, Any]:
     """Return policy decision for a URL host.
@@ -234,6 +235,10 @@ def check_host_access(
       ok — host allowlisted or pasted-this-turn
       needs_confirm — new host (Consent Integrity)
       error — unparseable
+
+    Pasted-this-turn requires the fetch host to appear in *this turn's*
+    user message text (``turn_user_text``, else legacy ``pasted_text``).
+    Boolean ``user_pasted`` alone never allowlists a host.
     """
     try:
         # Peek host with lenient http for policy (scheme enforced later in fetch)
@@ -263,10 +268,10 @@ def check_host_access(
             "pasted": False,
         }
 
-    pasted = set()
-    if user_pasted:
-        pasted.add(host)
-    pasted |= pasted_hosts_from_text(pasted_text)
+    # Prefer server-side turn text; model-supplied pasted_text is fallback for
+    # CLI/direct callers only (gateway strips model pasted_text).
+    paste_evidence = turn_user_text if turn_user_text is not None else pasted_text
+    pasted = pasted_hosts_from_text(paste_evidence)
     if host in pasted:
         return {
             "ok": True,
@@ -301,7 +306,8 @@ def check_host_access(
         "host": host,
         "reason": (
             f"host '{host}' not on prefs.web_allowlist; "
-            "confirm_host=true to allowlist, or set user_pasted=true"
+            "confirm_host=true to allowlist, or paste the URL in the user "
+            "message this turn (user_pasted alone is not enough)"
         ),
         "denied_reason": f"new host requires confirm: {host}",
     }

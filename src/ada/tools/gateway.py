@@ -53,6 +53,8 @@ class Gateway:
     mode: Mode = "observe"
     # Extra handlers for tests (e.g. stub write tools).
     extra_handlers: dict[str, Any] = field(default_factory=dict)
+    # Raw user utterance for this turn (harness-set). Paste allowlist evidence.
+    turn_user_text: str | None = None
 
     def allowed_tools(self) -> frozenset[str]:
         return TOOL_NAMES
@@ -144,6 +146,28 @@ class Gateway:
                     error="n must be an integer",
                     outcome="error",
                 )
+        if tool == "body_readonly_cmd":
+            argv = args.get("argv")
+            if not isinstance(argv, list) or not argv:
+                return GatewayResult(
+                    ok=False,
+                    tool=tool,
+                    args=args,
+                    receipt_id=receipt_id,
+                    ts=ts,
+                    error="argv must be a non-empty string list",
+                    outcome="error",
+                )
+            if not all(isinstance(t, str) for t in argv):
+                return GatewayResult(
+                    ok=False,
+                    tool=tool,
+                    args=args,
+                    receipt_id=receipt_id,
+                    ts=ts,
+                    error="argv tokens must be strings",
+                    outcome="error",
+                )
         if tool == "memory_worldview_write":
             cites = args.get("cites")
             if not cites or (
@@ -160,9 +184,13 @@ class Gateway:
                     outcome="denied",
                 )
 
-        # Pass gateway receipt_id into web_fetch for cite linkage.
-        if tool == "web_fetch" and "receipt_id" not in args:
-            args = {**args, "receipt_id": receipt_id}
+        # Pass gateway receipt_id + server-side turn text into web_fetch.
+        # Model-supplied pasted_text is stripped — paste evidence is harness-owned.
+        if tool == "web_fetch":
+            args = {**args, "turn_user_text": self.turn_user_text}
+            args.pop("pasted_text", None)
+            if "receipt_id" not in args:
+                args["receipt_id"] = receipt_id
 
         handler = (
             self.extra_handlers.get(tool)

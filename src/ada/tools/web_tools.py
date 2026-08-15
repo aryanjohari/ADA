@@ -21,6 +21,7 @@ def run_web_fetch(args: dict[str, Any]) -> dict[str, Any]:
         force=bool(args.get("force", False)),
         user_pasted=bool(args.get("user_pasted", False)),
         pasted_text=args.get("pasted_text"),
+        turn_user_text=args.get("turn_user_text"),
         ignore_robots=bool(args.get("ignore_robots", False)),
         confirm_host=bool(args.get("confirm_host", False)),
         receipt_id=args.get("receipt_id"),

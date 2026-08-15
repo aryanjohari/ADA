@@ -1,12 +1,12 @@
 # M00 — Body Sense (vitals · identity · birth / wake lifecycle)
 
-**Status:** module research card (**doc-only** — no agent / organ Python yet)  
+**Status:** module research card (**doc-only** origin) — organs shipped; capacity/chat proprioception → [`M12_BODY_PROPRIOCEPTION.md`](./M12_BODY_PROPRIOCEPTION.md).  
 **Date:** 2026-08-12  
 **Host:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1, Debian trixie)  
 **Branch:** `rewrite/v1-body`  
 **Depends on:** [`../01_BODY.md`](../01_BODY.md) §§1–6 & §10, [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) §§2, 6, 8, 13, 16, [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8  
 
-**Slice rule:** this card admits **metal birth** — first `identity.yaml`, crash-safe lifecycle ledger, typed vitals organ, package + CLI scaffold design, and proof plan. It does **not** admit Dream/WORLDVIEW/Gemini, HUD/HTTP, Tailscale Serve, or chat cortex.
+**Slice rule:** this card admits **metal birth** — first `identity.yaml`, crash-safe lifecycle ledger, typed vitals organ, package + CLI scaffold design, and proof plan. It does **not** admit Dream/WORLDVIEW/Gemini, HUD/HTTP, Tailscale Serve, or chat cortex. For cores/arch/summary routing / `body_explain` / allowlisted readonly cmd see **M12**.
 
 ---
 

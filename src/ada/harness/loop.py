@@ -108,6 +108,8 @@ def run_turn(
 
     gateway = session.gateway
     assert gateway is not None
+    # Trust boundary: paste allowlist uses this turn's user text, not model args.
+    gateway.turn_user_text = user_text
 
     while steps < session.max_steps:
         if session.wall_exceeded():

@@ -15,3 +15,5 @@ def test_web_contract_in_charter(data_root: Path) -> None:
     assert "WEB CONTRACT" in WEB_CONTRACT
     assert "extract_ok" in WEB_CONTRACT or "js_shell" in WEB_CONTRACT
     assert "abstract" in WEB_CONTRACT.lower() or "abs" in WEB_CONTRACT.lower()
+    assert "user_pasted" in WEB_CONTRACT
+    assert "Library ≠ body" in WEB_CONTRACT or "library ≠ body" in WEB_CONTRACT.lower()

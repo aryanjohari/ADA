@@ -247,9 +247,17 @@ def body_doctor() -> None:
     if urgent:
         for u in urgent:
             table.add_row("[red]urgent[/red]", u)
+        console.print(table)
+        console.print(f"[red]urgent:[/red] {'; '.join(urgent)}")
     else:
         table.add_row("urgent", "none")
-    console.print(table)
+        console.print(table)
+        if snap.probe_errors:
+            console.print(
+                f"probe issues ({len(snap.probe_errors)}); no urgent faults"
+            )
+        else:
+            console.print("[green]all clear[/green]")
 
     if not mounted:
         raise typer.Exit(code=3)
@@ -257,6 +265,41 @@ def body_doctor() -> None:
         raise typer.Exit(code=3)
     if snap.probe_errors or urgent:
         raise typer.Exit(code=2)
+
+
+@body_app.command(
+    "cmd",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def body_cmd(
+    ctx: typer.Context,
+    argv: list[str] | None = typer.Argument(
+        None,
+        help="Allowlisted argv only (e.g. nproc | uname -m | df -h /mnt/ada-data).",
+    ),
+) -> None:
+    """Allowlisted read-only host command (same policy as body_readonly_cmd tool)."""
+    from ada.body.readonly_cmd import run_readonly_cmd
+
+    tokens = list(argv or []) + list(ctx.args or [])
+    if not tokens:
+        err_console.print("[red]denied:[/red] empty argv")
+        raise typer.Exit(code=2)
+    result = run_readonly_cmd(tokens)
+    if result.denied_reason:
+        err_console.print(f"[red]denied:[/red] {result.denied_reason}")
+        raise typer.Exit(code=2)
+    if result.error and not result.ok:
+        err_console.print(f"[red]error:[/red] {result.error}")
+        if result.stdout:
+            console.print(result.stdout)
+        if result.stderr:
+            err_console.print(result.stderr)
+        raise typer.Exit(code=result.exit_code or 1)
+    if result.stdout:
+        console.print(result.stdout)
+    if result.stderr:
+        err_console.print(result.stderr)
 
 
 def _chat_sink_printer(event: str, payload: dict) -> None:
@@ -932,6 +975,7 @@ def web_fetch_cmd(
             url,
             force=force,
             user_pasted=user_pasted,
+            turn_user_text=url if user_pasted else None,
             ignore_robots=ignore_robots,
             confirm_host=confirm_host,
         )

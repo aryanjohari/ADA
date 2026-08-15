@@ -51,8 +51,10 @@ SPECS: tuple[ToolSpec, ...] = (
         schema=_schema(
             "body_vitals",
             (
-                "Read host vitals from body organs (temp, disks, mounts, memory). "
-                "Use section=summary for a compact view, full for complete snapshot."
+                "Read host vitals from body organs: capacity (cpu_count, arch, "
+                "mem_total), load, throttle bits, temp, disks (incl. ada-data), "
+                "mounts, memory. Prefer section=summary (default) for cores/RAM/"
+                "disk/throttle; full for complete snapshot. Never invent numbers."
             ),
             {
                 "section": {
@@ -72,8 +74,8 @@ SPECS: tuple[ToolSpec, ...] = (
         schema=_schema(
             "body_whoami",
             (
-                "Load identity.yaml birth card (name, born_at, host). "
-                "born_at is sacred and read-only."
+                "Load identity.yaml birth card (name, born_at, host, board_model, "
+                "os, kernel). born_at is sacred and read-only."
             ),
         ),
     ),
@@ -104,8 +106,59 @@ SPECS: tuple[ToolSpec, ...] = (
             "body_doctor",
             (
                 "Mount honesty + probe_errors + urgent fault flags "
-                "(same spirit as `ada body doctor`)."
+                "(same spirit as `ada body doctor`). Structured flags; short "
+                "note is all clear / urgent only — not a prose essay."
             ),
+        ),
+    ),
+    ToolSpec(
+        name="body_explain",
+        group="body",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "body_explain",
+            (
+                "Fuzzy host self-questions (what are you? / are you healthy?). "
+                "Thin router over body organs — returns class + short_facts + "
+                "sources. Prefer for vague asks; still use body_vitals/whoami/"
+                "doctor directly for specific metrics. Comparative phone-vs-Pi / "
+                "SoC-vs-workstation stays body-side (vitals numbers + qualitative; "
+                "no web bakeoff). Never invent hardware."
+            ),
+            {
+                "question": {
+                    "type": "string",
+                    "description": "User question about this host / identity / health",
+                }
+            },
+            required=["question"],
+        ),
+    ),
+    ToolSpec(
+        name="body_readonly_cmd",
+        group="body",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "body_readonly_cmd",
+            (
+                "Fallback allowlisted read-only host command when typed body_vitals "
+                "is insufficient. Prefer body_vitals first. Fixed argv only "
+                "(nproc; uname -m/-r/-a; vcgencmd measure_temp|get_throttled|"
+                "measure_clock arm; df -h|-B1 on / or /mnt/ada-data; free -b|-h). "
+                "No shell, pipes, sudo, secrets, or admin. Fail closed."
+            ),
+            {
+                "argv": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Exact argv list, e.g. [\"nproc\"] or [\"uname\",\"-m\"]",
+                }
+            },
+            required=["argv"],
         ),
     ),
     ToolSpec(
@@ -332,7 +385,11 @@ SPECS: tuple[ToolSpec, ...] = (
                 },
                 "user_pasted": {
                     "type": "boolean",
-                    "description": "URL was pasted this turn (allowlist exception)",
+                    "description": (
+                        "True only when the URL host appears in the user's message "
+                        "this turn. Never invent paste; server verifies against "
+                        "user text — flag alone does not allowlist."
+                    ),
                 },
                 "ignore_robots": {
                     "type": "boolean",

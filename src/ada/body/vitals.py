@@ -7,6 +7,7 @@ Never invent disk free or throttle bits; probe failures go in probe_errors.
 from __future__ import annotations
 
 import os
+import platform
 import re
 import socket
 import subprocess
@@ -400,8 +401,92 @@ def _probe_net(errors: list[ProbeError]) -> NetInfo:
     return NetInfo(ifaces=ifaces)
 
 
+def _cpu_count_from_cpuinfo() -> int | None:
+    """Count processor entries in /proc/cpuinfo; None if unreadable/empty."""
+    try:
+        text = Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    n = sum(1 for line in text.splitlines() if line.startswith("processor"))
+    return n if n > 0 else None
+
+
+def _probe_cpu_count(errors: list[ProbeError]) -> int | None:
+    """Live core count — never invent; prefer cpuinfo count, then os.cpu_count()."""
+    n = _cpu_count_from_cpuinfo()
+    if n is not None:
+        return n
+    try:
+        n = os.cpu_count()
+    except NotImplementedError as exc:
+        errors.append(ProbeError(probe="cpu_count", message=str(exc)))
+        return None
+    if n is None or n < 1:
+        errors.append(ProbeError(probe="cpu_count", message="unavailable"))
+        return None
+    return n
+
+
+def _probe_arch(errors: list[ProbeError]) -> str | None:
+    try:
+        arch = platform.machine() or ""
+        if arch:
+            return arch
+    except OSError as exc:
+        errors.append(ProbeError(probe="arch", message=str(exc)))
+    try:
+        out = _run(["uname", "-m"])
+        if out:
+            return out
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        errors.append(ProbeError(probe="arch", message=str(exc)))
+    return None
+
+
+def _probe_uptime_s(errors: list[ProbeError]) -> float | None:
+    try:
+        parts = _read_text(Path("/proc/uptime")).split()
+        return float(parts[0])
+    except (OSError, IndexError, ValueError) as exc:
+        errors.append(ProbeError(probe="uptime", message=str(exc)))
+        return None
+
+
+def _probe_os_pretty(errors: list[ProbeError]) -> str | None:
+    """Mirror of identity os string — identity remains SoT for durable birth card."""
+    try:
+        data: dict[str, str] = {}
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            data[k] = v.strip().strip('"')
+        pretty = data.get("PRETTY_NAME") or data.get("NAME")
+        if pretty:
+            return pretty
+    except OSError as exc:
+        errors.append(ProbeError(probe="os_pretty", message=str(exc)))
+    return None
+
+
 def _probe_extras(errors: list[ProbeError]) -> dict[str, Any]:
     extras: dict[str, Any] = {"agent_version": __version__}
+
+    cpu_count = _probe_cpu_count(errors)
+    if cpu_count is not None:
+        extras["cpu_count"] = cpu_count
+
+    arch = _probe_arch(errors)
+    if arch is not None:
+        extras["arch"] = arch
+
+    uptime_s = _probe_uptime_s(errors)
+    if uptime_s is not None:
+        extras["uptime_s"] = uptime_s
+
+    os_pretty = _probe_os_pretty(errors)
+    if os_pretty is not None:
+        extras["os_pretty"] = os_pretty
 
     try:
         out = _run(["vcgencmd", "measure_clock", "arm"])

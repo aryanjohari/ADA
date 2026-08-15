@@ -129,6 +129,7 @@ def web_fetch(
     force: bool = False,
     user_pasted: bool = False,
     pasted_text: str | None = None,
+    turn_user_text: str | None = None,
     ignore_robots: bool = False,
     confirm_host: bool = False,
     receipt_id: str | None = None,
@@ -148,6 +149,7 @@ def web_fetch(
         paths=p,
         user_pasted=user_pasted,
         pasted_text=pasted_text,
+        turn_user_text=turn_user_text,
         confirm_host=confirm_host,
     )
     if policy.get("needs_confirm"):
@@ -156,10 +158,11 @@ def web_fetch(
         return policy
 
     host = policy["host"]
+    paste_evidence = turn_user_text if turn_user_text is not None else pasted_text
     pasted_set: set[str] = set()
     if policy.get("pasted"):
         pasted_set.add(host)
-    pasted_set |= allowlist_mod.pasted_hosts_from_text(pasted_text)
+    pasted_set |= allowlist_mod.pasted_hosts_from_text(paste_evidence)
     allowlisted = allowlist_mod.allowlist_hosts(p)
     # Pasted hosts are treated as temporarily allowed for redirect checks
     effective_allow = set(allowlisted) | pasted_set
