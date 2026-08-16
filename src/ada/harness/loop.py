@@ -11,6 +11,7 @@ from ada.cortex.adapter import CortexAdapter, CortexTurn
 from ada.cortex.charter import CHILL_SESSION_OVERRIDE, build_system_charter
 from ada.cortex.cost import estimate_usd
 from ada.cortex.gemini import observation_to_content, user_content
+from ada.harness.plan_artifact import parse_plan_from_assistant
 from ada.harness.session import ChatSession
 from ada.harness.stream_events import CallbackSink, NullSink, StreamSink
 
@@ -34,6 +35,7 @@ class LoopResult:
     tool_receipts: list[dict[str, Any]] = field(default_factory=list)
     usage_rounds: list[dict[str, Any]] = field(default_factory=list)
     run_path: str | None = None
+    plan: dict[str, Any] | None = None
 
 
 def _tool_key(name: str, args: dict[str, Any]) -> str:
@@ -178,23 +180,32 @@ def run_turn(
             else:
                 session.writer.append("tool_result", obs)
 
-            sink.emit(
-                "tool_call_finished",
-                {
-                    "tool": tc.name,
-                    "ok": result.ok,
-                    "receipt_id": result.receipt_id,
-                    "outcome": result.outcome,
-                    "needs_confirm": bool(result.needs_confirm),
-                    "args": result.args,
-                },
-            )
+            finished: dict[str, Any] = {
+                "tool": tc.name,
+                "ok": result.ok,
+                "receipt_id": result.receipt_id,
+                "outcome": result.outcome,
+                "needs_confirm": bool(result.needs_confirm),
+                "args": result.args,
+            }
+            if result.needs_confirm:
+                finished["pending_id"] = result.receipt_id
+            sink.emit("tool_call_finished", finished)
             history.append(observation_to_content(obs, call_id=tc.call_id))
 
         if duplicate:
             break
     else:
         stop_reason = "max_steps"
+
+    plan: dict[str, Any] | None = None
+    if session.mode == "plan" and last_text:
+        plan = parse_plan_from_assistant(
+            last_text, source_run=str(session.run_path)
+        )
+        if plan is not None:
+            session.writer.append("plan_artifact", plan)
+            sink.emit("plan_artifact", plan)
 
     if end_session:
         session.end(stop_reason=stop_reason, steps=steps)
@@ -206,6 +217,7 @@ def run_turn(
         tool_receipts=receipts,
         usage_rounds=usage_rounds,
         run_path=str(session.run_path),
+        plan=plan,
     )
 
 

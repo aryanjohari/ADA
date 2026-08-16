@@ -11,12 +11,15 @@ from ada.cortex.charter import build_system_charter
 from ada.cortex.gemini import GeminiAdapter
 from ada.cortex.models import resolve_model
 from ada.harness.loop import LoopResult, run_turn
+from ada.harness.plan_artifact import new_plan_id
 from ada.harness.session import ChatSession, Mode
 from ada.harness.stream_events import StreamSink
 from ada.secrets.load import MissingSecret, load_gemini_api_key
 
 
 AdapterFactory = Callable[[], CortexAdapter]
+
+_PLAN_AGENT = frozenset({"plan", "agent"})
 
 
 class ChatService:
@@ -32,6 +35,9 @@ class ChatService:
         # Tests inject a fake cortex via this hook.
         self.adapter_factory: AdapterFactory | None = None
         self._no_key_message: str | None = None
+        self.last_plan: dict[str, Any] | None = None
+        # Consent Integrity: receipt_id → {tool, args} for pending confirms.
+        self.pending_confirms: dict[str, dict[str, Any]] = {}
 
     def current_mode(self) -> Mode:
         if self.session is not None:
@@ -46,10 +52,17 @@ class ChatService:
     def _ensure_session(self, mode: Mode) -> None:
         if self.session is not None and self.session.mode == mode:
             return
-        # Mode change: end previous session cleanly, start fresh history.
+        prev = self.session.mode if self.session is not None else None
+        preserve = (
+            prev is not None
+            and prev in _PLAN_AGENT
+            and mode in _PLAN_AGENT
+        )
+        # Mode change: end previous session cleanly.
         if self.session is not None and self.session._started:
             self.session.end(stop_reason="mode_switch")
-        self.history = []
+        if not preserve:
+            self.history = []
         self.mode = mode
         model = resolve_model("chat_interactive")
         self.session = ChatSession(mode=mode, model=model)
@@ -107,6 +120,7 @@ class ChatService:
                     "text": None,
                     "steps": 0,
                     "run_path": path,
+                    "plan": None,
                 }
 
             system = build_system_charter(
@@ -131,18 +145,95 @@ class ChatService:
                             "receipt_id": receipt.get("receipt_id"),
                         }
                     )
-            return {
+                if receipt.get("needs_confirm") or receipt.get("outcome") == "needs_confirm":
+                    rid = str(receipt.get("receipt_id") or "")
+                    if rid:
+                        self.pending_confirms[rid] = {
+                            "tool": receipt.get("tool"),
+                            "args": dict(receipt.get("args") or {}),
+                        }
+            if result.plan is not None:
+                self.last_plan = result.plan
+            out: dict[str, Any] = {
                 "stop_reason": result.stop_reason,
                 "text": result.text,
                 "steps": result.steps,
                 "run_path": result.run_path,
             }
+            if result.plan is not None:
+                out["plan"] = result.plan
+            return out
 
-    def confirm_tool(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+    def accept_plan(
+        self,
+        *,
+        steps: list[dict[str, Any]],
+        plan_id: str | None = None,
+        raw_text: str | None = None,
+    ) -> dict[str, Any]:
+        """Materialize plan steps as open_loops kind:todo (no cortex, no write tools)."""
+        from ada.memory.open_loops import upsert_loop
+
+        with self._lock:
+            pid = (plan_id or "").strip() or new_plan_id()
+            todos: list[dict[str, str]] = []
+            for step in steps:
+                text = str(
+                    step.get("text") if isinstance(step, dict) else step or ""
+                ).strip()
+                if not text:
+                    continue
+                result = upsert_loop(text=text, kind="todo", status="open")
+                loop = result.get("loop") if isinstance(result.get("loop"), dict) else {}
+                loop_id = str(loop.get("id") or result.get("id") or "")
+                todos.append({"id": loop_id, "text": text})
+
+            if self.last_plan and (
+                not plan_id or self.last_plan.get("plan_id") == plan_id
+            ):
+                self.last_plan = dict(self.last_plan)
+                self.last_plan["status"] = "accepted"
+
+            if self.session is not None:
+                self.session.ensure_started()
+                self.session.writer.append(
+                    "plan_accepted",
+                    {
+                        "plan_id": pid,
+                        "todos": todos,
+                        "count": len(todos),
+                        "raw_text": raw_text,
+                    },
+                )
+
+            return {
+                "plan_id": pid,
+                "todos": todos,
+                "count": len(todos),
+            }
+
+    def confirm_tool(
+        self,
+        tool: str,
+        args: dict[str, Any],
+        *,
+        pending_id: str | None = None,
+    ) -> dict[str, Any]:
         """Operator confirm — gateway execute with confirmed=true (no model)."""
         from ada.tools.gateway import Gateway
 
         with self._lock:
+            if pending_id:
+                pending = self.pending_confirms.get(pending_id)
+                if pending is None:
+                    raise ValueError(f"unknown pending_id {pending_id!r}")
+                if pending.get("tool") != tool:
+                    raise ValueError(
+                        f"pending_id tool mismatch: expected {pending.get('tool')!r}"
+                    )
+                # Bind to stashed args (Consent Integrity) — ignore client rewrite.
+                args = dict(pending.get("args") or {})
+
             self._ensure_session("agent")
             assert self.session is not None
             self.session.ensure_started()
@@ -151,6 +242,8 @@ class ChatService:
             gateway = Gateway(mode="agent", turn_user_text="[hud confirm]")
             result = gateway.execute(tool, merged)
             obs = result.as_observation()
+            if pending_id:
+                self.pending_confirms.pop(pending_id, None)
             if result.outcome == "denied":
                 self.session.writer.append("tool_denied", obs)
                 self.last_denials.append(

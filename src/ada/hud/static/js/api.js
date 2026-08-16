@@ -37,12 +37,31 @@ export async function postLogout() {
   await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
 }
 
-export async function postConfirm(tool, args) {
+export async function postConfirm(tool, args, pendingId) {
+  const body = { tool, args };
+  if (pendingId) body.pending_id = pendingId;
   const r = await fetch("/api/confirm", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tool, args }),
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
+}
+
+export async function postPlanAccept(plan) {
+  const r = await fetch("/api/plan/accept", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      plan_id: plan.plan_id || null,
+      steps: (plan.steps || []).map((s) =>
+        typeof s === "string" ? { text: s } : { text: s.text || "", id: s.id || null }
+      ),
+      raw_text: plan.raw_text || null,
+    }),
   });
   const data = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, data };

@@ -45,6 +45,18 @@ class ChatBody(BaseModel):
 class ConfirmBody(BaseModel):
     tool: str = Field(min_length=1)
     args: dict[str, Any] = Field(default_factory=dict)
+    pending_id: str | None = None
+
+
+class PlanStepBody(BaseModel):
+    text: str = Field(min_length=1)
+    id: str | None = None
+
+
+class PlanAcceptBody(BaseModel):
+    plan_id: str | None = None
+    steps: list[PlanStepBody] = Field(default_factory=list)
+    raw_text: str | None = None
 
 
 # Tools whose schemas accept confirmed=true (Consent Integrity re-drive).
@@ -296,10 +308,53 @@ def api_confirm(request: Request, body: ConfirmBody) -> JSONResponse:
 
     chat = _chat_service(request)
     try:
-        obs = chat.confirm_tool(tool, dict(body.args or {}))
+        obs = chat.confirm_tool(
+            tool,
+            dict(body.args or {}),
+            pending_id=body.pending_id,
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "confirm_bind_failed", "message": str(exc)},
+        )
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(
             status_code=500,
             content={"error": "confirm_failed", "message": str(exc)},
         )
     return JSONResponse(content={"ok": True, "observation": obs})
+
+
+@router.post("/plan/accept", response_model=None)
+def api_plan_accept(request: Request, body: PlanAcceptBody) -> JSONResponse:
+    """Accept a Plan artifact — upsert kind:todo steps (no cortex write tools)."""
+    gate = require_agent_session(request, "agent")
+    if gate is not None:
+        return gate
+
+    steps = [{"text": s.text, "id": s.id} for s in body.steps if s.text.strip()]
+    if not steps and body.raw_text and body.raw_text.strip():
+        steps = [{"text": body.raw_text.strip()}]
+    if not steps:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "plan_empty",
+                "message": "plan accept requires steps or raw_text",
+            },
+        )
+
+    chat = _chat_service(request)
+    try:
+        result = chat.accept_plan(
+            steps=steps,
+            plan_id=body.plan_id,
+            raw_text=body.raw_text,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            status_code=500,
+            content={"error": "plan_accept_failed", "message": str(exc)},
+        )
+    return JSONResponse(content={"ok": True, **result})

@@ -196,12 +196,17 @@ def mode_addendum(mode: str) -> str:
             "Current harness mode: Agent (local TTY/SSH operator-equivalent). "
             "Memory append tools allowed (memory_facts_append, open_loops, "
             "worldview_write with cites). Overwrite/delete still needs_confirm. "
-            "Dream seal runs via `ada dream run`, not as a chat toy."
+            "Dream seal runs via `ada dream run`, not as a chat toy. "
+            "Underspecified task: ask ≤2 clarifiers before inventing args. "
+            "Claiming task done: cite a receipt_id and/or note todo done — "
+            "no vibes-only completion."
         )
     if mode_l == "plan":
         return (
-            "Current harness mode: Plan (stub). "
-            "Propose only; read tools OK; no side-effect tools."
+            "Current harness mode: Plan. Propose only; read tools OK; "
+            "no side-effect tools. Prefer a short ordered checklist, or a "
+            "JSON fence ```json\\n{\"steps\":[\"…\"]}\\n```. "
+            "Underspecified task: ask ≤2 clarifiers before inventing steps."
         )
     return f"Current harness mode: {mode}."
 
@@ -293,7 +298,9 @@ def build_system_charter(
             "Never invent success without a gateway receipt. "
             "Use memory_facts_append when Aryan says remember (Agent mode). "
             "Campaign list → memory_open_loops_list kind=campaign; "
-            "do not assume status=open (campaigns use active|blocked|…).",
+            "do not assume status=open (campaigns use active|blocked|…). "
+            "Task clarify: if required args missing, ask ≤2 questions — do not invent. "
+            "Task done: cite receipt_id and/or todo done status; never fake success.",
         ]
     )
     return "\n".join(parts)

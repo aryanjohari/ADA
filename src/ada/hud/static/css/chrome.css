@@ -69,6 +69,22 @@
   outline-offset: 3px;
 }
 
+.mode-suggest {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius);
+  border: 1px dashed var(--accent-dim);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mode-suggest:hover {
+  border-style: solid;
+  background: var(--accent-glow);
+}
+
 .login-form {
   display: flex;
   flex-wrap: wrap;

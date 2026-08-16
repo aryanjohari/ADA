@@ -229,3 +229,50 @@ _RAW_ISO_Z = re.compile(
 def contains_raw_iso_z(answer: str) -> bool:
     """True if answer dumps an ISO date-time (e.g. 2026-08-12T05:12:55Z) into speech."""
     return bool(_RAW_ISO_Z.search(answer or ""))
+
+
+_CLARIFY_QUESTION = re.compile(r"\?", re.MULTILINE)
+_RECEIPT_CUE = re.compile(
+    r"("
+    r"\breceipt[_-]?id\b|"
+    r"\breceipt\s*=|"
+    r"\brcpt_[a-z0-9]+\b|"
+    r"\btodo\b.+\bdone\b|"
+    r"\bstatus\s*=\s*done\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+_TASK_DONE_CLAIM = re.compile(
+    r"("
+    r"\b(all\s+)?done\b|"
+    r"\bcompleted\b|"
+    r"\bfinished\b|"
+    r"\btask\s+complete\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def clarify_question_count(answer: str) -> int:
+    """Count ``?`` marks — M15 clarify budget uses ≤2."""
+    return len(_CLARIFY_QUESTION.findall(answer or ""))
+
+
+def exceeds_clarify_budget(answer: str, *, max_questions: int = 2) -> bool:
+    """True if answer asks more than max clarifiers."""
+    return clarify_question_count(answer) > max_questions
+
+
+def task_done_without_receipt(answer: str) -> bool:
+    """True if answer claims task done without receipt_id / todo-done cue (F8)."""
+    text = answer or ""
+    if not _TASK_DONE_CLAIM.search(text):
+        return False
+    if _RECEIPT_CUE.search(text):
+        return False
+    return True
+
+
+def cites_receipt_or_todo_done(answer: str) -> bool:
+    """True if answer includes a receipt or todo-done grounding crumb."""
+    return bool(_RECEIPT_CUE.search(answer or ""))

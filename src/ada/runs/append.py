@@ -27,6 +27,8 @@ EVENT_TYPES = frozenset(
         "usage",
         "session_end",
         "fault",
+        "plan_artifact",
+        "plan_accepted",
     }
 )
 

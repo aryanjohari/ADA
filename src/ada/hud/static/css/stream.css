@@ -202,6 +202,21 @@
   margin: var(--space-1) 0;
   font-size: 0.9rem;
 }
+.plan-card .plan-steps {
+  margin: var(--space-1) 0 var(--space-2);
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+.plan-card .plan-steps li {
+  margin: 0.2rem 0;
+}
+.plan-card .card-actions,
+.confirm-card .card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
 
 .confirm-card {
   border: 1px solid var(--warn);

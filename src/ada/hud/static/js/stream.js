@@ -1,6 +1,6 @@
 /** Chat stream — turns, tools, plan accept, confirm cards, SSE. */
 
-import { openChatStream, postConfirm } from "./api.js";
+import { openChatStream, postConfirm, postPlanAccept } from "./api.js";
 import { getSelectedMode, setSelectedMode } from "./mode.js";
 import { requireSessionForMode } from "./session.js";
 import { esc, truncJson } from "./util.js";
@@ -19,6 +19,7 @@ export const streamState = {
   lastUsage: null,
   lastToolCardId: null,
   lastPlanText: null,
+  lastPlan: null,
   busy: false,
 };
 
@@ -87,26 +88,71 @@ function formatUsageCrumb(u) {
   return parts.join(" · ");
 }
 
-function makePlanCard(planText) {
-  streamState.lastPlanText = planText;
+function planBodyText(plan) {
+  if (!plan) return "";
+  if (plan.steps && plan.steps.length) {
+    return plan.steps
+      .map((s, i) => {
+        const t = typeof s === "string" ? s : s.text || "";
+        return i + 1 + ". " + t;
+      })
+      .join("\n");
+  }
+  return plan.raw_text || streamState.lastPlanText || "";
+}
+
+function makePlanCard(plan) {
+  const artifact =
+    typeof plan === "string"
+      ? { steps: [{ text: plan }], raw_text: plan, plan_id: null }
+      : plan;
+  streamState.lastPlan = artifact;
+  streamState.lastPlanText = planBodyText(artifact);
   const card = document.createElement("div");
   card.className = "plan-card";
+  const stepsHtml =
+    artifact.steps && artifact.steps.length
+      ? '<ol class="plan-steps">' +
+        artifact.steps
+          .map((s) => {
+            const t = typeof s === "string" ? s : s.text || "";
+            return "<li>" + esc(t) + "</li>";
+          })
+          .join("") +
+        "</ol>"
+      : '<div class="plan-body"></div>';
   card.innerHTML =
     '<div class="card-head"><span class="card-title">Plan</span>' +
     '<span class="status-chip">propose</span></div>' +
-    '<div class="plan-body"></div>' +
+    stepsHtml +
     '<div class="card-actions">' +
     '<button type="button" class="primary" data-act="accept">Accept</button>' +
     '<button type="button" class="ghost" data-act="revise">Revise</button>' +
     '<button type="button" class="ghost" data-act="stay">Stay</button>' +
     "</div>";
-  card.querySelector(".plan-body").textContent = planText;
-  card.querySelector('[data-act="accept"]').addEventListener("click", () => {
+  const bodyEl = card.querySelector(".plan-body");
+  if (bodyEl) bodyEl.textContent = streamState.lastPlanText;
+  card.querySelector('[data-act="accept"]').addEventListener("click", async () => {
     if (!requireSessionForMode("agent")) return;
+    const acceptBtn = card.querySelector('[data-act="accept"]');
+    if (acceptBtn) acceptBtn.disabled = true;
+    const { ok, data } = await postPlanAccept(artifact);
+    if (!ok) {
+      appendFault({ message: data.message || "plan accept failed" });
+      if (acceptBtn) acceptBtn.disabled = false;
+      return;
+    }
     setSelectedMode("agent");
-    const cue = "Accepted plan — execute:\n" + planText;
+    const pid = data.plan_id || artifact.plan_id || "";
+    const stepLines = planBodyText(artifact);
+    const cue =
+      "Accepted plan — execute:\n" +
+      (pid ? "plan_id=" + pid + "\n" : "") +
+      stepLines;
     appendUserTurn(cue);
-    card.querySelector(".card-actions").remove();
+    card.querySelector(".card-actions")?.remove();
+    const chip = card.querySelector(".status-chip");
+    if (chip) chip.textContent = "accepted · todos=" + (data.count ?? 0);
     sendChat(cue, "agent");
   });
   card.querySelector('[data-act="revise"]').addEventListener("click", () => {
@@ -130,8 +176,17 @@ function appendTurnFooter(payload) {
       ? lastAssist.querySelector(".body").textContent || ""
       : "";
 
-  if (getSelectedMode() === "plan" && planText.trim()) {
-    makePlanCard(planText.trim());
+  if (getSelectedMode() === "plan") {
+    if (payload.plan && payload.plan.steps) {
+      makePlanCard(payload.plan);
+    } else if (streamState.lastPlan && streamState.lastPlan._cardShown) {
+      /* already rendered from plan_artifact */
+    } else if (streamState.lastPlan && streamState.lastPlan.steps) {
+      streamState.lastPlan._cardShown = true;
+      makePlanCard(streamState.lastPlan);
+    } else if (planText.trim()) {
+      makePlanCard(planText.trim());
+    }
   }
 
   const div = document.createElement("div");
@@ -182,6 +237,7 @@ function makeToolCard(payload) {
 function makeConfirmCard(payload) {
   const tool = payload.tool || "?";
   const args = payload.args || {};
+  const pendingId = payload.pending_id || payload.receipt_id || null;
   const card = document.createElement("div");
   card.className = "confirm-card";
   const wired = CONFIRMABLE.has(tool);
@@ -210,7 +266,7 @@ function makeConfirmCard(payload) {
     confirmBtn.addEventListener("click", async () => {
       if (!requireSessionForMode("agent")) return;
       confirmBtn.disabled = true;
-      const { ok, data } = await postConfirm(tool, args);
+      const { ok, data } = await postConfirm(tool, args, pendingId);
       if (!ok) {
         appendFault({
           message: data.message || "confirm failed",
@@ -277,6 +333,7 @@ function finishToolCard(payload) {
       tool: payload.tool,
       args: payload.args || {},
       receipt_id: payload.receipt_id,
+      pending_id: payload.pending_id || payload.receipt_id,
     });
   }
 }
@@ -289,6 +346,9 @@ function handleSseEvent(event, payload) {
     makeToolCard(payload);
   } else if (event === "tool_call_finished") {
     finishToolCard(payload);
+  } else if (event === "plan_artifact") {
+    streamState.lastPlan = payload;
+    streamState.lastPlanText = planBodyText(payload);
   } else if (event === "fault") {
     closeAssistantTurn();
     appendFault(payload);

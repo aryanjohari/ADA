@@ -51,10 +51,10 @@ export function applyModePayload(data) {
     loginForm.classList.toggle("hidden", sessionState.agentArmed);
   }
 
-  const modeSelect = document.getElementById("mode-select");
-  if (modeSelect && data.mode) {
-    modeSelect.value = data.mode;
-  }
+  // Chrome #mode-select is operator-owned (mode.js). Do not reset it from
+  // GET /api/mode — that snaps Plan/Agent back to server last-session mode
+  // after login or each chat refreshMode(). Body #mode-chips still show
+  // server truth below. Logout alone forces Observe (wireSession).
 
   const chips = document.getElementById("mode-chips");
   if (chips) {
