@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from typer.testing import CliRunner
 
 from ada.cli.main import app
@@ -83,6 +86,7 @@ def test_f5_redirect_pairs() -> None:
         assert tuple(sorted((a, b))) in listed_pairs
 
 
+@pytest.mark.tier_a
 def test_add_host_rejects_localhost_and_star(data_root: Path) -> None:
     ensure_prefs(get_paths())
     for bad in ("localhost", "127.0.0.1", "::1", "*", "*.govt.nz", ""):
@@ -93,6 +97,7 @@ def test_add_host_rejects_localhost_and_star(data_root: Path) -> None:
     assert "*" not in allowlist_mod.allowlist_hosts(get_paths())
 
 
+@pytest.mark.tier_a
 def test_add_host_rejects_url_path_private_shortener(data_root: Path) -> None:
     ensure_prefs(get_paths())
     for bad in (
@@ -161,6 +166,7 @@ def test_seed_lab_alias_and_redirect_coapply(data_root: Path) -> None:
     assert "www.comcom.govt.nz" in hosts
 
 
+@pytest.mark.tier_a
 def test_f11_web_allowlist_not_dream_whitelist(data_root: Path) -> None:
     assert "web_allowlist" not in WHITELIST_KEYS
     paths = get_paths()
@@ -204,6 +210,7 @@ def test_cli_allowlist_packs_and_list_note(data_root: Path) -> None:
     assert "rss.arxiv.org" in listed.output
 
 
+@pytest.mark.tier_a
 def test_cli_add_rejects_wont_allow(data_root: Path) -> None:
     ensure_prefs(get_paths())
     runner = CliRunner()

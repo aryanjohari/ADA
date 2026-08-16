@@ -37,6 +37,7 @@ def _mock_response(
     )
 
 
+@pytest.mark.tier_a
 def test_web_fetch_unknown_host_needs_confirm(data_root: Path) -> None:
     result = web_fetch("https://not-allowlisted.example/x")
     assert result.get("needs_confirm") is True
@@ -163,6 +164,7 @@ def test_new_hash_new_cite_version(data_root: Path) -> None:
     assert cites_mod.get_cite(r2["cite_id"])["ok"]
 
 
+@pytest.mark.tier_a
 def test_redirect_to_private_denied(data_root: Path) -> None:
     _seed_allowlist()
 
@@ -176,6 +178,7 @@ def test_redirect_to_private_denied(data_root: Path) -> None:
     )
 
 
+@pytest.mark.tier_a
 def test_redirect_to_non_allowlisted_denied(data_root: Path) -> None:
     with patch("ada.web.ssrf.validate_resolved", return_value="93.184.216.34"):
         with pytest.raises(SsrfError, match="not allowlisted"):

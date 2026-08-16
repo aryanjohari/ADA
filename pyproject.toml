@@ -38,3 +38,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "tier_a: Tier A kernel close gate (M18)",
+]

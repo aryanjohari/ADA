@@ -6,6 +6,8 @@ import pytest
 
 from ada.web.ssrf import SsrfError, check_url, is_blocked_ip, parse_url_strict
 
+pytestmark = pytest.mark.tier_a
+
 
 def test_web_ssrf_denies_loopback() -> None:
     assert is_blocked_ip("127.0.0.1")

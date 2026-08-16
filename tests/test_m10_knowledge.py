@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
 
 from ada.cortex.charter import WEB_CONTRACT, build_system_charter
 from ada.dream.delta import build_delta
@@ -34,6 +35,7 @@ def _seed(host: str = "example.com") -> None:
     allowlist_mod.add_host(host, paths=paths)
 
 
+@pytest.mark.tier_a
 def test_f1_beehive_shell_not_knowledge(data_root: Path) -> None:
     """F1: Incapsula cites are extract_ok false; knowledge search excludes them."""
     _seed("www.beehive.govt.nz")
@@ -305,6 +307,7 @@ def test_search_matches_chunk_text(data_root: Path) -> None:
     assert any(h["cite_id"] == cite["id"] for h in hits["hits"])
 
 
+@pytest.mark.tier_a
 def test_f9_charter_retrieve_cite_honesty(data_root: Path) -> None:
     """F9/F2 charter: retrieve+cite; empty extract; abs honesty."""
     text = build_system_charter(mode="observe")

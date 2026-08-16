@@ -46,3 +46,5 @@
 ## Still deferred (Phase 2)
 
 Inbox capture, Google Calendar OAuth, HA, voice wake, campaign productization, PDF, Mem0.
+
+Tier A close gate (kernel verify, not ops arming): `ada tier-a check` — see `docs/modules/M18_CLOSE_TIER_A.md`.

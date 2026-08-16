@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
 
 from ada.io.paths import get_paths
 from ada.memory.facts import ensure_prefs, load_prefs
@@ -29,6 +30,7 @@ def _http_get(url, **kwargs):  # noqa: ANN001
     return resp, url, [url]
 
 
+@pytest.mark.tier_a
 def test_gateway_unknown_tool_still_denied(data_root: Path) -> None:
     gw = Gateway(mode="observe")
     r = gw.execute("web_exfiltrate", {"url": "https://evil.example"})
@@ -68,6 +70,7 @@ def test_observe_allows_web_fetch_after_allowlist(data_root: Path, monkeypatch) 
     assert "html" not in r.data
 
 
+@pytest.mark.tier_a
 def test_observe_still_denies_memory_writes(data_root: Path) -> None:
     gw = Gateway(mode="observe")
     r = gw.execute(
@@ -77,6 +80,7 @@ def test_observe_still_denies_memory_writes(data_root: Path) -> None:
     assert r.outcome == "denied"
 
 
+@pytest.mark.tier_a
 def test_plan_denies_web_fetch(data_root: Path) -> None:
     _seed()
     gw = Gateway(mode="plan")

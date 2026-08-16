@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from ada.body.identity import create_identity
 from ada.body.lifecycle import read_events
 from ada.dream.delta import build_delta
@@ -56,6 +58,7 @@ def test_manage_fail_still_seals(data_root: Path) -> None:
     assert Path(result["seal"]["outbox_path"]).is_dir()
 
 
+@pytest.mark.tier_a
 def test_whitelist_merge_and_stage_non_whitelist(data_root: Path) -> None:
     paths = get_paths()
     create_identity(paths=paths)

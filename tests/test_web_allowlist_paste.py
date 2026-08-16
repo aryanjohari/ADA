@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
 
 from ada.io.paths import get_paths
 from ada.memory.facts import ensure_prefs
@@ -13,6 +14,8 @@ from ada.tools.gateway import Gateway
 from ada.tools.web_tools import run_web_fetch
 from ada.web import allowlist as allowlist_mod
 from ada.web.fetch import web_fetch
+
+pytestmark = pytest.mark.tier_a
 
 
 def test_user_pasted_alone_needs_confirm(data_root: Path) -> None:

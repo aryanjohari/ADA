@@ -95,4 +95,6 @@ uvicorn ada.hud.app:create_app --factory --host 127.0.0.1 --port 8787
 ```bash
 pytest -q
 pytest -q tests/test_hud_*.py
+ada tier-a check          # M18 Tier A kernel gate (+ receipt)
+pytest -m tier_a -q       # same suite
 ```

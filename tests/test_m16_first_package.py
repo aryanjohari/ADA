@@ -20,6 +20,7 @@ from ada.tools.gateway import Gateway
 from ada.tools.toolspec import SPECS_BY_NAME
 
 
+@pytest.mark.tier_a
 def test_f3_birth_pack_idempotent_and_syllabus(data_root: Path) -> None:
     paths = get_paths()
     card, created = create_identity(paths=paths, append_birth_event=False)
@@ -41,6 +42,7 @@ def test_f3_birth_pack_idempotent_and_syllabus(data_root: Path) -> None:
     assert "not conscious" in charter.lower() or "Never claim consciousness" in charter
 
 
+@pytest.mark.tier_a
 def test_f5_due_todos_boot_and_check(data_root: Path) -> None:
     paths = get_paths()
     ensure_prefs(paths)
@@ -70,6 +72,7 @@ def test_f5_due_todos_boot_and_check(data_root: Path) -> None:
     assert today["due_todos"][0]["text"] == "Pay rent"
 
 
+@pytest.mark.tier_a
 def test_f6_artifact_write_and_jail(data_root: Path) -> None:
     paths = get_paths()
     ok = write_artifact(
@@ -110,6 +113,7 @@ def test_f6_artifact_write_and_jail(data_root: Path) -> None:
     assert denied_obs.outcome == "denied"
 
 
+@pytest.mark.tier_a
 def test_f8_notify_quiet_mute_budget_cooldown(data_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths = get_paths()
     ensure_prefs(paths)
@@ -161,6 +165,7 @@ def test_f8_notify_quiet_mute_budget_cooldown(data_root: Path, monkeypatch: pyte
     assert r4["skipped"] and r4["reason"] == "budget_exhausted"
 
 
+@pytest.mark.tier_a
 def test_f1_notify_enable_needs_confirm(data_root: Path) -> None:
     paths = get_paths()
     ensure_prefs(paths)
@@ -169,6 +174,7 @@ def test_f1_notify_enable_needs_confirm(data_root: Path) -> None:
     assert load_prefs(paths)["notify_enabled"] is False
 
 
+@pytest.mark.tier_a
 def test_f13_todo_next_wake_at_fails_closed(data_root: Path) -> None:
     """Remind/ping must bind remind_at — next_wake_at on todos is an error."""
     paths = get_paths()
@@ -207,6 +213,7 @@ def test_f13_todo_next_wake_at_fails_closed(data_root: Path) -> None:
     assert obs.error and "remind_at" in str(obs.error).lower()
 
 
+@pytest.mark.tier_a
 def test_f13_todo_remind_at_still_works(data_root: Path) -> None:
     from ada.memory.open_loops import remind_soon_todos, notify_due_todos
 
@@ -274,6 +281,7 @@ def test_ops_fields_and_artifact_list(data_root: Path) -> None:
     assert loop["notify"] is True
 
 
+@pytest.mark.tier_a
 def test_toolspec_registers_m16_tools() -> None:
     assert "artifact_write" in SPECS_BY_NAME
     assert "notify_send" in SPECS_BY_NAME
@@ -282,6 +290,7 @@ def test_toolspec_registers_m16_tools() -> None:
     assert SPECS_BY_NAME["notify_send"].egress == "web"
 
 
+@pytest.mark.tier_a
 def test_f12_today_is_strip_shaped(data_root: Path) -> None:
     """Today payload is a compact strip model — not an ops dashboard schema."""
     paths = get_paths()

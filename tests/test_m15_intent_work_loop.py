@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ada.cortex.adapter import CortexTurn, ProposedToolCall
@@ -16,6 +17,8 @@ from ada.harness.plan_artifact import parse_plan_from_assistant
 from ada.hud.app import create_app
 from ada.memory import open_loops as ol
 from ada.tools.gateway import Gateway
+
+pytestmark = pytest.mark.tier_a
 
 
 class _PlanCortex:

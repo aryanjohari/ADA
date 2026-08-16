@@ -11,6 +11,7 @@ from ada.io.paths import BodyFault, get_paths
 from ada.memory.facts import append_fact, ensure_prefs, get_fact, search_facts
 
 
+@pytest.mark.tier_a
 def test_prefs_defaults_and_append_retrieve(data_root: Path) -> None:
     paths = get_paths()
     prefs = ensure_prefs(paths)
@@ -33,6 +34,7 @@ def test_prefs_defaults_and_append_retrieve(data_root: Path) -> None:
     )
 
 
+@pytest.mark.tier_a
 def test_append_conflict_needs_confirm_when_disallowed(data_root: Path) -> None:
     paths = get_paths()
     ensure_prefs(paths)
@@ -46,6 +48,7 @@ def test_append_conflict_needs_confirm_when_disallowed(data_root: Path) -> None:
     assert get_fact("prefs.tease_ok", paths=paths)["value"] is True
 
 
+@pytest.mark.tier_a
 def test_operator_append_may_update_pref(data_root: Path) -> None:
     paths = get_paths()
     ensure_prefs(paths)
@@ -67,6 +70,7 @@ def test_missing_mount_refuses_write(missing_root: Path) -> None:
         ensure_prefs()
 
 
+@pytest.mark.tier_a
 def test_append_survives_reread(data_root: Path) -> None:
     paths = get_paths()
     ensure_prefs(paths)

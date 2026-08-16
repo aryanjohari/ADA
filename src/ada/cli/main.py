@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +51,10 @@ web_app = typer.Typer(
     help="Allowlisted web fetch + cite library (M07) + pack seed (M08).",
     no_args_is_help=True,
 )
+tier_a_app = typer.Typer(
+    help="Tier A kernel close gate (M18).",
+    no_args_is_help=True,
+)
 app.add_typer(body_app, name="body")
 app.add_typer(hud_app, name="hud")
 app.add_typer(memory_app, name="memory")
@@ -55,6 +63,7 @@ app.add_typer(staging_app, name="staging")
 app.add_typer(campaigns_app, name="campaigns")
 app.add_typer(watch_app, name="watch")
 app.add_typer(web_app, name="web")
+app.add_typer(tier_a_app, name="tier-a")
 
 
 def _exit_body_fault(exc: BodyFault) -> None:
@@ -1234,6 +1243,108 @@ def web_allowlist_cmd(
         raise typer.Exit(code=2)
     except BodyFault as exc:
         _exit_body_fault(exc)
+
+
+def _repo_root() -> Path:
+    # src/ada/cli/main.py → parents[3] = repo root
+    return Path(__file__).resolve().parents[3]
+
+
+def _git_sha(repo: Path) -> Optional[str]:
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    sha = (proc.stdout or "").strip()
+    return sha or None
+
+
+def _parse_pytest_counts(output: str) -> dict[str, int]:
+    """Parse quiet pytest summary for pass/fail/skip/error counts."""
+    counts = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0, "xfailed": 0}
+    # Prefer the final summary line (e.g. "12 passed, 1 skipped in 2.34s").
+    for line in reversed(output.splitlines()):
+        low = line.strip().lower()
+        if not any(k in low for k in ("passed", "failed", "skipped", "error")):
+            continue
+        for key, pat in (
+            ("passed", r"(\d+)\s+passed"),
+            ("failed", r"(\d+)\s+failed"),
+            ("skipped", r"(\d+)\s+skipped"),
+            ("errors", r"(\d+)\s+error"),
+            ("xfailed", r"(\d+)\s+xfailed"),
+        ):
+            m = re.search(pat, low)
+            if m:
+                counts[key] = int(m.group(1))
+        if any(counts[k] for k in counts):
+            break
+    return counts
+
+
+@tier_a_app.command("check")
+def tier_a_check(
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Machine-readable receipt (no secrets).",
+    ),
+) -> None:
+    """Run pytest -m tier_a and print a pass/fail receipt (M18 Close-1)."""
+    repo = _repo_root()
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    sha = _git_sha(repo)
+    cmd = [sys.executable, "-m", "pytest", "-m", "tier_a", "-q", "--tb=line"]
+    proc = subprocess.run(
+        cmd,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    combined = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+    counts = _parse_pytest_counts(combined)
+    verdict = "PASS" if proc.returncode == 0 else "FAIL"
+    receipt = {
+        "gate": "tier_a",
+        "verdict": verdict,
+        "timestamp": ts,
+        "git_sha": sha,
+        "exit_code": proc.returncode,
+        "passed": counts["passed"],
+        "failed": counts["failed"],
+        "skipped": counts["skipped"],
+        "errors": counts["errors"],
+        "xfailed": counts["xfailed"],
+        "command": " ".join(cmd),
+    }
+    if json_out:
+        console.print_json(data=receipt)
+    else:
+        console.print(f"[bold]Tier A gate[/bold]  verdict={verdict}")
+        console.print(f"  timestamp: {ts}")
+        console.print(f"  git_sha:   {sha or '(unavailable)'}")
+        console.print(
+            f"  counts:    passed={counts['passed']} failed={counts['failed']} "
+            f"skipped={counts['skipped']} errors={counts['errors']}"
+        )
+        console.print(f"  exit_code: {proc.returncode}")
+        # Tail of pytest output (no secrets expected in unit suite).
+        tail = "\n".join(combined.strip().splitlines()[-12:])
+        if tail:
+            console.print()
+            console.print(tail)
+    if proc.returncode != 0:
+        raise typer.Exit(code=proc.returncode)
 
 
 @app.callback()

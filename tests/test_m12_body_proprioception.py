@@ -5,11 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ada.body.readonly_cmd import run_readonly_cmd, validate_argv
 from ada.body.vitals import collect_vitals
 from ada.tools import body_tools
 from ada.tools.gateway import Gateway
 from ada.tools.toolspec import SPECS_BY_NAME, TOOL_NAMES
+
+pytestmark = pytest.mark.tier_a
 
 
 def test_vitals_extras_capacity_fields(data_root: Path) -> None:

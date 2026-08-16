@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ada.io.paths import get_paths
 from ada.memory.facts import ensure_prefs, get_fact
 from ada.tools.gateway import Gateway
 from ada.tools.schemas import TOOL_NAMES
+
+pytestmark = pytest.mark.tier_a
 
 
 def test_memory_tools_registered() -> None:
