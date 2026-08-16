@@ -12,7 +12,9 @@ let _refreshMode = async () => {};
 
 const CONFIRMABLE = new Set([
   "memory_facts_propose_edit",
+  "memory_facts_append",
   "memory_open_loops_upsert",
+  "artifact_write",
 ]);
 
 export const streamState = {

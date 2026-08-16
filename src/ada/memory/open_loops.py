@@ -531,6 +531,14 @@ def upsert_loop(
     cadence: str | None = None,
     nudge_attribution: Any = None,
     watches: Any = None,
+    due_at: str | None = None,
+    remind_at: str | None = None,
+    people_ids: Any = None,
+    artifact_path: str | None = None,
+    starts_at: str | None = None,
+    ends_at: str | None = None,
+    notify: bool | None = None,
+    last_notified_at: str | None = None,
     delete: bool = False,
     confirmed: bool = False,
     paths: DataPaths | None = None,
@@ -585,6 +593,17 @@ def upsert_loop(
     if resolved_kind not in KINDS:
         raise ValueError(f"kind must be one of {sorted(KINDS)}")
 
+    # Fail closed: next_wake_at is campaign wake only — never silent-drop on todos.
+    if resolved_kind == KIND_TODO and next_wake_at is not None and str(next_wake_at).strip():
+        return {
+            "ok": False,
+            "outcome": "error",
+            "error": (
+                "next_wake_at is campaign-only; for reminders/pings use "
+                "remind_at (or due_at), not next_wake_at"
+            ),
+        }
+
     default_status = "active" if resolved_kind == KIND_CAMPAIGN else "open"
     resolved_status = status if status is not None else (
         existing.get("status") if existing else default_status
@@ -614,6 +633,54 @@ def upsert_loop(
     if watches is not None:
         new_watches = _normalize_watches(watches)
 
+    def _norm_iso_field(raw: str | None, label: str) -> str | None:
+        if raw is None:
+            return None
+        text_v = str(raw).strip()
+        if not text_v:
+            return None
+        if _parse_iso(text_v) is None:
+            raise ValueError(f"{label} must be ISO8601 datetime, got {raw!r}")
+        return text_v
+
+    def _norm_people(raw: Any) -> list[str] | None:
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            parts = [p.strip() for p in raw.split(",") if p.strip()]
+            return parts
+        if isinstance(raw, list):
+            return [str(x).strip() for x in raw if str(x).strip()]
+        raise ValueError("people_ids must be a list or comma-string")
+
+    def _apply_todo_ops(target: dict[str, Any]) -> None:
+        if due_at is not None:
+            target["due_at"] = _norm_iso_field(due_at, "due_at")
+        if remind_at is not None:
+            target["remind_at"] = _norm_iso_field(remind_at, "remind_at")
+        if people_ids is not None:
+            target["people_ids"] = _norm_people(people_ids) or []
+        if artifact_path is not None:
+            ap = str(artifact_path).strip() or None
+            if ap and (".." in ap or ap.startswith("/")):
+                # Soft jail: relative artifacts/… or bare relative only.
+                if not ap.startswith("artifacts/"):
+                    raise ValueError(
+                        "artifact_path must be relative under artifacts/ "
+                        "(e.g. artifacts/2026-08-16/note.md)"
+                    )
+            target["artifact_path"] = ap
+        if starts_at is not None:
+            target["starts_at"] = _norm_iso_field(starts_at, "starts_at")
+        if ends_at is not None:
+            target["ends_at"] = _norm_iso_field(ends_at, "ends_at")
+        if notify is not None:
+            target["notify"] = bool(notify)
+        if last_notified_at is not None:
+            target["last_notified_at"] = _norm_iso_field(
+                last_notified_at, "last_notified_at"
+            )
+
     if loop_id and existing is not None:
         if text is not None:
             existing["text"] = str(text).strip()
@@ -629,7 +696,7 @@ def upsert_loop(
             existing["current_stage"] = current_stage or None
         if blocked_reason is not None:
             existing["blocked_reason"] = blocked_reason or None
-        if next_wake_at is not None:
+        if next_wake_at is not None and resolved_kind == KIND_CAMPAIGN:
             existing["next_wake_at"] = next_wake_at or None
         if last_progress_at is not None:
             existing["last_progress_at"] = last_progress_at or None
@@ -643,6 +710,8 @@ def upsert_loop(
             existing["nudge_attribution"] = nudge_attribution
         if new_watches is not None:
             existing["watches"] = new_watches
+        if resolved_kind == KIND_TODO:
+            _apply_todo_ops(existing)
         existing["updated_at"] = utc_now_iso()
         data["loops"] = loops
         data["schema_version"] = SCHEMA_VERSION
@@ -672,14 +741,130 @@ def upsert_loop(
         item["nudge_attribution"] = nudge_attribution
         if new_watches is not None:
             item["watches"] = new_watches
-    elif title is not None:
-        item["title"] = str(title).strip()
+    else:
+        if title is not None:
+            item["title"] = str(title).strip()
+        _apply_todo_ops(item)
 
     loops.append(item)
     data["loops"] = loops
     data["schema_version"] = SCHEMA_VERSION
     atomic_write_text(p.open_loops_yaml, _dump(data))
     return {"ok": True, "outcome": "ok", "loop": item}
+
+
+def due_todos(
+    *,
+    paths: DataPaths | None = None,
+    now: datetime | None = None,
+    limit: int = K_DUE_PER_WAKE,
+) -> list[dict[str, Any]]:
+    """Open todos with due_at <= now, sorted ascending by due_at (M16 Phase 0)."""
+    now = now or datetime.now(timezone.utc)
+    todos = list_loops(paths=paths, status="open", kind=KIND_TODO, limit=500)
+    due: list[dict[str, Any]] = []
+    for item in todos:
+        due_at = _parse_iso(
+            item.get("due_at") if isinstance(item.get("due_at"), str) else None
+        )
+        if due_at is None:
+            continue
+        if due_at <= now:
+            row = dict(item)
+            row["_due_reason"] = "due_at"
+            due.append(row)
+
+    def due_key(t: dict[str, Any]) -> tuple[datetime, str]:
+        parsed = _parse_iso(
+            t.get("due_at") if isinstance(t.get("due_at"), str) else None
+        )
+        return (parsed or now, str(t.get("id") or ""))
+
+    due.sort(key=due_key)
+    return due[: max(0, limit)]
+
+
+def remind_soon_todos(
+    *,
+    paths: DataPaths | None = None,
+    now: datetime | None = None,
+    within_hours: float = 24.0,
+    limit: int = K_DUE_PER_WAKE,
+) -> list[dict[str, Any]]:
+    """Open todos with remind_at in [now, now+within] (Phase 1 Today strip)."""
+    now = now or datetime.now(timezone.utc)
+    horizon = now + timedelta(hours=within_hours)
+    todos = list_loops(paths=paths, status="open", kind=KIND_TODO, limit=500)
+    soon: list[dict[str, Any]] = []
+    for item in todos:
+        remind = _parse_iso(
+            item.get("remind_at") if isinstance(item.get("remind_at"), str) else None
+        )
+        if remind is None:
+            continue
+        if now <= remind <= horizon:
+            row = dict(item)
+            row["_due_reason"] = "remind_at"
+            soon.append(row)
+
+    def rem_key(t: dict[str, Any]) -> tuple[datetime, str]:
+        parsed = _parse_iso(
+            t.get("remind_at") if isinstance(t.get("remind_at"), str) else None
+        )
+        return (parsed or now, str(t.get("id") or ""))
+
+    soon.sort(key=rem_key)
+    return soon[: max(0, limit)]
+
+
+def notify_due_todos(
+    *,
+    paths: DataPaths | None = None,
+    now: datetime | None = None,
+    limit: int = K_DUE_PER_WAKE,
+) -> list[dict[str, Any]]:
+    """Todos ready for a push: remind_at or due_at passed, notify not false."""
+    now = now or datetime.now(timezone.utc)
+    todos = list_loops(paths=paths, status="open", kind=KIND_TODO, limit=500)
+    ready: list[dict[str, Any]] = []
+    for item in todos:
+        if item.get("notify") is False:
+            continue
+        remind = _parse_iso(
+            item.get("remind_at") if isinstance(item.get("remind_at"), str) else None
+        )
+        due_at = _parse_iso(
+            item.get("due_at") if isinstance(item.get("due_at"), str) else None
+        )
+        trigger = remind or due_at
+        if trigger is None or trigger > now:
+            continue
+        row = dict(item)
+        row["_due_reason"] = "remind_at" if remind and remind <= now else "due_at"
+        ready.append(row)
+
+    def n_key(t: dict[str, Any]) -> tuple[datetime, str]:
+        rem = _parse_iso(
+            t.get("remind_at") if isinstance(t.get("remind_at"), str) else None
+        )
+        due = _parse_iso(t.get("due_at") if isinstance(t.get("due_at"), str) else None)
+        return (rem or due or now, str(t.get("id") or ""))
+
+    ready.sort(key=n_key)
+    return ready[: max(0, limit)]
+
+
+def format_todo_head(item: dict[str, Any], *, max_len: int = 160) -> str:
+    text = str(item.get("title") or item.get("text") or "?").strip()
+    bits = [f"[{item.get('id', '?')}]", text[:100]]
+    if item.get("due_at"):
+        bits.append(f"due={item.get('due_at')}")
+    if item.get("remind_at"):
+        bits.append(f"remind={item.get('remind_at')}")
+    line = " ".join(bits)
+    if len(line) > max_len:
+        return line[: max_len - 1] + "…"
+    return line
 
 
 def campaign_check(
@@ -690,9 +875,12 @@ def campaign_check(
 ) -> dict[str, Any]:
     """Local due/stale/blocked list for timer/CLI — no LLM.
 
+    Phase 0+: includes due todos alongside campaigns.
     Caller should consult proactivity.suppressed() first for quiet/mute.
     """
+    now = now or datetime.now(timezone.utc)
     due = due_campaigns(paths=paths, now=now, limit=limit)
+    todos = due_todos(paths=paths, now=now, limit=limit)
     return {
         "ok": True,
         "outcome": "ok",
@@ -710,4 +898,18 @@ def campaign_check(
             }
             for c in due
         ],
+        "due_todos": [
+            {
+                "id": t.get("id"),
+                "text": t.get("text"),
+                "title": t.get("title"),
+                "due_at": t.get("due_at"),
+                "remind_at": t.get("remind_at"),
+                "due_reason": t.get("_due_reason"),
+                "people_ids": t.get("people_ids"),
+                "artifact_path": t.get("artifact_path"),
+            }
+            for t in todos
+        ],
+        "due_todo_count": len(todos),
     }

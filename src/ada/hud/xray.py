@@ -12,9 +12,9 @@ from typing import Any, Literal
 
 from ada.io.paths import get_paths
 
-RootKey = Literal["memory", "runs", "outbox"]
+RootKey = Literal["memory", "runs", "outbox", "artifacts"]
 
-ALLOWED_ROOTS: tuple[RootKey, ...] = ("memory", "runs", "outbox")
+ALLOWED_ROOTS: tuple[RootKey, ...] = ("memory", "runs", "outbox", "artifacts")
 
 DEFAULT_MAX_BYTES = 256 * 1024
 HARD_MAX_BYTES = 1024 * 1024
@@ -53,6 +53,8 @@ def _root_dir(key: str) -> Path:
         return paths.memory.resolve()
     if key == "runs":
         return paths.runs.resolve()
+    if key == "artifacts":
+        return paths.artifacts.resolve()
     return paths.dream_outbox.resolve()
 
 

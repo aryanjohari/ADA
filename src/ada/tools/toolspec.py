@@ -209,6 +209,10 @@ SPECS: tuple[ToolSpec, ...] = (
                 "key": {"type": "string", "description": "e.g. prefs.brief_time"},
                 "value": {"description": "Value to store (string/bool/number)"},
                 "note": {"type": "string"},
+                "confirmed": {
+                    "type": "boolean",
+                    "description": "Required when enabling prefs.notify_enabled",
+                },
             },
             required=["key", "value"],
         ),
@@ -272,6 +276,7 @@ SPECS: tuple[ToolSpec, ...] = (
             "memory_open_loops_upsert",
             (
                 "Create/update a todo or campaign (Agent). "
+                "Remind/ping → remind_at (todo); campaign wake → next_wake_at. "
                 "Delete and gated stage/campaign done require confirmed=true "
                 "(or last_receipt for gated completion)."
             ),
@@ -296,7 +301,10 @@ SPECS: tuple[ToolSpec, ...] = (
                 "blocked_reason": {"type": "string"},
                 "next_wake_at": {
                     "type": "string",
-                    "description": "ISO8601 wake time",
+                    "description": (
+                        "Campaign only — ISO8601 wake time. "
+                        "Not for reminders/pings (use remind_at)."
+                    ),
                 },
                 "last_progress_at": {"type": "string"},
                 "last_receipt": {
@@ -308,9 +316,123 @@ SPECS: tuple[ToolSpec, ...] = (
                     "description": "on_open_only | daily",
                 },
                 "nudge_attribution": {"type": "object"},
+                "due_at": {
+                    "type": "string",
+                    "description": "Todo due ISO8601 (Phase 0 track)",
+                },
+                "remind_at": {
+                    "type": "string",
+                    "description": (
+                        "Todo ping time — use for 'remind/ping me at …' "
+                        "(may precede due_at)"
+                    ),
+                },
+                "people_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Soft links to facts/people/<id>.yaml",
+                },
+                "artifact_path": {
+                    "type": "string",
+                    "description": "Optional artifacts/… handoff pointer",
+                },
+                "starts_at": {
+                    "type": "string",
+                    "description": "Light event window start (ISO8601)",
+                },
+                "ends_at": {
+                    "type": "string",
+                    "description": "Light event window end (ISO8601)",
+                },
+                "notify": {
+                    "type": "boolean",
+                    "description": "Per-item notify override (default from prefs)",
+                },
+                "last_notified_at": {
+                    "type": "string",
+                    "description": "Cooldown metal — usually set by notify_send",
+                },
                 "delete": {"type": "boolean"},
                 "confirmed": {"type": "boolean"},
             },
+        ),
+    ),
+    ToolSpec(
+        name="artifact_write",
+        group="artifact",
+        side_effect="append_local",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "artifact_write",
+            (
+                "Write a durable md/csv under /mnt/ada-data/artifacts/ (Pi-doer). "
+                "Path jail — no escape. Overwrite needs confirmed=true. "
+                "Claiming a report was written requires the returned receipt_id. "
+                "Typical flow: web_fetch → cite → artifact_write with source_cites."
+            ),
+            {
+                "title": {"type": "string", "description": "Title / slug seed"},
+                "body": {"type": "string", "description": "File body"},
+                "format": {
+                    "type": "string",
+                    "enum": ["md", "csv"],
+                    "description": "md (default) or csv",
+                },
+                "source_cites": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional cite:c_… ids to append",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional relative path under artifacts/",
+                },
+                "overwrite": {"type": "boolean"},
+                "confirmed": {"type": "boolean"},
+            },
+            required=["body"],
+        ),
+    ),
+    ToolSpec(
+        name="artifact_list",
+        group="artifact",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "artifact_list",
+            "List recent artifacts under artifacts/ by mtime (shelf heads).",
+            {"limit": {"type": "integer", "description": "Max items (default 12)"}},
+        ),
+    ),
+    ToolSpec(
+        name="notify_send",
+        group="notify",
+        side_effect="append_local",
+        egress="web",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "notify_send",
+            (
+                "Send a budgeted ntfy push (Phase 1). Honors quiet hours, "
+                "mute_proactivity, notify_budget_per_day, notify_cooldown_minutes. "
+                "prefs.notify_enabled must be true (first enable → Confirm). "
+                "Secrets in secrets/ntfy.env — never invent sends."
+            ),
+            {
+                "message": {"type": "string"},
+                "title": {"type": "string"},
+                "todo_id": {
+                    "type": "string",
+                    "description": "Optional todo to stamp last_notified_at",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Operator override for tests — still needs Agent",
+                },
+            },
+            required=["message"],
         ),
     ),
     ToolSpec(

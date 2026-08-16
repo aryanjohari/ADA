@@ -1,0 +1,5 @@
+# People note template (seed). Copied if missing; never overwrites real people files.
+schema_version: 1
+name: ""
+role: ""
+notes: ""

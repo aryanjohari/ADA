@@ -24,6 +24,7 @@ from ada.hud.auth import (
     set_session_cookie,
 )
 from ada.hud.stream_bridge import run_with_bridge
+from ada.hud.today import build_today
 from ada.hud.xray import XrayError, list_entries, read_file
 from ada.io.paths import BodyFault, DataPaths, get_paths
 from ada.tools.body_tools import run_body_doctor
@@ -63,7 +64,9 @@ class PlanAcceptBody(BaseModel):
 _CONFIRMABLE_TOOLS = frozenset(
     {
         "memory_facts_propose_edit",
+        "memory_facts_append",
         "memory_open_loops_upsert",
+        "artifact_write",
     }
 )
 
@@ -152,6 +155,37 @@ def api_lifecycle() -> dict[str, Any]:
 @router.get("/doctor")
 def api_doctor() -> dict[str, Any]:
     return run_body_doctor()
+
+
+@router.get("/today")
+def api_today(request: Request) -> dict[str, Any]:
+    """Today strip — dues, reminds, pending Confirm/Plan, shelf heads (M16)."""
+    chat = _chat_service(request)
+    pending = [
+        {
+            "pending_id": pid,
+            "tool": meta.get("tool"),
+            "args_keys": sorted((meta.get("args") or {}).keys()),
+        }
+        for pid, meta in (chat.pending_confirms or {}).items()
+    ]
+    try:
+        return build_today(
+            pending_confirms=pending,
+            last_plan=chat.last_plan,
+        )
+    except BodyFault as exc:
+        return {
+            "ok": False,
+            "error": exc.message,
+            "due_todos": [],
+            "remind_soon": [],
+            "pending_confirms": pending,
+            "plan_sticky": None,
+            "artifacts": [],
+            "overnight": [],
+            "continuity": None,
+        }
 
 
 @router.get("/mode")

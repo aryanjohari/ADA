@@ -61,6 +61,11 @@ DEFAULT_PREFS: dict[str, Any] = {
     "humor_banned_topics": [],
     # M07 web egress — list of {host, ttl_seconds?, note?} or bare host strings.
     "web_allowlist": [],
+    # M16 Phase 1 notify (ntfy). First enable → Confirm.
+    "notify_enabled": False,
+    "notify_channel": "ntfy",
+    "notify_budget_per_day": 5,
+    "notify_cooldown_minutes": 60,
 }
 
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -188,7 +193,13 @@ def get_fact(key: str, *, paths: DataPaths | None = None) -> dict[str, Any]:
 
 
 def _coerce_pref_value(field: str, value: Any) -> Any:
-    if field in {"mute_proactivity", "tease_ok", "brief_enabled", "chill_immediate"}:
+    if field in {
+        "mute_proactivity",
+        "tease_ok",
+        "brief_enabled",
+        "chill_immediate",
+        "notify_enabled",
+    }:
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
@@ -228,6 +239,19 @@ def _coerce_pref_value(field: str, value: Any) -> Any:
         if isinstance(value, list):
             return value
         raise ValueError(f"{field} must be a list, got {value!r}")
+    if field == "notify_channel":
+        ch = str(value).strip().lower()
+        if ch != "ntfy":
+            raise ValueError("notify_channel Phase 1 supports only 'ntfy'")
+        return ch
+    if field in {"notify_budget_per_day", "notify_cooldown_minutes"}:
+        try:
+            n = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field} must be int, got {value!r}") from exc
+        if n < 0:
+            raise ValueError(f"{field} must be >= 0")
+        return n
     return value
 
 
@@ -238,6 +262,7 @@ def append_fact(
     paths: DataPaths | None = None,
     note: str | None = None,
     allow_prefs_update: bool = True,
+    confirmed: bool = False,
 ) -> dict[str, Any]:
     """Append/set a FACT field.
 
@@ -245,6 +270,7 @@ def append_fact(
     ``remember`` / Agent tool). Pass allow_prefs_update=False for Dream merge
     so conflicting values surface as needs_confirm → stage.
     Non-prefs fields: overwrite of a different existing value → needs_confirm.
+    Enabling ``prefs.notify_enabled`` always needs Confirm on first enable.
     """
     p = _require_mounted(paths or require_ada_data())
     p.ensure_memory_dirs()
@@ -266,6 +292,25 @@ def append_fact(
         prefs = load_prefs(p)
         coerced = _coerce_pref_value(field, value)
         existing = prefs.get(field)
+        # M16: first enable of push notify requires Confirm.
+        if (
+            field == "notify_enabled"
+            and coerced is True
+            and not bool(existing)
+            and not confirmed
+        ):
+            return {
+                "ok": False,
+                "needs_confirm": True,
+                "outcome": "needs_confirm",
+                "reason": (
+                    "enabling prefs.notify_enabled requires Confirm "
+                    "(ntfy secrets under secrets/ntfy.env; budget/quiet/mute apply)"
+                ),
+                "key": key,
+                "existing": existing,
+                "proposed": coerced,
+            }
         if (
             not allow_prefs_update
             and field in prefs
@@ -301,7 +346,7 @@ def append_fact(
     path = _doc_path(p, doc)
     cleanup_orphan_tmps(path.parent, path.name)
     data = _load_yaml(path) if path.is_file() else {"schema_version": 1}
-    if field in data and data[field] != value:
+    if field in data and data[field] != value and not confirmed:
         return {
             "ok": False,
             "needs_confirm": True,
@@ -490,9 +535,12 @@ def boot_fact_slice(*, paths: DataPaths | None = None, max_chars: int = 3200) ->
     try:
         from ada.memory.open_loops import (
             K_CAMPAIGN_HEADS,
+            K_DUE_PER_WAKE,
             K_TODO_HEADS,
             campaign_heads,
+            due_todos,
             format_campaign_head,
+            format_todo_head,
             list_loops,
         )
 
@@ -503,6 +551,14 @@ def boot_fact_slice(*, paths: DataPaths | None = None, max_chars: int = 3200) ->
                 lines.append(f"  - {format_campaign_head(camp)}")
         else:
             lines.append("- campaigns: (none)")
+
+        dues = due_todos(paths=p, limit=K_DUE_PER_WAKE)
+        if dues:
+            lines.append("- due_todos:")
+            for todo in dues:
+                lines.append(f"  - {format_todo_head(todo)}")
+        else:
+            lines.append("- due_todos: (none)")
 
         todos = list_loops(paths=p, status="open", kind="todo", limit=K_TODO_HEADS)
         if todos:

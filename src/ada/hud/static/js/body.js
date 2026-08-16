@@ -204,7 +204,7 @@ function setBodyTab(name) {
   document.querySelectorAll("[data-body-tab]").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-body-tab") === name);
   });
-  ["vitals", "life", "xray", "audit"].forEach((id) => {
+  ["vitals", "life", "shelf", "xray", "audit"].forEach((id) => {
     const panel = document.getElementById("body-panel-" + id);
     if (!panel) return;
     const on = id === name;
@@ -225,7 +225,7 @@ export function closeBody() {
   if (dlg && dlg.open) dlg.close();
 }
 
-export function wireBody({ onXrayShow } = {}) {
+export function wireBody({ onXrayShow, onShelfShow } = {}) {
   const dlg = document.getElementById("body-drawer");
   document.getElementById("body-open").addEventListener("click", () => {
     openBody();
@@ -245,6 +245,7 @@ export function wireBody({ onXrayShow } = {}) {
       const name = btn.getAttribute("data-body-tab");
       setBodyTab(name);
       if (name === "xray" && onXrayShow) onXrayShow();
+      if (name === "shelf" && onShelfShow) onShelfShow();
       if (name === "audit") refreshTail();
     });
   });

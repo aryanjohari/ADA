@@ -161,7 +161,10 @@ def body_whoami(
 
 @body_app.command("birth")
 def body_birth() -> None:
-    """Create identity once if missing; idempotent if already born."""
+    """Create identity once if missing; idempotent if already born.
+
+    Also applies birth pack seeds (SELF/OPERATOR) when missing.
+    """
     try:
         card, created = identity_mod.create_identity()
     except BodyFault as exc:
@@ -171,6 +174,35 @@ def body_birth() -> None:
         console.print(f"[green]born[/green] at {card.born_at} on {card.body_hostname}")
     else:
         console.print(f"already born at {card.born_at} (born_at unchanged)")
+    from ada.memory.birth_pack import apply_birth_pack
+
+    try:
+        pack = apply_birth_pack()
+        if pack.get("applied"):
+            console.print(f"birth pack applied: {', '.join(pack['applied'])}")
+        elif pack.get("skipped"):
+            console.print("birth pack: seeds already present (not overwritten)")
+    except BodyFault:
+        pass
+
+
+@body_app.command("birth-pack")
+def body_birth_pack(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite seeds (tests/lab only — never for operator bio).",
+    ),
+) -> None:
+    """Copy repo syllabus seeds into ada-data if missing (M16)."""
+    from ada.memory.birth_pack import apply_birth_pack
+
+    try:
+        pack = apply_birth_pack(force=force)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+        return
+    console.print_json(data=pack)
 
 
 @body_app.command("wake")
@@ -630,8 +662,16 @@ def campaigns_status(
 @campaigns_app.command("check")
 def campaigns_check(
     json_out: bool = typer.Option(False, "--json"),
+    notify: bool = typer.Option(
+        False,
+        "--notify",
+        help="Also attempt budgeted ntfy for due/remind todos (Phase 1).",
+    ),
 ) -> None:
-    """Local due/stale/blocked campaign list — no LLM. Quiet/mute suppress nudges."""
+    """Local due/stale/blocked campaign list + due todos — no LLM.
+
+    Quiet/mute suppress nudges. Enable ada-brief.timer for morning ritual.
+    """
     from ada.memory.open_loops import campaign_check
     from ada.memory.proactivity import proactivity_suppressed
 
@@ -645,9 +685,15 @@ def campaigns_check(
                 "reasons": suppress.get("reasons"),
                 "count": 0,
                 "due": [],
+                "due_todos": [],
+                "due_todo_count": 0,
             }
         else:
             payload = campaign_check()
+            if notify:
+                from ada.memory.notify import notify_check_and_send
+
+                payload["notify"] = notify_check_and_send(limit=1)
     except BodyFault as exc:
         _exit_body_fault(exc)
         return
@@ -660,14 +706,22 @@ def campaigns_check(
         )
         return
     due = payload.get("due") or []
-    if not due:
-        console.print("(no due campaigns)")
+    due_todos = payload.get("due_todos") or []
+    if not due and not due_todos:
+        console.print("(no due campaigns or todos)")
         return
+    for item in due_todos:
+        console.print(
+            f"- todo [{item.get('id')}] {item.get('title') or item.get('text')} "
+            f"due={item.get('due_at')}"
+        )
     for item in due:
         console.print(
             f"- [{item.get('id')}] {item.get('title')} "
             f"STATUS={item.get('status')} due={item.get('due_reason')}"
         )
+    if payload.get("notify"):
+        console.print(f"notify: {payload['notify'].get('results')}")
 
 
 @watch_app.command("list")

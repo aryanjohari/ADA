@@ -183,7 +183,20 @@ class ChatService:
                 ).strip()
                 if not text:
                     continue
-                result = upsert_loop(text=text, kind="todo", status="open")
+                due_at = None
+                remind_at = None
+                if isinstance(step, dict):
+                    if step.get("due_at"):
+                        due_at = str(step.get("due_at")).strip() or None
+                    if step.get("remind_at"):
+                        remind_at = str(step.get("remind_at")).strip() or None
+                result = upsert_loop(
+                    text=text,
+                    kind="todo",
+                    status="open",
+                    due_at=due_at,
+                    remind_at=remind_at,
+                )
                 loop = result.get("loop") if isinstance(result.get("loop"), dict) else {}
                 loop_id = str(loop.get("id") or result.get("id") or "")
                 todos.append({"id": loop_id, "text": text})

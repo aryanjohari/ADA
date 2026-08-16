@@ -22,6 +22,10 @@ export function fetchRunTail(n = 80) {
   return getJson("/api/run/tail?n=" + n);
 }
 
+export function fetchToday() {
+  return getJson("/api/today");
+}
+
 export async function postLogin(password) {
   const r = await fetch("/api/login", {
     method: "POST",

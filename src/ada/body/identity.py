@@ -124,35 +124,51 @@ def create_identity(
     """Create birth card once.
 
     Returns (card, created). Second call keeps born_at and does not rewrite.
+    Also applies birth pack seeds (SELF/OPERATOR) and prefs if missing.
     """
     p = paths or require_ada_data()
     cleanup_orphan_tmps(p.facts, "identity.yaml")
 
+    created = False
     if p.identity_yaml.is_file():
-        return load_identity(p), False
-
-    p.facts.mkdir(parents=True, exist_ok=True)
-    card = build_identity_card()
-    payload = yaml.safe_dump(
-        card.model_dump(),
-        sort_keys=False,
-        allow_unicode=True,
-        default_flow_style=False,
-    )
-    atomic_write_text(p.identity_yaml, payload)
-
-    if append_birth_event:
-        # Late import avoids circular dependency at module load.
-        from ada.body.lifecycle import append_event
-
-        append_event(
-            "birth",
-            summary=f"ADA born on {card.body_hostname}",
-            details={
-                "born_at": card.born_at,
-                "agent_version": card.version,
-                "board_model": card.board_model,
-            },
-            paths=p,
+        card = load_identity(p)
+    else:
+        p.facts.mkdir(parents=True, exist_ok=True)
+        card = build_identity_card()
+        payload = yaml.safe_dump(
+            card.model_dump(),
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
         )
-    return card, True
+        atomic_write_text(p.identity_yaml, payload)
+        created = True
+
+        if append_birth_event:
+            # Late import avoids circular dependency at module load.
+            from ada.body.lifecycle import append_event
+
+            append_event(
+                "birth",
+                summary=f"ADA born on {card.body_hostname}",
+                details={
+                    "born_at": card.born_at,
+                    "agent_version": card.version,
+                    "board_model": card.board_model,
+                },
+                paths=p,
+            )
+
+    # Birth pack + prefs — idempotent; never overwrite operator data.
+    try:
+        from ada.memory.birth_pack import apply_birth_pack
+        from ada.memory.facts import ensure_prefs
+        from ada.memory.open_loops import ensure_open_loops
+
+        apply_birth_pack(p)
+        ensure_prefs(p)
+        ensure_open_loops(p)
+    except Exception:  # noqa: BLE001 — birth must not fail closed on optional seeds
+        pass
+
+    return card, created

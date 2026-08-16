@@ -12,7 +12,7 @@ from typing import Any, Literal
 from ada.body.vitals import utc_now_iso
 from ada.io.paths import BodyFault
 from ada.runs.append import new_receipt_id
-from ada.tools import body_tools, memory_tools, web_tools
+from ada.tools import artifact_tools, body_tools, memory_tools, web_tools
 from ada.tools.schemas import TOOL_NAMES, WRITE_TOOL_NAMES, spec_for
 
 Mode = Literal["observe", "agent", "plan"]
@@ -197,6 +197,7 @@ class Gateway:
             or web_tools.DISPATCH.get(tool)
             or memory_tools.DISPATCH.get(tool)
             or body_tools.DISPATCH.get(tool)
+            or artifact_tools.DISPATCH.get(tool)
         )
         if handler is None:
             return GatewayResult(

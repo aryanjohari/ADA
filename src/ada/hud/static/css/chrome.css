@@ -1,4 +1,4 @@
-/* Header chrome — brand, dial, session, Body button */
+/* Header chrome — brand, dial, session, Body (M17) */
 
 .top {
   display: flex;
@@ -6,19 +6,20 @@
   gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
-  padding: 0.7rem var(--space-3);
+  padding: 0.55rem var(--space-3);
   border-bottom: 1px solid var(--line-soft);
-  background: rgba(12, 15, 13, 0.82);
-  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
   position: sticky;
   top: 0;
   z-index: 20;
+  min-height: var(--header-h);
 }
 
 .brand-block {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.05rem;
   min-width: 0;
 }
 
@@ -26,9 +27,9 @@
   margin: 0;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 1.45rem;
-  letter-spacing: 0.08em;
-  line-height: 1.1;
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
 }
 
 .welcome-line {
@@ -48,21 +49,22 @@
 .chrome-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: var(--space-1) var(--space-2);
   align-items: center;
   justify-content: flex-end;
 }
 
 .mode-dial {
   appearance: none;
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.82rem;
+  border-radius: var(--radius);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   cursor: pointer;
+  color: var(--fg);
 }
 
 .mode-dial:focus-visible {
@@ -71,7 +73,7 @@
 
 .mode-suggest {
   font-size: 0.72rem;
-  padding: 0.2rem 0.55rem;
+  padding: 0.2rem 0.5rem;
   border-radius: var(--radius);
   border: 1px dashed var(--accent-dim);
   background: transparent;
@@ -82,7 +84,17 @@
 
 .mode-suggest:hover {
   border-style: solid;
-  background: var(--accent-glow);
+  background: var(--surface-2);
+}
+
+.session-crumb {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.session-crumb.armed {
+  color: var(--accent);
 }
 
 .login-form {
@@ -99,11 +111,52 @@
 .login-form input[type="password"] {
   min-width: 9rem;
   background: var(--surface);
+  font-size: 0.8125rem;
+}
+
+.session-menu {
+  position: relative;
+  font-size: 0.8125rem;
+}
+
+.session-menu[hidden] {
+  display: none;
+}
+
+.session-menu summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.55rem;
+  user-select: none;
+}
+
+.session-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-menu summary:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+
+.session-menu[open] summary {
+  color: var(--fg);
+  border-color: var(--muted);
+}
+
+.session-menu #logout-btn {
+  display: block;
+  margin-top: var(--space-1);
+  width: 100%;
 }
 
 #body-open {
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  font-size: 0.8125rem;
 }
 
 .home {
@@ -122,4 +175,96 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* M16/M17 Today strip — situation bar; not a panel */
+.today-strip {
+  flex: 0 0 auto;
+  margin: 0 0 var(--space-2);
+  padding: 0.25rem 0 0.45rem;
+  border: none;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+}
+
+.today-strip-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.65rem;
+  align-items: baseline;
+}
+
+.today-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.today-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.55rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.today-item {
+  font-size: 0.78rem;
+  color: var(--fg);
+  max-width: 16rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.today-item.today-more {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.today-kind {
+  font-size: 0.65rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-right: 0.2rem;
+}
+
+.today-item.today-due .today-kind { color: var(--warn); }
+.today-item.today-confirm .today-kind { color: var(--warn); }
+.today-item.today-plan .today-kind { color: var(--accent); }
+
+.today-pulse {
+  margin: 0;
+  width: 100%;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.shelf-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.shelf-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.shelf-item .shelf-open {
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
 }

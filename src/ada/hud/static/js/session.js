@@ -1,4 +1,4 @@
-/** Session welcome + login/logout chrome. */
+/** Session welcome + login/logout chrome (M17). */
 
 import { postLogin, postLogout } from "./api.js";
 import { esc } from "./util.js";
@@ -19,17 +19,10 @@ export function applyModePayload(data) {
   sessionState.tailscaleUser = data.tailscale_user || null;
   if (data.mode) sessionState.mode = data.mode;
 
-  const badge = document.getElementById("auth-badge");
-  if (badge) {
-    badge.textContent = "auth=" + sessionState.auth;
-    badge.className =
-      "badge " + (sessionState.auth === "session" ? "session" : "mesh");
-  }
-
-  const armedEl = document.getElementById("armed-chip");
-  if (armedEl) {
-    armedEl.textContent = "armed=" + String(sessionState.agentArmed);
-    armedEl.className = "chip " + (sessionState.agentArmed ? "ok" : "muted");
+  const crumb = document.getElementById("session-crumb");
+  if (crumb) {
+    crumb.textContent = sessionState.agentArmed ? "session" : "mesh";
+    crumb.classList.toggle("armed", sessionState.agentArmed);
   }
 
   const welcome = document.getElementById("welcome-line");
@@ -47,8 +40,19 @@ export function applyModePayload(data) {
   }
 
   const loginForm = document.getElementById("login-form");
-  if (loginForm) {
-    loginForm.classList.toggle("hidden", sessionState.agentArmed);
+  const sessionMenu = document.getElementById("session-menu");
+  if (sessionState.agentArmed) {
+    if (loginForm) loginForm.classList.add("hidden");
+    if (sessionMenu) {
+      sessionMenu.hidden = false;
+      sessionMenu.open = false;
+    }
+  } else {
+    if (sessionMenu) {
+      sessionMenu.hidden = true;
+      sessionMenu.open = false;
+    }
+    // Keep login hidden until Plan/Agent gate (requireSessionForMode).
   }
 
   // Chrome #mode-select is operator-owned (mode.js). Do not reset it from
@@ -123,6 +127,8 @@ export function wireSession({ refreshMode }) {
     const modeSelect = document.getElementById("mode-select");
     if (modeSelect) modeSelect.value = "observe";
     sessionState.mode = "observe";
+    const form = document.getElementById("login-form");
+    if (form) form.classList.add("hidden");
     await refreshMode();
   });
 }

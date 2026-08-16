@@ -34,6 +34,7 @@ def run_memory_facts_append(args: dict[str, Any]) -> dict[str, Any]:
         str(key),
         args.get("value"),
         note=args.get("note"),
+        confirmed=bool(args.get("confirmed", False)),
     )
 
 
@@ -93,6 +94,20 @@ def run_memory_open_loops_upsert(args: dict[str, Any]) -> dict[str, Any]:
         last_receipt=args.get("last_receipt"),
         cadence=args.get("cadence"),
         nudge_attribution=args.get("nudge_attribution"),
+        due_at=str(args["due_at"]) if args.get("due_at") is not None else None,
+        remind_at=str(args["remind_at"]) if args.get("remind_at") is not None else None,
+        people_ids=args.get("people_ids"),
+        artifact_path=(
+            str(args["artifact_path"]) if args.get("artifact_path") is not None else None
+        ),
+        starts_at=str(args["starts_at"]) if args.get("starts_at") is not None else None,
+        ends_at=str(args["ends_at"]) if args.get("ends_at") is not None else None,
+        notify=bool(args["notify"]) if args.get("notify") is not None else None,
+        last_notified_at=(
+            str(args["last_notified_at"])
+            if args.get("last_notified_at") is not None
+            else None
+        ),
         delete=bool(args.get("delete", False)),
         confirmed=bool(args.get("confirmed", False)),
     )

@@ -220,6 +220,15 @@ def _fact_boot_slice() -> str:
         return f"FACTS (dry, standing): unavailable ({exc})."
 
 
+def _syllabus_boot_slice() -> str:
+    try:
+        from ada.memory.birth_pack import load_syllabus_heads
+
+        return load_syllabus_heads(max_chars=1200)
+    except Exception as exc:  # noqa: BLE001
+        return f"Syllabus (SELF): unavailable ({exc})."
+
+
 def _worldview_boot_slice() -> str:
     try:
         from ada.memory.worldview import latest_digest_summary
@@ -246,6 +255,8 @@ def build_system_charter(
         "",
         identity_summary(),
         mode_addendum(mode),
+        "",
+        _syllabus_boot_slice(),
         "",
         ANTI_FLUFF_ADDENDUM.strip(),
         "",
@@ -295,10 +306,18 @@ def build_system_charter(
             "never equal to vitals/lifecycle metal. "
             "Web: use web_cite_search → web_cite_get / web_fetch for page content; "
             "never invent reads; never set user_pasted for URLs the user did not write. "
+            "Pi-doer docs: web_fetch → cite:c_… → artifact_write (md/csv under "
+            "artifacts/); claiming a report was written requires that receipt_id. "
+            "Track: remind/ping → memory_open_loops_upsert kind=todo with "
+            "remind_at (optional due_at / notify); never next_wake_at on todos "
+            "(campaign wake only). Claiming a push needs notify_send receipt "
+            "or honest 'scheduled / notify off'. "
+            "notify_send only when prefs.notify_enabled (first enable → Confirm). "
             "Never invent success without a gateway receipt. "
             "Use memory_facts_append when Aryan says remember (Agent mode). "
             "Campaign list → memory_open_loops_list kind=campaign; "
             "do not assume status=open (campaigns use active|blocked|…). "
+            "Daily track does not require campaign STATUS. "
             "Task clarify: if required args missing, ask ≤2 questions — do not invent. "
             "Task done: cite receipt_id and/or todo done status; never fake success.",
         ]

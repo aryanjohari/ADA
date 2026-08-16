@@ -206,7 +206,7 @@ Every row tagged. Citations are **lineage for design**, not training homework.
 | **Named campaign vs flat TODO** | Job hunt ≠ “buy milk”; needs grouping |
 | **Stages / checklist** | Horizon Gap: without stages → false completion |
 | **`waiting_on_aryan` / blocked reason** | Human-in-the-loop without chat archaeology |
-| **`next_wake_at` / cadence** | Hours/days horizon without always-on loop |
+| **`next_wake_at` / cadence** | Hours/days horizon without always-on loop — **campaign wake only**; personal remind/ping uses todo `remind_at`/`due_at` (M16), never this field |
 | **Last progress + receipt pointer** | Truthful self-report (“I tailored CV”) needs `runs/` link |
 | **Stage-gate / side-effect class** | Apply/send ≠ research note |
 | **Attribution for nudges** | Research metric: trigger + evidence + permission tier |

@@ -1,4 +1,4 @@
-/* Base layout + focus + reduced motion */
+/* Base layout + focus + reduced motion (M17) */
 
 * { box-sizing: border-box; }
 
@@ -10,11 +10,10 @@ html, body {
 body {
   font-family: var(--font-ui);
   background:
-    radial-gradient(900px 480px at 8% -8%, #1c2818 0%, transparent 55%),
-    radial-gradient(700px 400px at 100% 0%, #152018 0%, transparent 45%),
-    linear-gradient(168deg, var(--bg0) 0%, var(--bg1) 42%, #101412 100%);
+    linear-gradient(180deg, var(--bg1) 0%, var(--bg) 48%, var(--bg) 100%);
   color: var(--fg);
-  line-height: 1.5;
+  line-height: 1.55;
+  font-size: 1rem;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -24,28 +23,30 @@ body {
 
 button, select, input[type="password"], textarea {
   font-family: var(--font-ui);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 button, select, input[type="password"] {
-  background: var(--bg0);
+  background: transparent;
   color: var(--fg);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius);
+  padding: 0.4rem 0.7rem;
 }
 
 button {
   cursor: pointer;
-  background: var(--accent-dim);
-  border-color: var(--accent);
-  color: var(--fg);
+  background: transparent;
+  border-color: var(--line);
+  color: var(--muted);
   transition: background 120ms var(--ease), border-color 120ms var(--ease),
-    opacity 120ms ease;
+    color 120ms var(--ease), opacity 120ms ease;
 }
 
 button:hover:not(:disabled) {
-  background: #557348;
+  color: var(--fg);
+  border-color: var(--muted);
+  background: var(--surface-2);
 }
 
 button:disabled {
@@ -68,12 +69,23 @@ button.ghost:hover:not(:disabled) {
 button.primary {
   background: var(--accent-dim);
   border-color: var(--accent);
+  color: var(--fg);
   font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #4a6340;
+  color: var(--fg);
 }
 
 button.danger {
   background: transparent;
   border-color: var(--deny);
+  color: var(--deny);
+}
+
+button.danger:hover:not(:disabled) {
+  background: rgba(201, 112, 112, 0.1);
   color: var(--deny);
 }
 
@@ -101,9 +113,9 @@ button.danger {
   margin: 0;
   max-height: 14rem;
   overflow: auto;
-  background: var(--bg0);
+  background: var(--bg);
   padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   border: 1px solid var(--line);
 }
 
@@ -122,12 +134,13 @@ button.danger {
   margin: 0;
 }
 
+/* Body drawer telemetry chips — mono OK inside drawer */
 .badge, .chip {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   padding: 0.2rem 0.45rem;
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
 }
 
 .badge.session { border-color: var(--accent); color: var(--accent); }
@@ -147,7 +160,7 @@ button.danger {
   background: transparent;
   color: var(--muted);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   padding: 0.3rem 0.55rem;
   font-size: 0.8rem;
   cursor: pointer;

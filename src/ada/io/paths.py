@@ -87,6 +87,29 @@ class DataPaths:
         return self.scratch / "web"
 
     @property
+    def artifacts(self) -> Path:
+        """Durable user-facing outputs (M16 Pi-doer)."""
+        return self.root / "artifacts"
+
+    @property
+    def syllabus(self) -> Path:
+        """Birth syllabus heads (SELF / OPERATOR) under ada-data."""
+        return self.root / "syllabus"
+
+    @property
+    def syllabus_self(self) -> Path:
+        return self.syllabus / "SELF.md"
+
+    @property
+    def syllabus_operator(self) -> Path:
+        return self.syllabus / "OPERATOR.md"
+
+    @property
+    def secrets(self) -> Path:
+        """Local secrets tree (never in git / never to cortex dumps)."""
+        return self.root / "secrets"
+
+    @property
     def lifecycle_jsonl(self) -> Path:
         return self.memory / "lifecycle.jsonl"
 
@@ -127,6 +150,14 @@ class DataPaths:
         """Create memory/cites + scratch/web lazily on first web_fetch."""
         self.cites.mkdir(parents=True, exist_ok=True)
         self.scratch_web.mkdir(parents=True, exist_ok=True)
+
+    def ensure_artifact_dirs(self) -> None:
+        """Create artifacts/ lazily on first artifact_write."""
+        self.artifacts.mkdir(parents=True, exist_ok=True)
+
+    def ensure_syllabus_dirs(self) -> None:
+        """Create syllabus/ for birth pack SELF/OPERATOR."""
+        self.syllabus.mkdir(parents=True, exist_ok=True)
 
     def ensure_dream_dirs(self) -> None:
         """Create dream/{staging,outbox,sent} lazily on first dream.run."""

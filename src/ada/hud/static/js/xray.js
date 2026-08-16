@@ -23,7 +23,9 @@ function parentPath(p) {
   return parts.join("/");
 }
 
-export async function xrayList() {
+export async function xrayList(root, path) {
+  if (root) xrayState.root = root;
+  if (path !== undefined) xrayState.path = path;
   const list = document.getElementById("xray-list");
   const pathEl = document.getElementById("xray-path");
   if (!list || !pathEl) return;

@@ -1,12 +1,15 @@
-# Optional pointer — NOT an acceptance gate (M06/M09).
+# Optional pointer — NOT an acceptance gate (M06/M09/M16).
+# Phase 1 morning brief ritual: enable ada-brief.timer (OnCalendar ~05:30).
+#   sudo systemctl enable --now ada-brief.timer
+# Payload: `ada campaigns check --json` includes due_todos (+ optional --notify).
 # Recommended timer sequence (operator choice):
 #   1. ada watch run --ingest-only   (03:30 heal slot — feed pull + cites, no nudges)
-#   2. ada campaigns check --json    (05:30 brief surfacer — respects quiet/mute)
+#   2. ada campaigns check --json [--notify]  (05:30 brief — quiet/mute/budget win)
 # Or use a dedicated ada-watch.timer for step 1 only.
-# Respects quiet hours + mute_proactivity inside `ada campaigns check` (not ingest-only watch).
+# Respects quiet hours + mute_proactivity inside `ada campaigns check`.
 
 [Unit]
-Description=ADA campaign / brief check (local STATUS surfacer)
+Description=ADA campaign / brief check (local STATUS + due todos)
 After=local-fs.target
 # Refuse if ada-data missing — organ raises BodyFault.
 
@@ -17,6 +20,8 @@ WorkingDirectory=/mnt/ada-data/ADA
 Environment=ADA_DATA_ROOT=/mnt/ada-data
 # Uncomment ingest before brief check when ada-watch.timer is not used:
 # ExecStart=/bin/sh -c '/mnt/ada-data/ADA/.venv/bin/ada watch run --ingest-only --json && /mnt/ada-data/ADA/.venv/bin/ada campaigns check --json'
+# Optional Phase 1 push (requires secrets/ntfy.env + prefs.notify_enabled):
+# ExecStart=/mnt/ada-data/ADA/.venv/bin/ada campaigns check --json --notify
 ExecStart=/mnt/ada-data/ADA/.venv/bin/ada campaigns check --json
 Nice=10
 

@@ -1,4 +1,4 @@
-/* ADA HUD — design tokens (M13/M14 moss pack) */
+/* ADA HUD — design tokens (M17 minimal face · moss pack) */
 
 @font-face {
   font-family: "IBM Plex Sans";
@@ -30,32 +30,39 @@
 }
 
 :root {
-  --bg0: #0c0f0d;
-  --bg1: #141916;
-  --surface: #1a211c;
-  --surface-2: #222a24;
-  --surface-3: #2a332c;
-  --line: #343c36;
-  --line-soft: rgba(52, 60, 54, 0.55);
-  --fg: #e8ede6;
-  --muted: #8b968c;
-  --accent: #8fbc6b;
-  --accent-dim: #4a6340;
-  --accent-glow: rgba(143, 188, 107, 0.12);
-  --warn: #c9a227;
+  /* M17 semantic core (≤10) */
+  --bg: #0e1210;
+  --surface: #161c18;
+  --line: rgba(228, 233, 227, 0.12);
+  --fg: #e4e9e3;
+  --muted: #8a938b;
+  --accent: #7fad63;
+  --user: #6d8f9c;
+  --warn: #c4a035;
   --deny: #c97070;
-  --user: #6a8f9e;
-  --radius: 8px;
-  --radius-sm: 5px;
-  --space-1: 0.35rem;
-  --space-2: 0.65rem;
+  --radius: 6px;
+
+  /* Compat aliases for Body / stream / chrome */
+  --bg0: var(--bg);
+  --bg1: #121714;
+  --surface-2: #1c231e;
+  --surface-3: #222a24;
+  --line-soft: rgba(228, 233, 227, 0.08);
+  --accent-dim: #3d5235;
+  --accent-glow: transparent;
+  --radius-sm: var(--radius);
+
+  /* Space: 4 / 8 / 12 / 16 / 24 */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
   --space-3: 1rem;
   --space-4: 1.5rem;
+
   --font-ui: "IBM Plex Sans", "Source Sans 3", ui-sans-serif, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --font-display: "IBM Plex Sans", var(--font-ui);
-  --header-h: 3.6rem;
+  --header-h: 3rem;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --shadow-drawer: -12px 0 40px rgba(0, 0, 0, 0.45);
-  --max-chat: 44rem;
+  --max-chat: 40rem;
 }

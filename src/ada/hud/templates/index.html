@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0c0f0d" />
+  <meta name="theme-color" content="#0e1210" />
   <title>{{ title }}</title>
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" href="/static/icons/ada-icon.svg" type="image/svg+xml" />
@@ -24,20 +24,29 @@
         <option value="agent">Agent</option>
       </select>
       <button type="button" id="mode-suggest" class="mode-suggest" hidden></button>
-      <span id="auth-badge" class="badge mesh">auth=mesh</span>
-      <span id="armed-chip" class="chip muted">armed=—</span>
-      <form id="login-form" class="login-form">
+      <span id="session-crumb" class="session-crumb">mesh</span>
+      <form id="login-form" class="login-form hidden">
         <label class="sr-only" for="password">Session password</label>
         <input type="password" id="password" placeholder="session password" autocomplete="current-password" />
-        <button type="submit">Login</button>
-        <button type="button" id="logout-btn" class="ghost">Logout</button>
+        <button type="submit" class="primary">Login</button>
       </form>
+      <details id="session-menu" class="session-menu" hidden>
+        <summary>Session</summary>
+        <button type="button" id="logout-btn" class="ghost">Logout</button>
+      </details>
       <p id="auth-msg" class="msg" role="status"></p>
       <button type="button" id="body-open" class="ghost">Body</button>
     </div>
   </header>
 
   <main class="home" id="home">
+    <section id="today-strip" class="today-strip" aria-label="Today" hidden>
+      <div class="today-strip-inner">
+        <span class="today-label">Today</span>
+        <ul id="today-items" class="today-items"></ul>
+        <p id="today-pulse" class="today-pulse" hidden></p>
+      </div>
+    </section>
     <section class="home-stream" aria-label="Chat">
       <div id="stream" class="stream" role="log" aria-live="polite"></div>
       <form id="chat-form" class="chat-form">
@@ -58,6 +67,7 @@
         <nav class="body-tabs" aria-label="Body sections">
           <button type="button" class="tab active" data-body-tab="vitals">Vitals</button>
           <button type="button" class="tab" data-body-tab="life">Lifecycle</button>
+          <button type="button" class="tab" data-body-tab="shelf">Shelf</button>
           <button type="button" class="tab" data-body-tab="xray">X-ray</button>
           <button type="button" class="tab" data-body-tab="audit">Audit</button>
         </nav>
@@ -76,11 +86,19 @@
           <div id="lifecycle" class="lifecycle-cards"></div>
         </div>
 
+        <div id="body-panel-shelf" class="body-panel body-section" hidden>
+          <h3>Artifact shelf</h3>
+          <p class="meta">Recent durable handoffs under artifacts/ (read-only).</p>
+          <ul id="shelf-list" class="shelf-list"></ul>
+          <p id="shelf-empty" class="meta" hidden>No artifacts yet — ask Agent to summarize a link into a note.</p>
+        </div>
+
         <div id="body-panel-xray" class="body-panel body-section" hidden>
           <h3>X-ray</h3>
           <div class="xray-layout">
             <aside class="xray-roots" aria-label="X-ray roots">
               <button type="button" class="root-btn active" data-root="memory">memory</button>
+              <button type="button" class="root-btn" data-root="artifacts">artifacts</button>
               <button type="button" class="root-btn" data-root="runs">runs</button>
               <button type="button" class="root-btn" data-root="outbox">outbox</button>
             </aside>
