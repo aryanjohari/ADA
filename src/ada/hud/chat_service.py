@@ -11,6 +11,7 @@ from ada.cortex.charter import build_system_charter
 from ada.cortex.gemini import GeminiAdapter
 from ada.cortex.models import resolve_model
 from ada.harness.loop import LoopResult, run_turn
+from ada.harness.pack_router import resolve_chip, route_utterance
 from ada.harness.plan_artifact import new_plan_id
 from ada.harness.session import ChatSession, Mode
 from ada.harness.stream_events import StreamSink
@@ -85,6 +86,7 @@ class ChatService:
         *,
         mode: Mode = "observe",
         sink: StreamSink | None = None,
+        chip: str | None = None,
     ) -> dict[str, Any]:
         """Synchronous turn — intended to run off the ASGI event loop thread."""
         with self._lock:
@@ -123,8 +125,14 @@ class ChatService:
                     "plan": None,
                 }
 
+            hint = resolve_chip(chip) if chip else None
+            if hint is None:
+                hint = route_utterance(user_text)
+            self.session.pack_hint = hint
             system = build_system_charter(
-                mode=mode, chill_active=self.session.chill_active
+                mode=mode,
+                chill_active=self.session.chill_active,
+                pack_hint=hint,
             )
             result: LoopResult = run_turn(
                 self.session,

@@ -58,6 +58,82 @@ def _overnight_heads(paths: DataPaths) -> list[dict[str, Any]]:
     return heads[:3]
 
 
+def _running_timer(paths: DataPaths) -> dict[str, Any] | None:
+    try:
+        from ada.logs.time import get_running
+
+        row = get_running(paths=paths)
+        if not row:
+            return None
+        return {
+            "block_id": row["block_id"],
+            "kind": row["kind"],
+            "label": row.get("label"),
+            "started_at": row["started_at"],
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _nutrition_headline(paths: DataPaths) -> dict[str, Any] | None:
+    try:
+        from ada.logs.meals import nutrition_day
+
+        day = nutrition_day(paths=paths)
+        totals = day.get("totals") or {}
+        if not totals:
+            return None
+        return {
+            "local_day": day.get("date"),
+            "kcal": totals.get("energy_kcal"),
+            "protein_g": totals.get("protein_g"),
+            "partial": bool(day.get("honest_partial")),
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _meal_gap_nudge(
+    paths: DataPaths,
+    *,
+    now: datetime,
+    suppressed: bool,
+) -> dict[str, Any] | None:
+    if suppressed:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+
+        from ada.logs.connection import open_life_db
+        from ada.logs.tz_util import preferred_tz_name, utc_to_local_day
+
+        tz = ZoneInfo(preferred_tz_name(paths=paths))
+        local_now = now.astimezone(tz)
+        if local_now.hour < 14:
+            return None
+        local_day = utc_to_local_day(now=now, paths=paths)
+        with open_life_db(paths=paths) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM meals WHERE local_day = ? AND meal_slot IN ('lunch','dinner')",
+                (local_day,),
+            ).fetchone()[0]
+            last = conn.execute(
+                "SELECT logged_at FROM meals WHERE local_day = ? ORDER BY logged_at DESC LIMIT 1",
+                (local_day,),
+            ).fetchone()
+        if count > 0:
+            return None
+        since_hours = None
+        if last:
+            from datetime import datetime as dt
+
+            last_ts = dt.fromisoformat(last["logged_at"].replace("Z", "+00:00"))
+            since_hours = round((now - last_ts).total_seconds() / 3600, 1)
+        return {"suggested_slot": "lunch", "since_hours": since_hours or 5}
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def build_today(
     *,
     paths: DataPaths | None = None,
@@ -85,6 +161,11 @@ def build_today(
         }
 
     confirms = list(pending_confirms or [])[:8]
+    running_timer = _running_timer(p)
+    nutrition_headline = _nutrition_headline(p)
+    meal_gap_nudge = _meal_gap_nudge(
+        p, now=now, suppressed=bool(suppress.get("suppressed"))
+    )
 
     return {
         "ok": True,
@@ -120,4 +201,7 @@ def build_today(
         "continuity": _continuity_pulse(p),
         "suppressed": suppress.get("suppressed"),
         "suppress_reasons": suppress.get("reasons") or [],
+        "running_timer": running_timer,
+        "nutrition_headline": nutrition_headline,
+        "meal_gap_nudge": meal_gap_nudge,
     }

@@ -119,6 +119,19 @@ class DataPaths:
         return self.root / "runs"
 
     @property
+    def logs(self) -> Path:
+        """Life capture SQLite logs (M19a)."""
+        return self.root / "logs"
+
+    @property
+    def life_logs_db(self) -> Path:
+        return self.logs / "life_logs.db"
+
+    @property
+    def food_reference_db(self) -> Path:
+        return self.logs / "food_reference.db"
+
+    @property
     def dream(self) -> Path:
         """Sealed Dream packages tree (staging / outbox / sent)."""
         return self.root / "dream"
@@ -163,6 +176,10 @@ class DataPaths:
         """Create dream/{staging,outbox,sent} lazily on first dream.run."""
         for d in (self.dream_staging, self.dream_outbox, self.dream_sent):
             d.mkdir(parents=True, exist_ok=True)
+
+    def ensure_logs_dirs(self) -> None:
+        """Create logs/ for life capture SQLite (M19a)."""
+        self.logs.mkdir(parents=True, exist_ok=True)
 
 
 def get_data_root() -> Path:

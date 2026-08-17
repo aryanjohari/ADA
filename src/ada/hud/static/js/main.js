@@ -6,6 +6,7 @@ import {
   startBodyPolls,
   wireBody,
 } from "./body.js";
+import { wireComposerChips } from "./composer_chips.js";
 import { wireModeDial } from "./mode.js";
 import { wireSession } from "./session.js";
 import { wireChat } from "./stream.js";
@@ -13,6 +14,7 @@ import { startTodayPoll, refreshToday } from "./today.js";
 import { wireXray, xrayList } from "./xray.js";
 
 wireSession({ refreshMode });
+wireComposerChips();
 wireModeDial();
 wireChat({
   refreshTail: async () => {

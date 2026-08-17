@@ -1,0 +1,26 @@
+[
+  {
+    "canonical_name": "Flat bench press",
+    "aliases": ["bench press", "flat bench"],
+    "body_parts": ["chest", "triceps"],
+    "equipment": ["barbell"],
+    "movement": "push",
+    "source": "seed"
+  },
+  {
+    "canonical_name": "Squat",
+    "aliases": ["back squat"],
+    "body_parts": ["quads", "glutes"],
+    "equipment": ["barbell"],
+    "movement": "squat",
+    "source": "seed"
+  },
+  {
+    "canonical_name": "Deadlift",
+    "aliases": ["conventional deadlift"],
+    "body_parts": ["back", "glutes", "hamstrings"],
+    "equipment": ["barbell"],
+    "movement": "hinge",
+    "source": "seed"
+  }
+]

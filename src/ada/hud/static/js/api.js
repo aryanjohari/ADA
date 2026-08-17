@@ -71,7 +71,7 @@ export async function postPlanAccept(plan) {
   return { ok: r.ok, status: r.status, data };
 }
 
-export async function openChatStream(message, mode) {
+export async function openChatStream(message, mode, chip = null) {
   return fetch("/api/chat", {
     method: "POST",
     credentials: "same-origin",
@@ -79,6 +79,6 @@ export async function openChatStream(message, mode) {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({ message, mode }),
+    body: JSON.stringify({ message, mode, chip }),
   });
 }

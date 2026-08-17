@@ -1,0 +1,111 @@
+# M19a P0 life capture pack router (verb → tool)
+# Prefixes are the canonical HUD chip prefills and prefix routes.
+# Aliases are doors in this YAML only — not NLU, not per-organ Python.
+packs:
+  meal_log:
+    tool: life_meal_log
+    prefill: "log meal: "
+    preferred_tools: [life_food_search, life_meal_log, life_nutrition_day]
+    spine: search_then_log
+  lift_log:
+    tool: life_lift_log
+    prefill: "log lift: "
+    preferred_tools: [life_lift_log]
+    spine: parse_then_log
+  time_start:
+    tool: life_time_start
+    prefill: "start focus: "
+    preferred_tools: [life_time_start, life_time_status]
+    spine: intent_then_start
+  time_stop:
+    tool: life_time_stop
+    prefill: "stop focus"
+    preferred_tools: [life_time_stop, life_time_status]
+  capture:
+    tool: life_capture
+    prefill: "capture: "
+    preferred_tools: [life_capture]
+    spine: classify_then_write
+  due_add:
+    tool: memory_open_loops_upsert
+    prefill: "add due: "
+    preferred_tools: [memory_open_loops_upsert, memory_open_loops_list]
+    spine: parse_then_upsert
+  remind:
+    tool: memory_open_loops_upsert
+    prefill: "remind: "
+    preferred_tools: [memory_open_loops_upsert, memory_open_loops_list]
+    spine: parse_then_upsert
+  due_done:
+    tool: memory_open_loops_upsert
+    prefill: "done: "
+    preferred_tools: [memory_open_loops_upsert, memory_open_loops_list]
+    spine: parse_then_upsert
+  nutrition_day:
+    tool: life_nutrition_day
+    preferred_tools: [life_nutrition_day]
+    spine: read
+  time_status:
+    tool: life_time_status
+    preferred_tools: [life_time_status]
+    spine: read
+  due_list:
+    tool: memory_open_loops_list
+    preferred_tools: [memory_open_loops_list]
+    arg_hints:
+      kind: todo
+      status: open
+    spine: read
+  gym_status:
+    tool: life_gym_status
+    preferred_tools: [life_gym_status]
+    spine: read
+  life_status:
+    tool: life_nutrition_day
+    preferred_tools: [life_nutrition_day, life_time_status, memory_open_loops_list]
+    spine: read_concat
+  focus_start:
+    tool: life_time_start
+    alias_of: time_start
+    deprecated: true
+  focus_stop:
+    tool: life_time_stop
+    alias_of: time_stop
+    deprecated: true
+
+chips:
+  meal: meal_log
+  lift: lift_log
+  focus: time_start
+  due: due_add
+  capture: capture
+
+# Literal/contains, case-insensitive. First match after prefixes wins.
+aliases:
+  - {pattern: "good morning", verb: time_start}
+  - {pattern: "i woke up", verb: time_start}
+  - {pattern: "woke up", verb: time_start}
+  - {pattern: "wake up", verb: time_start}
+  - {pattern: "morning ada", verb: time_start}
+  - {pattern: "going to sleep", verb: time_start}
+  - {pattern: "going to bed", verb: time_start}
+  - {pattern: "bedtime", verb: time_start}
+  - {pattern: "goodnight", verb: time_start}
+  - {pattern: "stop focus", verb: time_stop}
+  - {pattern: "stop timer", verb: time_stop}
+  - {pattern: "what did i eat", verb: nutrition_day}
+  - {pattern: "macros", verb: nutrition_day}
+  - {pattern: "micros", verb: nutrition_day}
+  - {pattern: "nutrient", verb: nutrition_day}
+  - {pattern: "what's running", verb: time_status}
+  - {pattern: "am i tracking", verb: time_status}
+  - {pattern: "gotta", verb: due_add}
+  - {pattern: "i need to finish", verb: due_add}
+  - {pattern: "due by", verb: due_add}
+  - {pattern: "remind me", verb: remind}
+  - {pattern: "what's due", verb: due_list}
+  - {pattern: "on my plate", verb: due_list}
+  - {pattern: "what did i lift", verb: gym_status}
+  - {pattern: "split today", verb: gym_status}
+  - {pattern: "how's my day", verb: life_status}
+  - {pattern: "today summary", verb: life_status}

@@ -37,6 +37,7 @@ class ChatSession:
     writer: RunWriter | None = None
     started_monotonic: float = field(default_factory=time.monotonic)
     chill_active: bool = False
+    pack_hint: dict[str, Any] | None = None
     _started: bool = False
 
     def __post_init__(self) -> None:

@@ -38,6 +38,23 @@ class _ToolThenDone:
         )
 
 
+class _CaptureSystem:
+    model = "fake"
+    last_system = None
+
+    def generate(self, *, system, contents, tools=None):
+        self.last_system = system
+        return CortexTurn(
+            text="ok",
+            tool_calls=[],
+            usage={
+                "prompt_token_count": 1,
+                "candidates_token_count": 1,
+                "total_token_count": 2,
+            },
+        )
+
+
 def test_chat_uses_run_turn(data_root, monkeypatch):
     monkeypatch.setenv("ADA_DATA_ROOT", str(data_root))
     monkeypatch.setenv("ADA_HUD_COOKIE_SECURE", "0")
@@ -69,3 +86,18 @@ def test_chat_uses_run_turn(data_root, monkeypatch):
     assert "user" in types
     assert "tool_call" in types
     assert "tool_result" in types
+
+
+def test_chat_prefix_binds_pack_hint_into_system(data_root, monkeypatch):
+    monkeypatch.setenv("ADA_DATA_ROOT", str(data_root))
+    monkeypatch.setenv("ADA_HUD_COOKIE_SECURE", "0")
+    adapter = _CaptureSystem()
+    app = create_app()
+    app.state.chat.adapter_factory = lambda: adapter
+    client = TestClient(app)
+
+    resp = client.post("/api/chat", json={"message": "log meal: one banana", "mode": "observe"})
+    assert resp.status_code == 200
+    assert adapter.last_system is not None
+    assert "Pack hint (this turn only):" in adapter.last_system
+    assert "life_meal_log" in adapter.last_system

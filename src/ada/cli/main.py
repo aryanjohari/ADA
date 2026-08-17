@@ -55,6 +55,10 @@ tier_a_app = typer.Typer(
     help="Tier A kernel close gate (M18).",
     no_args_is_help=True,
 )
+life_app = typer.Typer(
+    help="Life capture: meals, gym, time (M19a).",
+    no_args_is_help=True,
+)
 app.add_typer(body_app, name="body")
 app.add_typer(hud_app, name="hud")
 app.add_typer(memory_app, name="memory")
@@ -64,6 +68,7 @@ app.add_typer(campaigns_app, name="campaigns")
 app.add_typer(watch_app, name="watch")
 app.add_typer(web_app, name="web")
 app.add_typer(tier_a_app, name="tier-a")
+app.add_typer(life_app, name="life")
 
 
 def _exit_body_fault(exc: BodyFault) -> None:
@@ -1243,6 +1248,221 @@ def web_allowlist_cmd(
         raise typer.Exit(code=2)
     except BodyFault as exc:
         _exit_body_fault(exc)
+
+
+@life_app.command("food-import-nz")
+def life_food_import_nz(
+    path: Path = typer.Argument(..., help="Directory with NZ FOODfiles CSV"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Import NZ FOODfiles CSV into food_reference.db."""
+    from ada.logs.food_import_nz import import_nz_foodfiles
+
+    try:
+        result = import_nz_foodfiles(path)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+    if json_out:
+        console.print_json(data=result)
+    elif result.get("ok"):
+        console.print(f"imported {result.get('imported', 0)} rows from {result.get('files', 0)} files")
+    else:
+        err_console.print(f"[red]import failed:[/red] {result.get('error')}")
+        raise typer.Exit(code=1)
+
+
+@life_app.command("food-search")
+def life_food_search_cli(
+    query: str = typer.Argument(..., help="Food name query"),
+    json_out: bool = typer.Option(False, "--json"),
+    no_fetch: bool = typer.Option(False, "--no-fetch", help="Cache only"),
+) -> None:
+    from ada.tools.life_tools import run_life_food_search
+
+    result = run_life_food_search({"query": query, "fetch_remote": not no_fetch})
+    if json_out:
+        console.print_json(data=result)
+    else:
+        for c in result.get("candidates") or []:
+            console.print(f"{c.get('ref_id')}  {c.get('name')}  ({c.get('source')})")
+
+
+@life_app.command("food-forget")
+def life_food_forget_cli(
+    name: Optional[str] = typer.Option(None, "--name", help="Forget custom cache rows matching name"),
+    ref_id: Optional[str] = typer.Option(None, "--ref-id", help="Delete one food row by ref_id"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Remove custom food-cache stubs. Never deletes USDA/OFF rows by name-match."""
+    from ada.logs.food import delete_food, forget_foods
+
+    if ref_id:
+        result = delete_food(ref_id)
+    elif name:
+        result = forget_foods(name, source="custom")
+    else:
+        err_console.print("[red]need --name or --ref-id[/red]")
+        raise typer.Exit(code=2)
+    if json_out:
+        console.print_json(data=result)
+    elif result.get("ok"):
+        console.print(f"deleted={result.get('deleted', 0)}")
+    else:
+        err_console.print(f"[red]forget failed:[/red] {result.get('reason')}")
+        raise typer.Exit(code=1)
+
+
+@life_app.command("barcode-lookup")
+def life_barcode_lookup_cli(
+    barcode: str = typer.Argument(..., help="GTIN barcode"),
+    json_out: bool = typer.Option(False, "--json"),
+    no_fetch: bool = typer.Option(False, "--no-fetch", help="Cache only"),
+) -> None:
+    from ada.tools.life_tools import run_life_barcode_lookup
+
+    result = run_life_barcode_lookup(
+        {"barcode": barcode, "fetch_remote": not no_fetch}
+    )
+    if json_out:
+        console.print_json(data=result)
+    elif result.get("ok"):
+        console.print(f"{result.get('name')}  ref={result.get('ref_id')}")
+    else:
+        err_console.print(f"[red]miss:[/red] {result.get('reason')}")
+        raise typer.Exit(code=1)
+
+
+@life_app.command("gym-import-seed")
+def life_gym_import_seed(
+    json_out: bool = typer.Option(False, "--json"),
+    path: Optional[Path] = typer.Option(None, "--path", help="Override seed JSON"),
+) -> None:
+    """Import bundled exercise catalog (idempotent). Optional --path for wger/exercisedb JSON."""
+    from ada.logs.gym_import import import_exercise_seed
+
+    try:
+        result = import_exercise_seed(path=path)
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+    if json_out:
+        console.print_json(data=result)
+    else:
+        console.print(f"imported {result.get('imported', 0)} exercises")
+
+
+@life_app.command("capture")
+def life_capture_cli(
+    text: str = typer.Option(..., "--text", "-t"),
+    kind: Optional[str] = typer.Option(None, "--kind"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    obs = _life_gw().execute("life_capture", {"text": text, "kind": kind})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif obs.ok:
+        console.print(f"kind={obs.data.get('kind')} id={obs.data.get('open_loop_id') or obs.data.get('path')}")
+    else:
+        raise typer.Exit(code=1)
+
+
+def _life_gw():
+    from ada.tools.gateway import Gateway
+
+    return Gateway(mode="agent")
+
+
+@life_app.command("meal-log")
+def life_meal_log_cli(
+    lines_json: str = typer.Option(..., "--lines", help="JSON array of food lines"),
+    note: Optional[str] = typer.Option(None, "--note"),
+    meal_slot: Optional[str] = typer.Option(None, "--meal-slot"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    lines = json.loads(lines_json)
+    obs = _life_gw().execute(
+        "life_meal_log", {"lines": lines, "note": note, "meal_slot": meal_slot}
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif obs.ok:
+        console.print(f"meal_id={obs.data.get('meal_id')} kcal={obs.data.get('kcal')}")
+    else:
+        raise typer.Exit(code=1)
+
+
+@life_app.command("nutrition-day")
+def life_nutrition_day_cli(
+    date: Optional[str] = typer.Option(None, "--date"),
+    today: bool = typer.Option(False, "--today"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute(
+        "life_nutrition_day",
+        {"date": None if today else date},
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        d = obs.data or {}
+        console.print(f"day={d.get('date')} totals={d.get('totals')}")
+
+
+@life_app.command("lift-log")
+def life_lift_log_cli(
+    sets_json: str = typer.Option(..., "--sets", help="JSON array of sets"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    sets = json.loads(sets_json)
+    obs = _life_gw().execute("life_lift_log", {"sets": sets})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif obs.ok:
+        console.print(f"session={obs.data.get('session_id')} volume={obs.data.get('volume_kg')}")
+    else:
+        raise typer.Exit(code=1)
+
+
+@life_app.command("time-start")
+def life_time_start_cli(
+    kind: str = typer.Option(..., "--kind"),
+    label: Optional[str] = typer.Option(None, "--label"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    obs = _life_gw().execute("life_time_start", {"kind": kind, "label": label})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif obs.ok:
+        console.print(f"block={obs.data.get('block_id')} kind={obs.data.get('kind')}")
+    else:
+        raise typer.Exit(code=1)
+
+
+@life_app.command("time-stop")
+def life_time_stop_cli(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    obs = _life_gw().execute("life_time_stop", {})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif obs.ok:
+        console.print(f"duration_s={obs.data.get('duration_s')}")
+    else:
+        raise typer.Exit(code=1)
+
+
+@life_app.command("time-status")
+def life_time_status_cli(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute("life_time_status", {})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        console.print_json(data=obs.data)
 
 
 def _repo_root() -> Path:

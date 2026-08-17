@@ -41,6 +41,7 @@ class LoginBody(BaseModel):
 class ChatBody(BaseModel):
     message: str = Field(min_length=1)
     mode: ModeName = "observe"
+    chip: str | None = None
 
 
 class ConfirmBody(BaseModel):
@@ -188,6 +189,22 @@ def api_today(request: Request) -> dict[str, Any]:
         }
 
 
+@router.get("/life/day")
+def api_life_day(date: str | None = None) -> dict[str, Any]:
+    """Life capture day read — meals rollup + time status (M19a)."""
+    from ada.logs.meals import nutrition_day
+    from ada.logs.time import time_status
+
+    try:
+        return {
+            "ok": True,
+            "nutrition": nutrition_day(date=date),
+            "time": time_status(),
+        }
+    except BodyFault as exc:
+        return {"ok": False, "error": exc.message}
+
+
 @router.get("/mode")
 def api_mode(request: Request) -> dict[str, Any]:
     chat = _chat_service(request)
@@ -304,9 +321,10 @@ def api_chat(request: Request, body: ChatBody) -> StreamingResponse | JSONRespon
     chat = _chat_service(request)
     message = body.message.strip()
     mode = body.mode
+    chip = body.chip.strip() if body.chip else None
 
     def worker(sink):
-        return chat.run_user_turn(message, mode=mode, sink=sink)
+        return chat.run_user_turn(message, mode=mode, sink=sink, chip=chip)
 
     return StreamingResponse(
         run_with_bridge(worker),

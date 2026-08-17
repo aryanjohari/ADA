@@ -50,6 +50,13 @@
     <section class="home-stream" aria-label="Chat">
       <div id="stream" class="stream" role="log" aria-live="polite"></div>
       <form id="chat-form" class="chat-form">
+        <div id="composer-chips" class="chip-row composer-chips" aria-label="Quick capture">
+          <button type="button" class="chip composer-chip" data-chip="meal" data-prefill="log meal: ">meal</button>
+          <button type="button" class="chip composer-chip" data-chip="lift" data-prefill="log lift: ">lift</button>
+          <button type="button" class="chip composer-chip" data-chip="focus" data-prefill="start focus: ">focus</button>
+          <button type="button" class="chip composer-chip" data-chip="due" data-prefill="add due: ">due</button>
+          <button type="button" class="chip composer-chip" data-chip="capture" data-prefill="capture: ">capture</button>
+        </div>
         <label class="sr-only" for="chat-input">Message</label>
         <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
         <button type="submit" id="chat-send" class="primary">Send</button>

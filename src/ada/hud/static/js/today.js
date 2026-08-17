@@ -36,6 +36,32 @@ export async function refreshToday() {
   }
 
   const bits = [];
+  if (data.running_timer) {
+    const t = data.running_timer;
+    bits.push(
+      itemLabel(
+        "timer",
+        (t.label || t.kind || "focus") + " running",
+        t.started_at
+      )
+    );
+  }
+  if (data.nutrition_headline) {
+    const n = data.nutrition_headline;
+    const partial = n.partial ? " (partial)" : "";
+    bits.push(
+      itemLabel(
+        "macros",
+        "kcal " + (n.kcal ?? "?") + " · P " + (n.protein_g ?? "?") + partial,
+        n.local_day
+      )
+    );
+  }
+  if (data.meal_gap_nudge) {
+    bits.push(
+      itemLabel("meal", "log lunch?", data.meal_gap_nudge.since_hours + "h")
+    );
+  }
   for (const t of data.due_todos || []) {
     bits.push(
       itemLabel(

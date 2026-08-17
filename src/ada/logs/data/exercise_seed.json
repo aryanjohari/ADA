@@ -1,0 +1,22 @@
+[
+  {"canonical_name": "Flat bench press", "aliases": ["bench press", "flat bench"], "body_parts": ["chest", "triceps"], "equipment": ["barbell"], "movement": "push", "source": "seed"},
+  {"canonical_name": "Incline bench press", "aliases": ["incline bench"], "body_parts": ["chest", "shoulders"], "equipment": ["barbell"], "movement": "push", "source": "seed"},
+  {"canonical_name": "Squat", "aliases": ["back squat"], "body_parts": ["quads", "glutes"], "equipment": ["barbell"], "movement": "squat", "source": "seed"},
+  {"canonical_name": "Deadlift", "aliases": ["conventional deadlift"], "body_parts": ["back", "glutes", "hamstrings"], "equipment": ["barbell"], "movement": "hinge", "source": "seed"},
+  {"canonical_name": "Overhead press", "aliases": ["OHP", "military press"], "body_parts": ["shoulders", "triceps"], "equipment": ["barbell"], "movement": "push", "source": "seed"},
+  {"canonical_name": "Barbell row", "aliases": ["bent over row"], "body_parts": ["back", "biceps"], "equipment": ["barbell"], "movement": "pull", "source": "seed"},
+  {"canonical_name": "Pull-up", "aliases": ["pullup", "pull-ups", "chin-up"], "body_parts": ["back", "biceps"], "equipment": ["bodyweight"], "movement": "pull", "source": "seed"},
+  {"canonical_name": "Lat pulldown", "aliases": [], "body_parts": ["back", "biceps"], "equipment": ["cable"], "movement": "pull", "source": "seed"},
+  {"canonical_name": "Leg press", "aliases": [], "body_parts": ["quads", "glutes"], "equipment": ["machine"], "movement": "squat", "source": "seed"},
+  {"canonical_name": "Romanian deadlift", "aliases": ["RDL"], "body_parts": ["hamstrings", "glutes"], "equipment": ["barbell"], "movement": "hinge", "source": "seed"},
+  {"canonical_name": "Dumbbell curl", "aliases": ["bicep curl"], "body_parts": ["biceps"], "equipment": ["dumbbell"], "movement": "pull", "source": "seed"},
+  {"canonical_name": "Tricep pushdown", "aliases": ["cable pushdown"], "body_parts": ["triceps"], "equipment": ["cable"], "movement": "push", "source": "seed"},
+  {"canonical_name": "Lateral raise", "aliases": [], "body_parts": ["shoulders"], "equipment": ["dumbbell"], "movement": "push", "source": "seed"},
+  {"canonical_name": "Leg curl", "aliases": ["hamstring curl"], "body_parts": ["hamstrings"], "equipment": ["machine"], "movement": "hinge", "source": "seed"},
+  {"canonical_name": "Calf raise", "aliases": [], "body_parts": ["calves"], "equipment": ["machine"], "movement": "other", "source": "seed"},
+  {"canonical_name": "Plank", "aliases": [], "body_parts": ["core"], "equipment": ["bodyweight"], "movement": "other", "source": "seed"},
+  {"canonical_name": "Hip thrust", "aliases": ["glute bridge barbell"], "body_parts": ["glutes"], "equipment": ["barbell"], "movement": "hinge", "source": "seed"},
+  {"canonical_name": "Face pull", "aliases": [], "body_parts": ["shoulders", "back"], "equipment": ["cable"], "movement": "pull", "source": "seed"},
+  {"canonical_name": "Dips", "aliases": ["chest dip"], "body_parts": ["chest", "triceps"], "equipment": ["bodyweight"], "movement": "push", "source": "seed"},
+  {"canonical_name": "Landmine press", "aliases": ["landmine shoulder press"], "body_parts": ["shoulders", "chest"], "equipment": ["barbell"], "movement": "push", "source": "seed"}
+]

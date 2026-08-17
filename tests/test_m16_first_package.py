@@ -138,6 +138,9 @@ def test_f8_notify_quiet_mute_budget_cooldown(data_root: Path, monkeypatch: pyte
     r1 = notify_send(message="muted", paths=paths, http_post=fake_post)
     assert r1["skipped"] and r1["reason"] == "proactivity_suppressed"
     append_fact("prefs.mute_proactivity", False, paths=paths)
+    # Park quiet hours — default 23:00–05:30 NZ would skip the send at night.
+    append_fact("prefs.quiet_hours_start", "03:00", paths=paths)
+    append_fact("prefs.quiet_hours_end", "03:30", paths=paths)
 
     # First send OK
     r2 = notify_send(message="ping1", paths=paths, http_post=fake_post)
@@ -309,6 +312,9 @@ def test_f12_today_is_strip_shaped(data_root: Path) -> None:
         "continuity",
         "suppressed",
         "suppress_reasons",
+        "running_timer",
+        "nutrition_headline",
+        "meal_gap_nudge",
     }
     assert set(payload.keys()) <= allowed
     assert isinstance(payload["due_todos"], list)

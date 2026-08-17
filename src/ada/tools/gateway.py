@@ -12,7 +12,7 @@ from typing import Any, Literal
 from ada.body.vitals import utc_now_iso
 from ada.io.paths import BodyFault
 from ada.runs.append import new_receipt_id
-from ada.tools import artifact_tools, body_tools, memory_tools, web_tools
+from ada.tools import artifact_tools, body_tools, life_tools, memory_tools, web_tools
 from ada.tools.schemas import TOOL_NAMES, WRITE_TOOL_NAMES, spec_for
 
 Mode = Literal["observe", "agent", "plan"]
@@ -192,8 +192,19 @@ class Gateway:
             if "receipt_id" not in args:
                 args["receipt_id"] = receipt_id
 
+        if tool.startswith("life_") and tool not in (
+            "life_food_search",
+            "life_barcode_lookup",
+            "life_nutrition_day",
+            "life_time_status",
+            "life_gym_status",
+        ):
+            if "receipt_id" not in args:
+                args["receipt_id"] = receipt_id
+
         handler = (
             self.extra_handlers.get(tool)
+            or life_tools.DISPATCH.get(tool)
             or web_tools.DISPATCH.get(tool)
             or memory_tools.DISPATCH.get(tool)
             or body_tools.DISPATCH.get(tool)

@@ -385,7 +385,7 @@ function parseSseChunk(buffer, onEvent) {
   return rest;
 }
 
-export async function sendChat(message, mode) {
+export async function sendChat(message, mode, chip = null) {
   if (!requireSessionForMode(mode)) {
     appendFault({ message: "session required for " + mode });
     return;
@@ -394,7 +394,7 @@ export async function sendChat(message, mode) {
   streamState.busy = true;
   btn.disabled = true;
   try {
-    const resp = await openChatStream(message, mode);
+    const resp = await openChatStream(message, mode, chip);
     if (resp.status === 401) {
       const err = await resp.json();
       appendFault({
@@ -434,9 +434,11 @@ export function wireChat({ refreshTail, refreshMode } = {}) {
     const msg = input.value.trim();
     if (!msg || streamState.busy) return;
     const mode = getSelectedMode();
+    const chip = input.dataset.packChip || null;
     if (!requireSessionForMode(mode)) return;
     appendUserTurn(msg);
     input.value = "";
-    sendChat(msg, mode);
+    input.dataset.packChip = "";
+    sendChat(msg, mode, chip);
   });
 }

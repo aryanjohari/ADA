@@ -242,12 +242,77 @@ def _worldview_boot_slice() -> str:
         return f"WORLDVIEW (interpretive): unavailable ({exc})."
 
 
+_PACK_HINT_HEADER = "Pack hint (this turn only):"
+
+
+def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
+    if not pack_hint:
+        return ""
+    verb = str(pack_hint.get("verb") or "").strip()
+    tool = str(pack_hint.get("tool") or "").strip()
+    args = pack_hint.get("args") if isinstance(pack_hint.get("args"), dict) else {}
+    preferred = pack_hint.get("preferred_tools")
+    preferred_tools = [
+        str(item).strip()
+        for item in (preferred if isinstance(preferred, list) else [])
+        if str(item).strip()
+    ]
+    call_order = " -> ".join(preferred_tools or ([tool] if tool else []))
+    arg_bits = [
+        f"{key}={value!r}"
+        for key, value in (args or {}).items()
+        if value not in (None, "", [], {})
+    ]
+    lines = [
+        _PACK_HINT_HEADER,
+        f"- verb: {verb or 'unknown'}",
+        f"- prefer tool: {tool or 'none'}",
+    ]
+    if call_order:
+        lines.append(f"- suggested order: {call_order}")
+    if arg_bits:
+        lines.append(f"- arg hints: {', '.join(arg_bits)}")
+    lines.append(
+        "- policy: follow this tool spine for the turn; do not claim success without a real receipt."
+    )
+    from ada.harness.pack_router import ADMIN_WRITE_VERBS, READ_PACK_VERBS
+
+    if verb in READ_PACK_VERBS:
+        lines.append(
+            f"- HARD: this turn is a life read — call `{tool}` (or the suggested order). "
+            "NEVER use memory_facts_append / memory_facts_propose_edit for day totals. "
+            "Speak honest_partial from the JSON; do not invent Ca/Fe/C/D."
+        )
+    elif verb in ADMIN_WRITE_VERBS:
+        lines.append(
+            f"- HARD: this turn is admin capture — call `{tool}` then "
+            "memory_open_loops_list. NEVER use memory_facts_append / "
+            "memory_facts_propose_edit."
+        )
+    elif tool.startswith("life_"):
+        lines.append(
+            f"- HARD: this turn is life capture — call `{tool}` (or the suggested order). "
+            "NEVER use memory_facts_append / memory_facts_propose_edit for meals, lifts, timers, or capture."
+        )
+    return "\n".join(lines)
+
+
+def merge_pack_hint_into_charter(system_prompt: str, pack_hint: dict[str, object] | None) -> str:
+    addendum = _pack_hint_addendum(pack_hint)
+    if not addendum:
+        return system_prompt
+    if _PACK_HINT_HEADER in system_prompt:
+        return system_prompt
+    return system_prompt.rstrip() + "\n\n" + addendum
+
+
 def build_system_charter(
     *,
     mode: str = "observe",
     constitution_path: Path | None = None,
     include_worldview: bool = True,
     chill_active: bool = False,
+    pack_hint: dict[str, object] | None = None,
 ) -> str:
     """Full system prompt: §14 + anti-fluff + register + exemplars + FACT slice."""
     parts = [
@@ -279,6 +344,9 @@ def build_system_charter(
     )
     if include_worldview:
         parts.extend(["", _worldview_boot_slice()])
+    addendum = _pack_hint_addendum(pack_hint)
+    if addendum:
+        parts.extend(["", addendum])
     parts.extend(
         [
             "",
@@ -318,6 +386,10 @@ def build_system_charter(
             "Campaign list → memory_open_loops_list kind=campaign; "
             "do not assume status=open (campaigns use active|blocked|…). "
             "Daily track does not require campaign STATUS. "
+            "Life capture (M19a): meal/gym/time writes via life_* tools only — "
+            "never claim a meal or set was logged without life_meal_log / life_lift_log receipt. "
+            "Day macros require life_nutrition_day read — never invent totals. "
+            "Single active timer: life_time_start / life_time_stop; never parallel blocks. "
             "Task clarify: if required args missing, ask ≤2 questions — do not invent. "
             "Task done: cite receipt_id and/or todo done status; never fake success.",
         ]
