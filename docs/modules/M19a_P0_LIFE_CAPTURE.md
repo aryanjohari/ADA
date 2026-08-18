@@ -1,6 +1,6 @@
 # M19a — P0 Life Capture (implement spec)
 
-**Status:** design + implement spec (**v1.6**) — **P0.5 nutrition detail + bodyweight gym NL + HUD fast-path speak shipped**; M19b PTT/camera still blocked until **live** operator HUD smoke PASS  
+**Status:** design + implement spec (**v1.7**) — **P0.5 + gym catalog remote-default / NL fold lookup shipped**; M19b PTT/camera still blocked until **live** operator HUD smoke PASS  
 **Date:** 2026-08-17  
 **Kind:** Tier B **implement slice** — child of [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md)  
 **Depends on:** M19 (catalog/phases) · [`M18_CLOSE_TIER_A.md`](./M18_CLOSE_TIER_A.md) (kernel freeze gate) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) / [`M16_OPERATOR_NOTE.md`](./M16_OPERATOR_NOTE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (strip/sheet locks) · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`../01_BODY.md`](../01_BODY.md) (SQLite WAL durability notes §6.2) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill) · [`M07_WEB.md`](./M07_WEB.md) (egress for USDA/OFF only)  
@@ -14,6 +14,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.7** | 2026-08-18 | **Gym catalog boot default + NL gap:** first empty `open_life_db` fetches free-exercise-db (opt out `ADA_GYM_CATALOG_FETCH=off`); fold/alias lookup so `pull-ups` hits `Pullups`; merge bundled seed aliases (`flat bench`); import stores `force`→movement, primary+secondary muscles, `body only`→bodyweight. Rebuild tags: `DELETE FROM exercise_catalog` then `ada life gym-init`. |
 | **v1.6** | 2026-08-18 | **P0.5 close:** FDC **detail** fetch (`GET /fdc/v1/food/{fdcId}`) before cache insert; expanded `FDC_NUTRIENT_MAP` + CORE slots (Ca/Fe/Mg/P/K/Zn, A/C/D, B-vits per §5); `honest_partial` on CORE null only. Bodyweight gym NL (`pull-ups x8`, `10 pull-ups`, `3x10 pull-ups`; `load_kg: null`). `gym-import-seed --path` accepts wger/exercisedb JSON. HUD fast-path emits `token_delta` canned speak (no Gemini; `steps=0`). Operator smoke: [`M19a_P05_HARDENING.md`](../reviews/M19a_P05_HARDENING.md). |
 | **v1.5** | 2026-08-17 | **P0.2 close:** YAML `aliases:` (not per-organ ifs); read packs (`nutrition_day` / `time_status` / `due_list` / `gym_status` / `life_status`) fast-path in **Observe + Agent**; admin writes `due_add` / `remind` / `due_done` + `due_spine.py` Agent-only; due chip bind (`chips.due` → `due_add`, prefill `add due: `); custom Banana class-fix (`ada life food-forget`) — thin custom stubs miss through to USDA when key present. Do not invent Ca/Fe/C/D. |
 | **v1.4** | 2026-08-17 | **P0.1g HUD edge smoke pack:** `tests/test_m19a_hud_edge_smoke.py` drives `run_turn` (same path as HUD chat) for canned utterances + edges. METAL: custom Banana cache = macros only; USDA only on cache miss; CORE slots + incomplete FDC map ⇒ `honest_partial`. Operator HUD: **restart** after code change (kill pid on `:8787` then `ada hud serve`); Agent + login. Appendix B: automated F-P0.1 HUD smokes **shipped**; live HUD still operator. |
@@ -177,7 +178,7 @@
 | `memory_facts_append` blocked when pack hint is `life_*` / read / admin due | **METAL** — loop deny + charter HARD line | **METAL** |
 | HUD NL meal/lift/time → SQLite row (Agent) | **METAL** when fast-path args resolve; else `missing_life_receipt` | **METAL** |
 | Meal spine: utterance → `lines[]` | **METAL** — [`meal_spine.py`](../../src/ada/harness/meal_spine.py) | **METAL** |
-| Lift spine: `50kg x6` + bodyweight (`pull-ups x8`, `10 pull-ups`, `3x10`) → `sets[]` | **METAL** — [`gym_spine.py`](../../src/ada/harness/gym_spine.py); `gym-import-seed` for catalog | **METAL** |
+| Lift spine: `50kg x6` + bodyweight (`pull-ups x8`, `10 pull-ups`, `3x10`) → `sets[]` | **METAL** — [`gym_spine.py`](../../src/ada/harness/gym_spine.py); catalog auto-init on first DB open | **METAL** |
 | Composer chips | Prefill + `data-chip` → `POST /api/chat` `chip` param → `resolve_chip()` | **METAL** (P0.1b) |
 | Food cache / USDA for meal NL | **METAL**: thin custom miss → USDA **detail** when key present; CORE slots null ⇒ `honest_partial` (do not invent Ca/Fe/C/D). `ada life food-forget --name banana` | **METAL** |
 | HUD fast-path speak | **METAL**: `token_delta` canned text on pack fast-path; `steps=0`; no Gemini | **METAL** (P0.5) |
@@ -265,7 +266,7 @@ utterance | chip | (future) PTT transcript | (future) camera OCR text
 
 ### Operator HUD smoke (P0.1 + P0.2 close gate)
 
-**Prereqs:** **Agent** session + login; `ada life gym-import-seed`; meal foods in cache or `secrets/usda_fdc.env` ([USDA FDC free key](https://fdc.nal.usda.gov/api-key-signup.html)).
+**Prereqs:** **Agent** session + login; exercise catalog auto-inits on first DB open (or `ada life gym-init --json` after manual delete); meal foods in cache or `secrets/usda_fdc.env` ([USDA FDC free key](https://fdc.nal.usda.gov/api-key-signup.html)).
 
 **Restart HUD after code change** (stale `ada hud serve` will not load this tree):
 
@@ -711,7 +712,7 @@ flowchart TD
 | No `gym_start` | Auto-open session on first `lift_log` (receipt notes `auto_session`) |
 | Unknown load/reps | Allow partial row with null load (bodyweight); volume/tonnage skip null load |
 
-**Seed catalog:** bundled `exercise_seed.json` default; optional `ada life gym-import-seed --path /path/to/wger-or-exercisedb.json` (idempotent INSERT OR IGNORE). Bundled seed enough for P0.5; wger/exercise-db optional enrichment.
+**Seed catalog:** on **first `open_life_db`** (empty `exercise_catalog`) ADA tries [free-exercise-db](https://github.com/yuhonas/free-exercise-db) `exercises.json` (tmp under `logs/`, import, delete tmp), then **merges bundled** `exercise_seed.json` aliases onto fold-matches and inserts unmatched seed rows (`flat bench` → Flat bench press). Fetch failure / `ADA_GYM_CATALOG_FETCH=off` → bundled seed only. Idempotent — never re-downloads every boot. NL/fast-path lookup: exact name → aliases → alnum/plural fold (`pull-ups` ≡ `Pullups`); catalog first, FACTS custom only on miss. Import tags: `force`→`movement`, primary+secondary muscles, `body only`→`bodyweight`. Manual override: `ada life gym-import-seed --path …` (INSERT OR IGNORE unchanged). Rebuild after a pre-tag import: `DELETE FROM exercise_catalog;` then restart HUD or `ada life gym-init --json`.
 
 ---
 
@@ -834,7 +835,10 @@ utterance / composer chip / (future) STT / (future) GTIN
 ```bash
 ada life food-import-nz --path /mnt/ada-data/imports/nz_foodfiles/2024/
 ada life gym-import-seed   # bundled seed; optional --path wger/exercisedb JSON
+ada life gym-init --json   # manual re-run of auto-init (after DELETE FROM exercise_catalog)
 ```
+
+**Gym catalog auto-init (first DB open):** `open_life_db` → `ensure_exercise_catalog` when catalog empty. **Default:** remote fetch (`ADA_GYM_CATALOG_FETCH` unset / `full` / `1`). Opt out: `off` / `0` / `bundled`. Never blocks mount gate or DB open on network failure (falls back to bundled seed).
 
 ---
 
@@ -961,13 +965,13 @@ ada life gym-import-seed   # bundled seed; optional --path wger/exercisedb JSON
 3. **P0.2 (shipped v1.5):** YAML aliases; read packs Observe+Agent; due/remind/done Agent fast-loops + due chip bind; banana class-fix (`food-forget` + thin-custom USDA miss).  
 4. **P0.5 (shipped v1.6):** FDC detail nutrients; bodyweight gym NL; HUD `token_delta` on fast-path; optional gym catalog import path.  
 5. **P0 CLOSED** requires **operator live HUD smoke PASS** (§3.7 + P0.5 hardening) — F-P0.1a–c. Automated HUD-path smoke is **P0.1g + P0.2 + P0.5** (`run_turn`); live HUD still operator.  
-6. **Operator setup:** `gym-import-seed`; food cache or USDA key for meals; Agent session for writes. Forget thin custom Banana before expecting USDA micros.  
+6. **Operator setup:** gym catalog auto-inits on first DB open (**remote fetch default**; `ADA_GYM_CATALOG_FETCH=off` for bundled-only). Food cache or USDA key for meals; Agent session for writes. Forget thin custom Banana before expecting USDA micros. To rebuild catalog/tags: `DELETE FROM exercise_catalog;` then restart HUD or `ada life gym-init --json`.  
 7. **PTT/camera (M19b):** after P0 operator sign-off — same pack router, new transport only.  
 8. **PARK:** full 90-slot Cronometer parity, PTT, systemd HUD, habits, people, multi-ingredient meal NL polish, Plan multi-step meals, week reads P4, Gemini narrate pass.
 
 ---
 
-## Appendix B — Current wiring audit (METAL · 2026-08-18 v1.6)
+## Appendix B — Current wiring audit (METAL · 2026-08-18 v1.7)
 
 | File / symbol | Shipped | Gap |
 |---------------|---------|-----|
@@ -976,7 +980,9 @@ ada life gym-import-seed   # bundled seed; optional --path wger/exercisedb JSON
 | [`src/ada/tools/life_tools.py`](../../src/ada/tools/life_tools.py) + toolspec + gateway | All P0 `life_*` handlers incl. **`life_gym_status`** | Gateway requires structured args (by design) |
 | [`src/ada/harness/meal_spine.py`](../../src/ada/harness/meal_spine.py) | utterance → `lines[]`; strips `for/to {meal_slot}` from search query | Complex multi-item NL → P1 polish |
 | [`src/ada/harness/gym_spine.py`](../../src/ada/harness/gym_spine.py) | `Nkg x reps` + bodyweight `exercise x reps` / `N exercise` / `3x10 exercise` → `sets[]` | lb-only without kg label → extend |
-| [`src/ada/logs/gym_import.py`](../../src/ada/logs/gym_import.py) | bundled seed + `--path` wger/exercisedb normalize | — |
+| [`src/ada/logs/gym_import.py`](../../src/ada/logs/gym_import.py) | boot **remote default** + bundled merge; syntactic aliases; `force`/muscles/equipment tags | — |
+| [`src/ada/logs/gym.py`](../../src/ada/logs/gym.py) | catalog-first lookup (exact → alias → fold); `lift_log.resolved` tags | — |
+| [`src/ada/logs/connection.py`](../../src/ada/logs/connection.py) | `open_life_db` calls `ensure_exercise_catalog` after migrate | — |
 | [`src/ada/harness/due_spine.py`](../../src/ada/harness/due_spine.py) | due/remind/done parse + open-todo match | — |
 | [`src/ada/harness/pack_router.py`](../../src/ada/harness/pack_router.py) | Prefix + **YAML aliases** + structural `_ADD_MEAL` / `_LIFT_LINE` | New modules later = new YAML rows |
 | [`src/ada/harness/packs/life_p0.yaml`](../../src/ada/harness/packs/life_p0.yaml) | verb→tool, chips, aliases, `due_add`/`remind`/`due_done`, read packs | — |

@@ -1350,6 +1350,27 @@ def life_gym_import_seed(
         console.print(f"imported {result.get('imported', 0)} exercises")
 
 
+@life_app.command("gym-init")
+def life_gym_init(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Ensure exercise catalog is populated (same auto-init as first DB open)."""
+    from ada.logs.connection import open_life_db
+
+    try:
+        with open_life_db() as conn:
+            count = int(
+                conn.execute("SELECT COUNT(*) FROM exercise_catalog").fetchone()[0]
+            )
+        result = {"ok": True, "catalog_count": count}
+    except BodyFault as exc:
+        _exit_body_fault(exc)
+    if json_out:
+        console.print_json(data=result)
+    else:
+        console.print(f"exercise catalog: {result.get('catalog_count', 0)} rows")
+
+
 @life_app.command("capture")
 def life_capture_cli(
     text: str = typer.Option(..., "--text", "-t"),

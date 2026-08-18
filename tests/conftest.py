@@ -8,6 +8,12 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _gym_catalog_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CI/tests stay offline; production default is remote fetch."""
+    monkeypatch.setenv("ADA_GYM_CATALOG_FETCH", "off")
+
+
 @pytest.fixture
 def data_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "ada-data"

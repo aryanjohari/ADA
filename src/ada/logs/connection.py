@@ -36,6 +36,9 @@ def open_life_db(*, paths: DataPaths | None = None) -> Iterator[sqlite3.Connecti
     try:
         _configure_connection(conn)
         migrate_life_db(conn)
+        from ada.logs.gym_import import ensure_exercise_catalog
+
+        ensure_exercise_catalog(conn, paths=p)
         yield conn
         conn.commit()
     except Exception:

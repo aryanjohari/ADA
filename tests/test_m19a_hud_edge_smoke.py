@@ -354,7 +354,7 @@ def test_hud_smoke_lift_pullups_bodyweight(hud_smoke_root: Path) -> None:
         ).fetchone()
     assert row["load_kg"] is None
     assert row["reps"] == 8
-    assert row["canonical_name"] == "Pull-up"
+    assert row["canonical_name"].lower().replace("-", "") in {"pullup", "pullups"}
 
 
 def test_hud_fast_path_emits_token_delta(hud_smoke_root: Path) -> None:

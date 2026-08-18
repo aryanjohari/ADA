@@ -10,6 +10,7 @@ from ada.body.vitals import utc_now_iso
 from ada.io.paths import DataPaths
 from ada.logs.connection import open_life_db
 from ada.logs.gym_custom import find_custom_exercise, save_custom_exercise
+from ada.logs.gym_import import names_fold_match
 
 
 def _duration_s(started_at: str, ended_at: str) -> int:
@@ -20,37 +21,59 @@ def _duration_s(started_at: str, ended_at: str) -> int:
     return max(0, int((end - start).total_seconds()))
 
 
+def _catalog_hit(row) -> dict[str, Any]:
+    return {
+        "exercise_id": row["exercise_id"],
+        "catalog": dict(row),
+        "source": "catalog",
+        "canonical_name": row["canonical_name"],
+        "body_parts": json.loads(row["body_parts_json"] or "[]"),
+        "movement": row["movement"],
+    }
+
+
 def _lookup_exercise(
     conn, name: str, *, paths: DataPaths | None = None
 ) -> dict[str, Any]:
+    needle = name.strip()
     row = conn.execute(
         "SELECT * FROM exercise_catalog WHERE lower(canonical_name) = lower(?)",
-        (name.strip(),),
+        (needle,),
     ).fetchone()
     if row:
-        return {"exercise_id": row["exercise_id"], "catalog": dict(row), "source": "catalog"}
+        return _catalog_hit(row)
     rows = conn.execute("SELECT * FROM exercise_catalog").fetchall()
-    needle = name.strip().lower()
+    needle_l = needle.lower()
     for row in rows:
         aliases = json.loads(row["aliases_json"] or "[]")
-        if needle == row["canonical_name"].lower():
-            return {"exercise_id": row["exercise_id"], "catalog": dict(row), "source": "catalog"}
-        if any(needle == a.lower() for a in aliases):
-            return {"exercise_id": row["exercise_id"], "catalog": dict(row), "source": "catalog"}
+        if needle_l == row["canonical_name"].lower():
+            return _catalog_hit(row)
+        if any(needle_l == str(a).lower() for a in aliases):
+            return _catalog_hit(row)
+    for row in rows:
+        if names_fold_match(needle, row["canonical_name"]):
+            return _catalog_hit(row)
+        aliases = json.loads(row["aliases_json"] or "[]")
+        if any(names_fold_match(needle, str(a)) for a in aliases):
+            return _catalog_hit(row)
     custom = find_custom_exercise(name, paths=paths)
     if custom:
         return {
             "exercise_id": custom["id"],
             "custom": custom,
             "source": "facts_custom",
+            "canonical_name": custom.get("display_name"),
             "body_parts": custom.get("body_parts") or [],
+            "movement": custom.get("movement"),
         }
     created = save_custom_exercise(display_name=name.strip(), paths=paths)
     return {
         "exercise_id": created["id"],
         "custom": created,
         "source": "facts_custom_new",
+        "canonical_name": created.get("display_name"),
         "body_parts": created.get("body_parts") or [],
+        "movement": created.get("movement"),
     }
 
 
@@ -122,6 +145,7 @@ def lift_log(
         ).fetchone()[0]
         set_ids: list[str] = []
         names: list[str] = []
+        resolved_rows: list[dict[str, Any]] = []
         volume = 0.0
         for idx, s in enumerate(sets):
             ex_name = str(s.get("exercise_name") or s.get("name") or "unknown")
@@ -130,6 +154,17 @@ def lift_log(
             body_parts = resolved.get("body_parts")
             if body_parts is None and resolved.get("catalog"):
                 body_parts = json.loads(resolved["catalog"].get("body_parts_json") or "[]")
+            resolved_rows.append(
+                {
+                    "raw": ex_name,
+                    "source": resolved.get("source"),
+                    "exercise_id": exercise_id,
+                    "canonical_name": resolved.get("canonical_name"),
+                    "body_parts": body_parts or [],
+                    "movement": resolved.get("movement")
+                    or (resolved.get("custom") or {}).get("movement"),
+                }
+            )
             set_id = uuid.uuid4().hex
             load = s.get("load_kg")
             reps = s.get("reps")
@@ -161,6 +196,7 @@ def lift_log(
         "session_id": session_id,
         "set_ids": set_ids,
         "exercise_names": names,
+        "resolved": resolved_rows,
         "volume_kg": round(volume, 1),
         "receipt_id": receipt_id,
     }
