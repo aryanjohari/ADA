@@ -6,9 +6,11 @@ from typing import Any
 
 from ada.logs import food as food_mod
 from ada.logs import gym as gym_mod
+from ada.logs import habits as habits_mod
 from ada.logs import meals as meals_mod
 from ada.logs import time as time_mod
 from ada.logs.receipts import write_life_crumb
+from ada.memory import people as people_mod
 
 
 def _write(tool: str, receipt_id: str, outcome: dict[str, Any]) -> dict[str, Any]:
@@ -221,6 +223,143 @@ def run_life_capture(args: dict[str, Any]) -> dict[str, Any]:
     return {"ok": False, "kind": kind, "reason": "unrouted"}
 
 
+def run_life_habit_do(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    return _write(
+        "life_habit_do",
+        receipt_id,
+        habits_mod.habit_do(
+            habit_id=args.get("habit_id"),
+            name=args.get("name"),
+            note=args.get("note"),
+            receipt_id=receipt_id,
+        ),
+    )
+
+
+def run_life_habit_miss(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    return _write(
+        "life_habit_miss",
+        receipt_id,
+        habits_mod.habit_miss(
+            habit_id=args.get("habit_id"),
+            name=args.get("name"),
+            note=args.get("note"),
+            receipt_id=receipt_id,
+        ),
+    )
+
+
+def run_life_routine_run(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    return _write(
+        "life_routine_run",
+        receipt_id,
+        habits_mod.routine_run(
+            routine_id=args.get("routine_id"),
+            name=args.get("name"),
+            steps=args.get("steps"),
+            receipt_id=receipt_id,
+        ),
+    )
+
+
+def run_life_habit_status(args: dict[str, Any]) -> dict[str, Any]:
+    return habits_mod.habit_status(
+        habit_id=args.get("habit_id"),
+        date=args.get("date"),
+        window_days=int(args.get("window_days") or 7),
+    )
+
+
+def run_life_person_capture(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    outcome = people_mod.person_capture(
+        utterance=args.get("utterance"),
+        display_name=args.get("display_name"),
+        note=args.get("note"),
+    )
+    if outcome.get("needs_confirm"):
+        outcome["ok"] = False
+    return _write("life_person_capture", receipt_id, outcome)
+
+
+def run_life_who_is(args: dict[str, Any]) -> dict[str, Any]:
+    mention = str(args.get("mention") or "")
+    return people_mod.who_is(mention=mention)
+
+
+def run_life_person_note(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    return _write(
+        "life_person_note",
+        receipt_id,
+        people_mod.person_note(
+            person_id=args.get("person_id"),
+            mention=args.get("mention"),
+            text=str(args.get("text") or ""),
+        ),
+    )
+
+
+def run_life_birthday_set(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    return _write(
+        "life_birthday_set",
+        receipt_id,
+        people_mod.birthday_set(
+            person_id=args.get("person_id"),
+            mention=args.get("mention"),
+            birthday=str(args.get("birthday") or ""),
+        ),
+    )
+
+
+def run_life_people_remind(args: dict[str, Any]) -> dict[str, Any]:
+    return people_mod.people_remind(
+        horizon_days=int(args.get("horizon_days") or 14),
+    )
+
+
+def run_life_alias_set(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    utterance = str(args.get("utterance") or args.get("alias") or "")
+    alias = args.get("alias")
+    person_id = args.get("person_id")
+    mention = args.get("mention")
+    if utterance and "→" in utterance:
+        left, right = utterance.split("→", 1)
+        alias = left.strip().removesuffix(":").strip()
+        person_id = right.strip()
+    elif utterance and "->" in utterance:
+        left, right = utterance.split("->", 1)
+        alias = left.strip().removesuffix(":").strip()
+        person_id = right.strip()
+    outcome = people_mod.alias_set(
+        alias=str(alias or utterance),
+        person_id=person_id,
+        mention=mention,
+        sense=str(args.get("sense") or "alias"),
+        confirmed=bool(args.get("confirmed", False)),
+    )
+    if outcome.get("needs_confirm"):
+        outcome["ok"] = False
+    return _write("life_alias_set", receipt_id, outcome)
+
+
+def run_life_person_update(args: dict[str, Any]) -> dict[str, Any]:
+    receipt_id = str(args.get("receipt_id") or "")
+    outcome = people_mod.person_update(
+        person_id=str(args.get("person_id") or ""),
+        fields=args.get("fields") if isinstance(args.get("fields"), dict) else {},
+        confirmed=bool(args.get("confirmed", False)),
+    )
+    if outcome.get("needs_confirm"):
+        outcome["ok"] = False
+    return _write("life_person_update", receipt_id, outcome)
+
+
 DISPATCH = {
     "life_food_search": run_life_food_search,
     "life_barcode_lookup": run_life_barcode_lookup,
@@ -236,4 +375,15 @@ DISPATCH = {
     "life_gym_status": run_life_gym_status,
     "life_food_preset_save": run_life_food_preset_save,
     "life_capture": run_life_capture,
+    "life_habit_do": run_life_habit_do,
+    "life_habit_miss": run_life_habit_miss,
+    "life_routine_run": run_life_routine_run,
+    "life_habit_status": run_life_habit_status,
+    "life_person_capture": run_life_person_capture,
+    "life_who_is": run_life_who_is,
+    "life_person_note": run_life_person_note,
+    "life_birthday_set": run_life_birthday_set,
+    "life_people_remind": run_life_people_remind,
+    "life_alias_set": run_life_alias_set,
+    "life_person_update": run_life_person_update,
 }

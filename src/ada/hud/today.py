@@ -166,6 +166,27 @@ def build_today(
     meal_gap_nudge = _meal_gap_nudge(
         p, now=now, suppressed=bool(suppress.get("suppressed"))
     )
+    habits_due: list[dict[str, Any]] = []
+    habits_done: list[dict[str, Any]] = []
+    habit_continuity: dict[str, Any] | None = None
+    birthday_soon: list[dict[str, Any]] = []
+    people_remind: list[dict[str, Any]] = []
+    try:
+        from ada.logs import habits as habits_mod
+        from ada.memory import people as people_mod
+
+        habits_due = habits_mod.habits_due_today(paths=p)
+        habits_done = habits_mod.habits_done_today(paths=p)
+        status = habits_mod.habit_status(paths=p)
+        habit_continuity = {
+            "window_days": status.get("window_days"),
+            "rate": status.get("continuity_rate"),
+        }
+        remind = people_mod.people_remind(paths=p)
+        birthday_soon = list(remind.get("birthday_soon") or [])
+        people_remind = list(remind.get("upcoming") or [])
+    except Exception:  # noqa: BLE001
+        pass
 
     return {
         "ok": True,
@@ -204,4 +225,9 @@ def build_today(
         "running_timer": running_timer,
         "nutrition_headline": nutrition_headline,
         "meal_gap_nudge": meal_gap_nudge,
+        "habits_due": habits_due,
+        "habits_done": habits_done,
+        "habit_continuity": habit_continuity,
+        "birthday_soon": birthday_soon,
+        "people_remind": people_remind,
     }

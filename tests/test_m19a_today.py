@@ -49,3 +49,15 @@ def test_today_nutrition_from_rollup(data_root: Path) -> None:
     headline = payload.get("nutrition_headline")
     assert headline is not None
     assert headline.get("kcal") == 200
+
+
+def test_today_p1_keys_present(data_root: Path) -> None:
+    ensure_prefs(get_paths())
+    payload = build_today(paths=get_paths())
+    assert "habits_due" in payload
+    assert "habits_done" in payload
+    assert "habit_continuity" in payload
+    assert "birthday_soon" in payload
+    assert "people_remind" in payload
+    assert "columns" not in payload
+    assert "widgets" not in payload

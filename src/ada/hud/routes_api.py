@@ -68,6 +68,8 @@ _CONFIRMABLE_TOOLS = frozenset(
         "memory_facts_append",
         "memory_open_loops_upsert",
         "artifact_write",
+        "life_alias_set",
+        "life_person_update",
     }
 )
 

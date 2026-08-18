@@ -7,7 +7,7 @@ import sqlite3
 from ada.body.vitals import utc_now_iso
 from ada.logs.schema import FOOD_REFERENCE_DDL, LIFE_LOGS_DDL
 
-LIFE_SCHEMA_VERSION = 1
+LIFE_SCHEMA_VERSION = 2
 FOOD_SCHEMA_VERSION = 1
 
 

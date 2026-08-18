@@ -12,6 +12,7 @@ import yaml
 from ada.harness.time_intent import map_time_intent
 
 _DEFAULT_PACK = "life_p0.yaml"
+_P1_PACK = "life_p1.yaml"
 _MEAL_SLOT = re.compile(r"\b(?:to|for)\s+(breakfast|lunch|dinner|snack)\b", re.IGNORECASE)
 _ADD_MEAL = re.compile(
     r"^(?:add|log)\s+(.+?)\s+(?:to|for)\s+(breakfast|lunch|dinner|snack)\b",
@@ -20,24 +21,54 @@ _ADD_MEAL = re.compile(
 _LIFT_LINE = re.compile(r"\b(?:\d+(?:\.\d+)?)\s*(?:kg|kgs|lb|lbs)\s*x\s*\d+\b", re.IGNORECASE)
 
 READ_PACK_VERBS = frozenset(
-    {"nutrition_day", "time_status", "due_list", "gym_status", "life_status"}
+    {
+        "nutrition_day",
+        "time_status",
+        "due_list",
+        "gym_status",
+        "life_status",
+        "streak_show",
+        "who_is",
+        "people_remind",
+    }
 )
 ADMIN_WRITE_VERBS = frozenset({"due_add", "remind", "due_done"})
+CONFIRM_BOUND_VERBS = frozenset(
+    {"alias_set", "person_update", "routine_edit", "kin_link"}
+)
 
 
 def _pack_path(name: str = _DEFAULT_PACK) -> Path:
     return Path(str(files("ada.harness.packs") / name))
 
 
+def _merge_pack_configs(*configs: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {"packs": {}, "chips": {}, "aliases": []}
+    for cfg in configs:
+        merged["packs"] = {**merged["packs"], **(cfg.get("packs") or {})}
+        merged["chips"] = {**merged["chips"], **(cfg.get("chips") or {})}
+        merged["aliases"] = list(merged["aliases"]) + list(cfg.get("aliases") or [])
+    return merged
+
+
 def load_pack_config(path: Path | None = None) -> dict[str, Any]:
-    p = path or _pack_path()
-    if not p.is_file():
-        return {"packs": {}, "chips": {}, "aliases": []}
-    loaded = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    loaded.setdefault("packs", {})
-    loaded.setdefault("chips", {})
-    loaded.setdefault("aliases", [])
-    return loaded
+    if path is not None:
+        if not path.is_file():
+            return {"packs": {}, "chips": {}, "aliases": []}
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        loaded.setdefault("packs", {})
+        loaded.setdefault("chips", {})
+        loaded.setdefault("aliases", [])
+        return loaded
+    p0_path = _pack_path(_DEFAULT_PACK)
+    p1_path = _pack_path(_P1_PACK)
+    p0 = {"packs": {}, "chips": {}, "aliases": []}
+    if p0_path.is_file():
+        p0 = yaml.safe_load(p0_path.read_text(encoding="utf-8")) or p0
+    p1 = {"packs": {}, "chips": {}, "aliases": []}
+    if p1_path.is_file():
+        p1 = yaml.safe_load(p1_path.read_text(encoding="utf-8")) or p1
+    return _merge_pack_configs(p0, p1)
 
 
 def resolve_pack(verb: str, *, config: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -90,6 +121,24 @@ def _route_from_pack(
     elif tool == "memory_open_loops_list":
         args.setdefault("kind", "todo")
         args.setdefault("status", "open")
+    elif tool in {"life_habit_do", "life_habit_miss", "life_routine_run"}:
+        args["utterance"] = body or raw
+        args["name"] = body or raw
+    elif tool == "life_person_capture":
+        args["utterance"] = body or raw
+    elif tool == "life_who_is":
+        mention = body or raw
+        if str(mention).lower().startswith("who is "):
+            mention = str(mention)[7:].strip()
+        args["mention"] = mention
+    elif tool == "life_birthday_set":
+        args["body"] = body or raw
+    elif tool == "life_person_note":
+        args["text"] = body or raw
+    elif tool == "life_alias_set":
+        args["utterance"] = body or raw
+    elif tool == "life_person_update":
+        args["utterance"] = body or raw
     return {
         "verb": verb,
         "tool": tool,

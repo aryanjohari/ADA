@@ -1,0 +1,80 @@
+# M19a P1 habits + people pack router (verb → tool)
+# Merged after life_p0.yaml at load — P0 prefixes/aliases win first-match order.
+packs:
+  habit_do:
+    tool: life_habit_do
+    prefill: "habit done: "
+    preferred_tools: [life_habit_do, life_habit_status]
+    spine: resolve_then_tick
+  habit_miss:
+    tool: life_habit_miss
+    prefill: "habit miss: "
+    preferred_tools: [life_habit_miss, life_habit_status]
+    spine: resolve_then_tick
+  routine_run:
+    tool: life_routine_run
+    prefill: "routine run: "
+    preferred_tools: [life_routine_run, life_habit_status]
+    spine: resolve_then_run
+  streak_show:
+    tool: life_habit_status
+    preferred_tools: [life_habit_status]
+    spine: read
+  person_capture:
+    tool: life_person_capture
+    prefill: "met "
+    preferred_tools: [life_person_capture]
+    spine: capture_then_write
+  person_note:
+    tool: life_person_note
+    prefill: "note for "
+    preferred_tools: [life_person_note]
+    spine: resolve_then_note
+  who_is:
+    tool: life_who_is
+    prefill: "who is "
+    preferred_tools: [life_who_is]
+    spine: read
+  birthday_set:
+    tool: life_birthday_set
+    prefill: "set birthday: "
+    preferred_tools: [life_birthday_set, memory_open_loops_upsert]
+    spine: resolve_then_birthday
+  people_remind:
+    tool: life_people_remind
+    preferred_tools: [life_people_remind]
+    spine: read
+  alias_set:
+    tool: life_alias_set
+    prefill: "alias set: "
+    preferred_tools: [life_alias_set]
+    spine: confirm_bind
+  person_update:
+    tool: life_person_update
+    prefill: "update person: "
+    preferred_tools: [life_person_update]
+    spine: confirm_patch
+  kin_link:
+    tool: life_person_update
+    alias_of: person_update
+    prefill: "kin link: "
+  routine_edit:
+    tool: memory_facts_propose_edit
+    prefill: "routine edit: "
+    preferred_tools: [memory_facts_propose_edit]
+    spine: confirm_edit
+
+chips:
+  habit: habit_do
+  met: person_capture
+  who: who_is
+
+aliases:
+  - {pattern: "habits today", verb: streak_show}
+  - {pattern: "how are my habits", verb: streak_show}
+  - {pattern: "who is", verb: who_is}
+  - {pattern: "set birthday", verb: birthday_set}
+  - {pattern: "routine run", verb: routine_run}
+  - {pattern: "alias set", verb: alias_set}
+  - {pattern: "people remind", verb: people_remind}
+  - {pattern: "upcoming birthdays", verb: people_remind}

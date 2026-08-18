@@ -283,6 +283,11 @@ def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
             "NEVER use memory_facts_append / memory_facts_propose_edit for day totals. "
             "Speak honest_partial from the JSON; do not invent Ca/Fe/C/D."
         )
+        if verb in {"streak_show", "who_is", "people_remind"}:
+            lines.append(
+                "- HARD: habit continuity requires life_habit_status; "
+                "people resolve requires life_who_is — never shame streak copy."
+            )
     elif verb in ADMIN_WRITE_VERBS:
         lines.append(
             f"- HARD: this turn is admin capture — call `{tool}` then "
@@ -390,6 +395,9 @@ def build_system_charter(
             "never claim a meal or set was logged without life_meal_log / life_lift_log receipt. "
             "Day macros require life_nutrition_day read — never invent totals. "
             "Single active timer: life_time_start / life_time_stop; never parallel blocks. "
+            "Habits (M19a P1): habit_do ticks habit_events — distinct from time_start custom blocks. "
+            "Continuity rate only — never shame streak / guilt copy. "
+            "People: who_is before binding kin aliases; alias clash → Confirm, never silent pick. "
             "Task clarify: if required args missing, ask ≤2 questions — do not invent. "
             "Task done: cite receipt_id and/or todo done status; never fake success.",
         ]

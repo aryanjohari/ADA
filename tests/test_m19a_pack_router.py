@@ -159,3 +159,30 @@ def test_route_add_due_prefix() -> None:
     assert r is not None
     assert r["verb"] == "due_add"
     assert r["args"]["utterance"] == "finish thesis by Friday"
+
+
+def test_p1_habit_prefix() -> None:
+    r = route_utterance("habit done: skincare")
+    assert r is not None
+    assert r["verb"] == "habit_do"
+    assert r["tool"] == "life_habit_do"
+
+
+def test_p1_who_is_prefix() -> None:
+    r = route_utterance("who is Mama")
+    assert r is not None
+    assert r["verb"] == "who_is"
+    assert r["args"]["mention"] == "Mama"
+
+
+def test_p1_chip_habit() -> None:
+    c = resolve_chip("habit")
+    assert c is not None
+    assert c["verb"] == "habit_do"
+    assert c["prefill"] == "habit done: "
+
+
+def test_p0_routes_unchanged_after_p1_merge() -> None:
+    assert route_utterance("remind me to stretch")["verb"] == "remind"
+    assert route_utterance("macros")["verb"] == "nutrition_day"
+    assert route_utterance("log meal: banana")["verb"] == "meal_log"

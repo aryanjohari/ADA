@@ -198,6 +198,9 @@ class Gateway:
             "life_nutrition_day",
             "life_time_status",
             "life_gym_status",
+            "life_habit_status",
+            "life_who_is",
+            "life_people_remind",
         ):
             if "receipt_id" not in args:
                 args["receipt_id"] = receipt_id
@@ -281,6 +284,9 @@ class Gateway:
                     denied_reason=data.get("denied_reason"),
                     outcome="denied",
                 )
+            elif data.get("ok") is False and data.get("reason") == "already_done":
+                ok = False
+                outcome = "already_done"
 
         return GatewayResult(
             ok=ok,

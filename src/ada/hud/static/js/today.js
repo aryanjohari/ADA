@@ -62,6 +62,25 @@ export async function refreshToday() {
       itemLabel("meal", "log lunch?", data.meal_gap_nudge.since_hours + "h")
     );
   }
+  for (const h of (data.habits_due || []).slice(0, 1)) {
+    bits.push(itemLabel("habit", "Due: " + (h.display_name || h.habit_id), h.window));
+  }
+  for (const h of (data.habits_done || []).slice(0, 1)) {
+    bits.push(itemLabel("habit", "Done: " + (h.display_name || h.habit_id), h.logged_at));
+  }
+  for (const b of (data.birthday_soon || []).slice(0, 1)) {
+    bits.push(
+      itemLabel(
+        "birthday",
+        (b.display_name || b.person_id) + " birthday",
+        b.days_until != null ? "in " + b.days_until + "d" : b.due_at
+      )
+    );
+  }
+  for (const p of (data.people_remind || []).slice(0, 1)) {
+    if ((data.birthday_soon || []).length) continue;
+    bits.push(itemLabel("kin", p.display_name || p.person_id, p.reason || p.event));
+  }
   for (const t of data.due_todos || []) {
     bits.push(
       itemLabel(

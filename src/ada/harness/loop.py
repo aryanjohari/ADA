@@ -15,7 +15,7 @@ from ada.cortex.charter import (
 )
 from ada.cortex.cost import estimate_usd
 from ada.cortex.gemini import observation_to_content, user_content
-from ada.harness.pack_router import ADMIN_WRITE_VERBS, READ_PACK_VERBS
+from ada.harness.pack_router import ADMIN_WRITE_VERBS, CONFIRM_BOUND_VERBS, READ_PACK_VERBS
 from ada.harness.plan_artifact import parse_plan_from_assistant
 from ada.harness.session import ChatSession
 from ada.harness.stream_events import CallbackSink, NullSink, StreamSink
@@ -338,6 +338,37 @@ def _speak_gym_status(data: dict[str, Any]) -> str:
     return f"No open gym session. {n} sets today."
 
 
+def _speak_habit_status(data: dict[str, Any]) -> str:
+    habits = data.get("habits") or []
+    if not habits:
+        return "No habits seeded yet."
+    rate = data.get("continuity_rate")
+    done = sum(1 for h in habits if h.get("done_today"))
+    text = f"Habits today: {done}/{len(habits)} done."
+    if rate is not None:
+        text += f" Continuity {int(float(rate) * 100)}% over {data.get('window_days', 7)} days."
+    return text
+
+
+def _speak_who_is(data: dict[str, Any]) -> str:
+    count = int(data.get("match_count") or len(data.get("candidates") or []))
+    if count == 0:
+        return "No person match — offer to capture a stub."
+    if count == 1:
+        cand = (data.get("candidates") or [{}])[0]
+        name = cand.get("display_name") or data.get("person_id") or "person"
+        return f"Matched {name}."
+    return f"{count} candidates — Confirm required, no silent bind."
+
+
+def _speak_people_remind(data: dict[str, Any]) -> str:
+    upcoming = data.get("upcoming") or data.get("birthday_soon") or []
+    if not upcoming:
+        return "No upcoming kin events in horizon."
+    names = ", ".join(str(x.get("display_name") or x.get("person_id")) for x in upcoming[:3])
+    return f"Upcoming: {names}."
+
+
 def _fast_path_read(
     session: ChatSession,
     sink: StreamSink,
@@ -376,6 +407,12 @@ def _fast_path_read(
         speech = _speak_due_list(data)
     elif verb == "gym_status" or tool == "life_gym_status":
         speech = _speak_gym_status(data)
+    elif verb == "streak_show" or tool == "life_habit_status":
+        speech = _speak_habit_status(data)
+    elif verb == "who_is" or tool == "life_who_is":
+        speech = _speak_who_is(data)
+    elif verb == "people_remind" or tool == "life_people_remind":
+        speech = _speak_people_remind(data)
     else:
         speech = "Read receipt on file."
     return "pack_fast_path", speech
@@ -439,13 +476,20 @@ def _fast_path_due(
     parsed = build_due_upsert_args(utterance, verb=verb)
     if not parsed.get("ok") or not parsed.get("args"):
         return "missing_life_receipt", None
+    upsert_args = dict(parsed["args"])
+    title = str(parsed.get("title") or upsert_args.get("text") or "")
+    from ada.harness.people_spine import resolve_mention_for_due
+
+    person_hit = resolve_mention_for_due(title)
+    if person_hit.get("ok"):
+        upsert_args["people_ids"] = [person_hit["person_id"]]
     _execute_tool(
         session,
         sink,
         history,
         receipts,
         tool="memory_open_loops_upsert",
-        args=parsed["args"],
+        args=upsert_args,
         call_id=f"{verb}-fast-path",
     )
     upsert = receipts[-1] if receipts else {}
@@ -461,6 +505,172 @@ def _fast_path_due(
         call_id=f"{verb}-list",
     )
     return "pack_fast_path", f"{verb.replace('_', ' ')} — receipt on file."
+
+
+def _fast_path_habit(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    *,
+    verb: str,
+    tool: str,
+    args: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    utterance = str(args.get("utterance") or args.get("name") or args.get("body") or "").strip()
+    if not utterance:
+        return "missing_life_receipt", None
+    from ada.harness.habit_spine import build_habit_tick_args
+
+    parsed = build_habit_tick_args(utterance, verb=verb)
+    if not parsed.get("ok") or not parsed.get("args"):
+        return "missing_life_receipt", None
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool=tool,
+        args=parsed["args"],
+        call_id=f"{verb}-fast-path",
+    )
+    last = receipts[-1] if receipts else {}
+    if not last.get("ok"):
+        reason = (last.get("data") or {}).get("reason") if isinstance(last.get("data"), dict) else None
+        if reason == "already_done":
+            return "pack_fast_path", "Already logged today."
+        return "missing_life_receipt", None
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_habit_status",
+        args={},
+        call_id=f"{verb}-status",
+    )
+    if verb == "habit_miss":
+        return "pack_fast_path", "Habit miss logged — receipt on file."
+    if verb == "routine_run":
+        return "pack_fast_path", "Routine logged — receipt on file."
+    return "pack_fast_path", "Habit logged — receipt on file."
+
+
+def _fast_path_people_write(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    *,
+    verb: str,
+    tool: str,
+    args: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    if verb == "person_capture":
+        utterance = str(args.get("utterance") or args.get("body") or "").strip()
+        if not utterance:
+            return "missing_life_receipt", None
+        from ada.harness.people_spine import build_capture_args
+
+        parsed = build_capture_args(utterance)
+        if not parsed.get("ok"):
+            return "missing_life_receipt", None
+        _execute_tool(
+            session,
+            sink,
+            history,
+            receipts,
+            tool=tool,
+            args=parsed["args"],
+            call_id="person-capture-fast-path",
+        )
+        last = receipts[-1] if receipts else {}
+        if not last.get("ok"):
+            return "missing_life_receipt", None
+        return "pack_fast_path", "Person capture — receipt on file."
+
+    if verb == "birthday_set":
+        body = str(args.get("body") or args.get("utterance") or "").strip()
+        if not body:
+            return "missing_life_receipt", None
+        from ada.harness.people_spine import build_birthday_args
+
+        parsed = build_birthday_args(body)
+        if not parsed.get("ok"):
+            return "missing_life_receipt", None
+        _execute_tool(
+            session,
+            sink,
+            history,
+            receipts,
+            tool=tool,
+            args=parsed["args"],
+            call_id="birthday-set-fast-path",
+        )
+        last = receipts[-1] if receipts else {}
+        if not last.get("ok"):
+            return "missing_life_receipt", None
+        return "pack_fast_path", "Birthday set — receipt on file."
+
+    if verb == "person_note":
+        text = str(args.get("text") or "").strip()
+        mention = str(args.get("mention") or "").strip()
+        if not text:
+            return "missing_life_receipt", None
+        from ada.memory import people as people_mod
+
+        if not args.get("person_id") and mention:
+            resolved = people_mod.resolve_mention(mention)
+            if not resolved.get("ok"):
+                return "missing_life_receipt", None
+            args = {**args, "person_id": resolved["person_id"]}
+        _execute_tool(
+            session,
+            sink,
+            history,
+            receipts,
+            tool=tool,
+            args={"person_id": args.get("person_id"), "text": text},
+            call_id="person-note-fast-path",
+        )
+        last = receipts[-1] if receipts else {}
+        if not last.get("ok"):
+            return "missing_life_receipt", None
+        return "pack_fast_path", "Note saved — receipt on file."
+
+    return None, None
+
+
+def _fast_path_confirm_bound(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    *,
+    verb: str,
+    tool: str,
+    args: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    probe_args = dict(args)
+    probe_args.setdefault("confirmed", False)
+    utterance = str(args.get("utterance") or args.get("body") or "").strip()
+    if verb == "alias_set" and utterance:
+        probe_args["utterance"] = utterance
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool=tool,
+        args=probe_args,
+        call_id=f"{verb}-confirm-probe",
+    )
+    last = receipts[-1] if receipts else {}
+    if last.get("needs_confirm") or (last.get("data") or {}).get("needs_confirm"):
+        return "pack_fast_path", "Confirm candidates — no silent bind."
+    if last.get("ok"):
+        return "pack_fast_path", f"{verb.replace('_', ' ')} — receipt on file."
+    return "missing_life_receipt", None
 
 
 def _maybe_pack_fast_path(
@@ -485,6 +695,21 @@ def _maybe_pack_fast_path(
 
     if verb in ADMIN_WRITE_VERBS:
         return _fast_path_due(session, sink, history, receipts)
+
+    if verb in CONFIRM_BOUND_VERBS:
+        return _fast_path_confirm_bound(
+            session, sink, history, receipts, verb=verb, tool=tool, args=args or {}
+        )
+
+    if verb in {"habit_do", "habit_miss", "routine_run"}:
+        return _fast_path_habit(
+            session, sink, history, receipts, verb=verb, tool=tool, args=args or {}
+        )
+
+    if verb in {"person_capture", "birthday_set", "person_note"}:
+        return _fast_path_people_write(
+            session, sink, history, receipts, verb=verb, tool=tool, args=args or {}
+        )
 
     if not tool.startswith("life_") or not isinstance(args, dict):
         return None, None

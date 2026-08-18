@@ -1486,6 +1486,108 @@ def life_time_status_cli(
         console.print_json(data=obs.data)
 
 
+@life_app.command("habit-seed")
+def life_habit_seed_cli(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.logs import habits as habits_mod
+
+    result = habits_mod.seed_default_habits()
+    if json_out:
+        console.print_json(data=result)
+    else:
+        console.print(f"seeded habits={len(result.get('habits') or [])}")
+
+
+@life_app.command("habit-do")
+def life_habit_do_cli(
+    name: str = typer.Argument(..., help="Habit name or alias"),
+    note: Optional[str] = typer.Option(None, "--note"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    obs = _life_gw().execute("life_habit_do", {"name": name, "note": note})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif obs.ok:
+        console.print(f"habit_id={obs.data.get('habit_id')} day={obs.data.get('local_day')}")
+    else:
+        raise typer.Exit(code=1)
+
+
+@life_app.command("habit-miss")
+def life_habit_miss_cli(
+    name: str = typer.Argument(...),
+    note: Optional[str] = typer.Option(None, "--note"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    obs = _life_gw().execute("life_habit_miss", {"name": name, "note": note})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif not obs.ok:
+        raise typer.Exit(code=1)
+
+
+@life_app.command("habit-status")
+def life_habit_status_cli(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute("life_habit_status", {})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        console.print_json(data=obs.data)
+
+
+@life_app.command("routine-run")
+def life_routine_run_cli(
+    name: str = typer.Argument(...),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    obs = _life_gw().execute("life_routine_run", {"name": name})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    elif not obs.ok:
+        raise typer.Exit(code=1)
+
+
+@life_app.command("routine-sweep")
+def life_routine_sweep_cli(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.logs import habits as habits_mod
+
+    results = []
+    for routine in habits_mod.list_routine_definitions():
+        if not routine.get("eod_sweep"):
+            continue
+        obs = _life_gw().execute(
+            "life_routine_run",
+            {"routine_id": routine["routine_id"], "name": routine["display_name"]},
+        )
+        results.append({"routine_id": routine["routine_id"], "ok": obs.ok})
+    payload = {"ok": True, "results": results}
+    if json_out:
+        console.print_json(data=payload)
+    else:
+        console.print(f"ran {len(results)} eod routine(s)")
+
+
+@life_app.command("who")
+def life_who_cli(
+    mention: str = typer.Argument(...),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute("life_who_is", {"mention": mention})
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        console.print_json(data=obs.data)
+
+
 def _repo_root() -> Path:
     # src/ada/cli/main.py → parents[3] = repo root
     return Path(__file__).resolve().parents[3]

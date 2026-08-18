@@ -114,6 +114,60 @@ LIFE_LOGS_DDL: tuple[str, ...] = (
     ON time_blocks(status) WHERE status = 'running'
     """,
     "CREATE INDEX IF NOT EXISTS idx_time_started ON time_blocks(started_at)",
+    """
+    CREATE TABLE IF NOT EXISTS habit_definitions (
+      habit_id          TEXT PRIMARY KEY,
+      display_name      TEXT NOT NULL,
+      aliases_json      TEXT,
+      anchor_hint       TEXT,
+      schedule_json     TEXT,
+      active            INTEGER NOT NULL DEFAULT 1,
+      source            TEXT NOT NULL,
+      receipt_id        TEXT,
+      created_at        TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS habit_events (
+      event_id          TEXT PRIMARY KEY,
+      habit_id          TEXT NOT NULL REFERENCES habit_definitions(habit_id),
+      local_day         TEXT NOT NULL,
+      logged_at         TEXT NOT NULL,
+      kind              TEXT NOT NULL,
+      note              TEXT,
+      supersedes_event_id TEXT,
+      receipt_id        TEXT NOT NULL,
+      source_verb       TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_habit_events_day ON habit_events(habit_id, local_day)",
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_one_done_per_day
+    ON habit_events(habit_id, local_day)
+    WHERE kind = 'done' AND supersedes_event_id IS NULL
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS routine_definitions (
+      routine_id        TEXT PRIMARY KEY,
+      display_name      TEXT NOT NULL,
+      steps_json        TEXT NOT NULL,
+      eod_sweep         INTEGER NOT NULL DEFAULT 0,
+      active            INTEGER NOT NULL DEFAULT 1,
+      source            TEXT NOT NULL,
+      created_at        TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS routine_runs (
+      run_id            TEXT PRIMARY KEY,
+      routine_id        TEXT NOT NULL REFERENCES routine_definitions(routine_id),
+      local_day         TEXT NOT NULL,
+      logged_at         TEXT NOT NULL,
+      steps_done_json   TEXT NOT NULL,
+      receipt_id        TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_routine_runs_day ON routine_runs(local_day)",
 )
 
 FOOD_REFERENCE_DDL: tuple[str, ...] = (

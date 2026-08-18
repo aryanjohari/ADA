@@ -1,5 +1,17 @@
 # People note template (seed). Copied if missing; never overwrites real people files.
-schema_version: 1
-name: ""
-role: ""
+schema_version: 2
+id: ""
+display_name: ""
+legal_name: ""
+kin:
+  relation_to_operator: ""
+  side: ""
+  indian_terms: []
+aliases: []
+birthday: ""
+remind:
+  birthday: { days_before: [7, 1, 0] }
+last_contact_at: ""
+interactions: []
 notes: ""
+provenance: { source: "seed", at: "" }
