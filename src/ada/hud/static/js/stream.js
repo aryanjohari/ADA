@@ -1,9 +1,11 @@
 /** Chat stream — turns, tools, plan accept, confirm cards, SSE. */
 
 import { openChatStream, postConfirm, postPlanAccept } from "./api.js";
+import { renderMarkdownSafe } from "./markdown.js";
 import { getSelectedMode, setSelectedMode } from "./mode.js";
 import { requireSessionForMode } from "./session.js";
 import { esc, truncJson } from "./util.js";
+import { applyViewOpen } from "./view_registry.js";
 
 /** Set by wireChat — avoids circular import with body.js */
 let _refreshTail = async () => {};
@@ -48,7 +50,9 @@ function appendAssistantDelta(text) {
     appendNode(el);
   }
   const body = el.querySelector(".body");
-  body.textContent = (body.textContent || "") + (text || "");
+  const raw = (body.dataset.rawText || "") + (text || "");
+  body.dataset.rawText = raw;
+  body.innerHTML = renderMarkdownSafe(raw, { headings: false });
   root.scrollTop = root.scrollHeight;
 }
 
@@ -70,8 +74,12 @@ function appendFault(payload) {
 function formatUsageCrumb(u) {
   if (!u || typeof u !== "object") return "";
   const parts = [];
-  const prompt = u.prompt_token_count ?? u.prompt_tokens;
-  const cand = u.candidates_token_count ?? u.candidates_tokens;
+  const prompt =
+    u.prompt_token_count != null ? u.prompt_token_count : u.prompt_tokens;
+  const cand =
+    u.candidates_token_count != null
+      ? u.candidates_token_count
+      : u.candidates_tokens;
   if (prompt != null || cand != null) {
     parts.push(
       "tok=" +
@@ -80,7 +88,7 @@ function formatUsageCrumb(u) {
         (cand != null ? cand : "?")
     );
   } else {
-    const total = u.total_token_count ?? u.total;
+    const total = u.total_token_count != null ? u.total_token_count : u.total;
     if (total != null) parts.push("tokens=" + total);
   }
   if (u.usd_estimate != null && u.usd_estimate !== "") {
@@ -152,9 +160,10 @@ function makePlanCard(plan) {
       (pid ? "plan_id=" + pid + "\n" : "") +
       stepLines;
     appendUserTurn(cue);
-    card.querySelector(".card-actions")?.remove();
+    const actions = card.querySelector(".card-actions");
+    if (actions) actions.remove();
     const chip = card.querySelector(".status-chip");
-    if (chip) chip.textContent = "accepted · todos=" + (data.count ?? 0);
+    if (chip) chip.textContent = "accepted · todos=" + (data.count != null ? data.count : 0);
     sendChat(cue, "agent");
   });
   card.querySelector('[data-act="revise"]').addEventListener("click", () => {
@@ -164,7 +173,8 @@ function makePlanCard(plan) {
     input.placeholder = "Revise the plan…";
   });
   card.querySelector('[data-act="stay"]').addEventListener("click", () => {
-    card.querySelector(".card-actions")?.remove();
+    const actions = card.querySelector(".card-actions");
+    if (actions) actions.remove();
   });
   appendNode(card);
 }
@@ -197,7 +207,7 @@ function appendTurnFooter(payload) {
     "stop=" +
     (payload.stop_reason || "") +
     " · steps=" +
-    (payload.steps ?? "");
+    (payload.steps != null ? payload.steps : "");
   const usage = payload.usage || streamState.lastUsage;
   const crumb = formatUsageCrumb(usage);
   if (crumb) t += " · " + crumb;
@@ -361,6 +371,8 @@ function handleSseEvent(event, payload) {
     appendTurnFooter(payload);
   } else if (event === "usage_update") {
     streamState.lastUsage = payload;
+  } else if (event === "view_open") {
+    applyViewOpen(payload);
   }
 }
 

@@ -2,6 +2,7 @@
 
 import {
   fetchDoctor,
+  fetchLifeDay,
   fetchLifecycle,
   fetchMode,
   fetchRunTail,
@@ -129,6 +130,77 @@ function shortWake(obj) {
   }
 }
 
+function renderNutritionSummary(day) {
+  const empty =
+    '<p class="meta life-empty">No nutrition day data yet.</p>';
+  if (!day || day.ok === false) return empty;
+  const nutrition = day.nutrition || day;
+  const totals = nutrition.totals || {};
+  const meals = Array.isArray(nutrition.meals) ? nutrition.meals : [];
+  if (!Object.keys(totals).length && !meals.length) return empty;
+  const kcal = totals.energy_kcal != null ? String(totals.energy_kcal) : "—";
+  const protein = totals.protein_g != null ? String(totals.protein_g) : "—";
+  const partial = nutrition.honest_partial
+    ? '<p class="meta life-meta">honest_partial — partial day, no invented totals.</p>'
+    : "";
+  const mealRows = meals.length
+    ? '<ul class="nutrition-meals">' +
+      meals
+        .map((meal) => {
+          const slot = meal.meal_slot || "meal";
+          const foods = Array.isArray(meal.foods) && meal.foods.length
+            ? meal.foods.join(", ")
+            : "logged meal";
+          const metaBits = [];
+          if (meal.kcal != null) metaBits.push(String(meal.kcal) + " kcal");
+          if (meal.protein_g != null) metaBits.push(String(meal.protein_g) + "g P");
+          return (
+            '<li class="nutrition-meal">' +
+            '<div class="nutrition-meal-head"><span class="nutrition-meal-slot">' +
+            esc(slot) +
+            "</span>" +
+            '<span class="nutrition-meal-meta">' +
+            esc(metaBits.join(" · ")) +
+            "</span></div>" +
+            '<div class="nutrition-meal-foods">' +
+            esc(foods) +
+            "</div></li>"
+          );
+        })
+        .join("") +
+      "</ul>"
+    : '<p class="meta life-meta">No meal rows logged.</p>';
+  return (
+    '<section class="life-sheet" id="life-sheet-nutrition">' +
+    '<div class="life-sheet-head"><h3>Nutrition day</h3>' +
+    '<button type="button" class="ghost life-refresh" data-life-refresh="nutrition">Refresh</button></div>' +
+    '<div class="life-summary-grid">' +
+    metricCard("Date", nutrition.date || "—", "") +
+    metricCard("kcal", kcal, "") +
+    metricCard("Protein", protein, "grams") +
+    "</div>" +
+    partial +
+    mealRows +
+    "</section>"
+  );
+}
+
+export async function refreshLifeDay(date = null) {
+  const root = document.getElementById("life-nutrition");
+  if (!root) return;
+  try {
+    const day = await fetchLifeDay(date);
+    root.innerHTML = renderNutritionSummary(day);
+    root.querySelectorAll("[data-life-refresh='nutrition']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        refreshLifeDay(date);
+      });
+    });
+  } catch (e) {
+    root.innerHTML = '<p class="meta life-empty">' + esc(String(e)) + "</p>";
+  }
+}
+
 export async function refreshVitals() {
   try {
     const [data, doctor] = await Promise.all([
@@ -213,6 +285,12 @@ function setBodyTab(name) {
   });
 }
 
+export function showBodyTab(name) {
+  setBodyTab(name);
+  if (name === "life") refreshLifeDay();
+  if (name === "audit") refreshTail();
+}
+
 export function openBody() {
   const dlg = document.getElementById("body-drawer");
   if (dlg && typeof dlg.showModal === "function") {
@@ -231,6 +309,7 @@ export function wireBody({ onXrayShow, onShelfShow } = {}) {
     openBody();
     refreshVitals();
     refreshLifecycle();
+    refreshLifeDay();
     refreshMode();
     refreshTail();
   });
@@ -244,6 +323,7 @@ export function wireBody({ onXrayShow, onShelfShow } = {}) {
     btn.addEventListener("click", () => {
       const name = btn.getAttribute("data-body-tab");
       setBodyTab(name);
+      if (name === "life") refreshLifeDay();
       if (name === "xray" && onXrayShow) onXrayShow();
       if (name === "shelf" && onShelfShow) onShelfShow();
       if (name === "audit") refreshTail();
@@ -254,10 +334,12 @@ export function wireBody({ onXrayShow, onShelfShow } = {}) {
 export function startBodyPolls() {
   refreshVitals();
   refreshLifecycle();
+  refreshLifeDay();
   refreshMode();
   refreshTail();
   setInterval(refreshVitals, 3000);
   setInterval(refreshLifecycle, 10000);
+  setInterval(refreshLifeDay, 45000);
   setInterval(refreshTail, 2000);
   setInterval(refreshMode, 5000);
 }

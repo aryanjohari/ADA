@@ -63,6 +63,101 @@
   color: var(--muted);
 }
 
+.view-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 100%;
+}
+
+.view-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.view-panel-kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.view-panel-head h2 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.view-panel-stats {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.view-panel-stats div {
+  border-top: 1px solid var(--line-soft);
+  padding-top: var(--space-1);
+}
+
+.view-panel-stats dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.view-panel-stats dd {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.view-panel-note,
+.view-panel-empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.view-panel-meals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.view-panel-meal {
+  border-top: 1px solid var(--line-soft);
+  padding-top: var(--space-1);
+}
+
+.view-panel-meal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.view-panel-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.view-panel-meta {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.view-panel-foods {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+}
+
 .desk-row {
   display: flex;
   align-items: flex-start;

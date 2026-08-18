@@ -186,3 +186,16 @@ def test_named_device_stamps_name_on_chat(data_root, monkeypatch):
     assert payload["device_name"] == "macbook"
     assert payload["face"] == "mac"
     assert payload["input"] == "typed"
+
+
+def test_mac_slot_has_view_registry_contract():
+    root = Path(__file__).resolve().parents[1]
+    index_html = (root / "src/ada/hud/templates/index.html").read_text(encoding="utf-8")
+    stream_js = (root / "src/ada/hud/static/js/stream.js").read_text(encoding="utf-8")
+    registry_js = (root / "src/ada/hud/static/js/view_registry.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'id="view-slot"' in index_html
+    assert "event === \"view_open\"" in stream_js
+    assert "document.getElementById(\"view-slot\")" in registry_js
+    assert 'data-panel-kind="nutrition_day"' in registry_js

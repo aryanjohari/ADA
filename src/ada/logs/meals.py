@@ -90,6 +90,76 @@ def _rollup_day(conn, local_day: str, *, paths: DataPaths | None = None) -> dict
     }
 
 
+def _meal_rows(conn, local_day: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT
+          m.meal_id,
+          m.logged_at,
+          m.meal_slot,
+          mf.sort_order,
+          mf.display_name,
+          mf.snapshot_json
+        FROM meals m
+        LEFT JOIN meal_foods mf ON mf.meal_id = m.meal_id
+        WHERE m.local_day = ?
+        ORDER BY m.logged_at, mf.sort_order
+        """,
+        (local_day,),
+    ).fetchall()
+    by_meal: dict[str, dict[str, Any]] = {}
+    ordered: list[str] = []
+    for row in rows:
+        meal_id = str(row["meal_id"])
+        entry = by_meal.get(meal_id)
+        if entry is None:
+            entry = {
+                "meal_id": meal_id,
+                "logged_at": row["logged_at"],
+                "meal_slot": row["meal_slot"],
+                "foods": [],
+                "kcal": 0.0,
+                "protein_g": 0.0,
+                "_has_kcal": False,
+                "_has_protein": False,
+            }
+            by_meal[meal_id] = entry
+            ordered.append(meal_id)
+        if row["display_name"]:
+            entry["foods"].append(str(row["display_name"]))
+        snap_raw = row["snapshot_json"]
+        if not snap_raw:
+            continue
+        try:
+            snap = json.loads(snap_raw)
+        except (TypeError, ValueError):
+            continue
+        nutrients = snap.get("nutrients") or {}
+        kcal = nutrients.get("energy_kcal")
+        protein = nutrients.get("protein_g")
+        if kcal is not None:
+            entry["kcal"] = round(float(entry["kcal"]) + float(kcal), 1)
+            entry["_has_kcal"] = True
+        if protein is not None:
+            entry["protein_g"] = round(float(entry["protein_g"]) + float(protein), 1)
+            entry["_has_protein"] = True
+    out: list[dict[str, Any]] = []
+    for meal_id in ordered:
+        entry = by_meal[meal_id]
+        row = {
+            "meal_id": meal_id,
+            "logged_at": entry.get("logged_at"),
+            "meal_slot": entry.get("meal_slot"),
+            "foods": list(entry.get("foods") or []),
+        }
+        if entry.get("_has_kcal"):
+            row["kcal"] = entry["kcal"]
+        if entry.get("_has_protein"):
+            row["protein_g"] = entry["protein_g"]
+        out.append(row)
+    return out
+
+
 def append_meal(
     *,
     receipt_id: str,
@@ -206,6 +276,7 @@ def nutrition_day(
         else:
             totals = json.loads(rollup["totals_json"])
             honest_partial = bool(rollup["honest_partial"])
+        meals = _meal_rows(conn, local_day)
     targets_doc = get_fact("nutrition_targets", paths=paths)
     targets: dict[str, Any] = {}
     if targets_doc.get("found"):
@@ -222,6 +293,7 @@ def nutrition_day(
         "ok": True,
         "date": local_day,
         "totals": totals,
+        "meals": meals,
         "targets": targets,
         "gaps": gaps,
         "honest_partial": honest_partial,

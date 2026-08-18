@@ -1,6 +1,6 @@
 # M19b — Daily surface + voice UX (research card)
 
-**Status:** **v1.6.1 thin skeleton shipped** (2026-08-18) — provenance + faces + Mac desk slot on the live HUD. v1.6 addendum remains the lock pass. **Not shipped:** P1.5 PTT/STT/TTS, register-pass mouth, `view_open` / nutrition panel.  
+**Status:** **v1.6.1 shipped** (2026-08-18) — provenance + faces + Mac desk slot on the live HUD, plus M17 P1 light markdown, additive SSE `view_open`, and the first deterministic `nutrition_day` panel. v1.6 addendum remains the lock pass. **Not shipped:** P1.5 PTT/STT/TTS, register-pass mouth, extra panels beyond `nutrition_day`.  
 **Date:** 2026-08-18  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · Client: Mac / phone / later display via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
@@ -17,11 +17,11 @@
 | **v1.0** | 2026-08-18 | Initial research card: market + SOTA + METAL + IA + voice wedge + phased plan |
 | **v1.5** | 2026-08-18 | Addendum lock: organism/organ/ingress/**face** ontology; Mac companion as **opt-in mode** (chat-home remains default); view registry (receipt JSON → templates); optional receipt-bound register pass; phone thin / HDMI display faces; PTT simplex; PARK split-session + ADA-own-face + Mac actuator |
 | **v1.6** | 2026-08-18 | Operator lock pass: **thin device registry + turn provenance**; collapse two Mac faces into **one assistant face**; voice **preview-then-Send** (auto-send SUPERSEDED); **Gemini register pass ON** as the mouth after fast-path tools (template = fail-closed fallback). v1.5 treated device provenance as a gap, kept two Mac faces, PTT auto-send, register-pass OFF — those defaults are **SUPERSEDED** |
-| **v1.6.1** | 2026-08-18 | **Skeleton shipped:** `ada_hud_device` cookie + `facts/hud_devices.yaml` + HUD `user` event stamp (`input`/`face`/`device_*`/`tailscale_user`); `data-face=phone\|mac\|display` + picker + phone CSS; one Mac desk (small idle orb + visible stream + empty panel slot + Body). PTT/mouth/`view_open` still **not** shipped |
+| **v1.6.1** | 2026-08-18 | **Shipped on HUD:** `ada_hud_device` cookie + `facts/hud_devices.yaml` + HUD `user` event stamp (`input`/`face`/`device_*`/`tailscale_user`); `data-face=phone\|mac\|display` + picker + phone CSS; one Mac desk (small idle orb + visible stream + one panel slot + Body); M17 P1 **light markdown**; deterministic `nutrition_day` view registry from receipt/API JSON; additive SSE `view_open` filling the Mac slot. P1.5 PTT/mouth still **not** shipped |
 
 ### One-liner
 
-**Named windows over one Pi HUD** — same Serve URL; phone = thin ingress; Mac = one personal-assistant face (orb + visible chat + one panel + Body); display = panels; PTT fills composer then Send; fast-path tools + Gemini mouth; **not** a native app, **not** a second login, **not** a canonical ADA face, **not** P2 mail.
+**Named windows over one Pi HUD** — same Serve URL; phone = thin ingress; Mac = one personal-assistant face (orb + visible chat + one panel + Body); display = panels; first shipped panel = deterministic `nutrition_day`; **not** a native app, **not** a second login, **not** a canonical ADA face, **not** P2 mail.
 
 ---
 
@@ -156,13 +156,13 @@ Live HUD: [`index.html`](../../src/ada/hud/templates/index.html) · [`today.js`]
 |---------|-----------------|--------------------------------|
 | **IA skeleton** | Chat-home + `#today-strip` + Body `<dialog>` + composer chips (meal/lift/focus/due/capture/habit/met/who) | Body tabs still **organism ops** (Vitals/Lifecycle/Shelf/X-ray/Audit) — no **Meals/Body/Habits/People/Time/Dues** life sheets |
 | **Today strip** | `running_timer`, `nutrition_headline`, `meal_gap_nudge`, `habits_due/done`, `birthday_soon`, `people_remind`, dues/reminds/plan/confirm/artifacts; MAX_VISIBLE=4 + “+N” | Chips are **display-only** (no tap→sheet); no gym headline chip; habit continuity not in strip |
-| **Stream** | SSE turns, tool/plan/confirm cards, `token_delta` on fast-path | Assistant plain `textContent` (M17 P1 markdown pending); no inline “logged ✓” receipt chip style |
+| **Stream** | SSE turns, tool/plan/confirm cards, `token_delta` on fast-path; assistant **light markdown** | No inline “logged ✓” receipt chip style; markdown stays intentionally small/safe |
 | **Composer** | Sticky textarea + Send + chips | **No mic**; no listen/speak state; no PTT hold UI |
 | **Read API** | `GET /api/today`, `GET /api/life/day` (nutrition + time) | No `/api/life/gym`, habits aggregate, people list endpoints for sheets; sheets not rendered in HUD |
 | **Voice** | M05 register + `token_delta` canned speak on fast-path ([`loop.py`](../../src/ada/harness/loop.py)) | No STT/TTS pipeline; no audio egress policy doc in HUD |
 | **Confirm** | Gateway-rendered confirm cards in stream | Voice-initiated writes still need visible Confirm — no ear-only confirm |
 | **Pack router** | `life_p0.yaml` + `life_p1.yaml`, spines, fast-path | Camera/barcode HUD capture **design only** (M19b PARK) |
-| **Faces / companion / view_open** | One `index.html`; viewport meta; PWA `display: standalone`; **one** `ChatService` session | No `?face=`; no companion mode; no `view_open` SSE; chips display-only; no mic — **v1.5 gap** (addendum) |
+| **Faces / companion / view_open** | One `index.html`; viewport meta; PWA `display: standalone`; **one** `ChatService` session; `?face=` + picker aliases; additive `view_open` SSE; Mac slot fills with deterministic `nutrition_day` panel | No mic; no extra panel kinds yet; phone may ignore the panel; split-session still parked |
 
 **Verdict:** **capture spine is shipped**; **surface depth and voice transport are not**. The gap is IA wiring + polish, not new life organs.
 
@@ -488,20 +488,20 @@ v1.0 §A–§C market/SOTA/METAL, §4–§7 IA/voice/presence, and F-M19b-1…6 
 
 ## METAL delta (2026-08-18) — faces + views + speak
 
-Live: [`index.html`](../../src/ada/hud/templates/index.html) · [`routes_pages.py`](../../src/ada/hud/routes_pages.py) (`GET /` only) · [`chat_service.py`](../../src/ada/hud/chat_service.py) (**one** `ChatSession`) · [`stream.js`](../../src/ada/hud/static/js/stream.js) (`handleSseEvent`: `token_delta` / tool / plan / confirm / `turn_done` — **no** `view_open`) · [`loop.py`](../../src/ada/harness/loop.py) `_maybe_pack_fast_path` + `_speak_*` · [`routes_api.py`](../../src/ada/hud/routes_api.py) `GET /api/today`, `GET /api/life/day?date=` · [`manifest.webmanifest`](../../src/ada/hud/static/manifest.webmanifest) `display: standalone` · [`tokens.css`](../../src/ada/hud/static/css/tokens.css) moss pack.
+Live: [`index.html`](../../src/ada/hud/templates/index.html) · [`routes_pages.py`](../../src/ada/hud/routes_pages.py) (`GET /` only) · [`chat_service.py`](../../src/ada/hud/chat_service.py) (**one** `ChatSession`) · [`stream.js`](../../src/ada/hud/static/js/stream.js) (`handleSseEvent`: `token_delta` / tool / plan / confirm / `view_open` / `turn_done`) · [`markdown.js`](../../src/ada/hud/static/js/markdown.js) (light allowlist only) · [`view_registry.js`](../../src/ada/hud/static/js/view_registry.js) (`nutrition_day`) · [`loop.py`](../../src/ada/harness/loop.py) `_maybe_pack_fast_path` + `_speak_*` + `view_open` emit on `life_nutrition_day` · [`routes_api.py`](../../src/ada/hud/routes_api.py) `GET /api/today`, `GET /api/life/day?date=` · [`manifest.webmanifest`](../../src/ada/hud/static/manifest.webmanifest) `display: standalone` · [`tokens.css`](../../src/ada/hud/static/css/tokens.css) moss pack.
 
 | Need | Shipped (METAL) | Gap |
 |------|-----------------|-----|
 | One HUD process | FastAPI `127.0.0.1:8787` + Serve | Faces are CSS/IA, not new hosts |
-| One HTML | `templates/index.html` | No `data-face`; no `?face=` |
+| One HTML | `templates/index.html` + `data-face` + picker | Still one HTML; no second face product |
 | Session | **One** writer (`ChatService`) | Split phone-talk / monitor-show would need SSE fan-out + session sharing — **not cheap** |
 | Speak | Deterministic `_speak_nutrition_day` etc. after receipts; `token_delta`; `steps=0` | No register pass; no numeric grounding guard (unnecessary until pass exists) |
-| Day reads | `/api/life/day?date=` nutrition + time; `life_nutrition_day` / `life_gym_status` accept `date` | No `view_open`; gym/habits/people HUD sheets unbuilt |
+| Day reads | `/api/life/day?date=` nutrition + time; `life_nutrition_day` / `life_gym_status` accept `date`; `nutrition_day` includes honest meal rows | Gym/habits/people HUD sheets unbuilt |
 | Confirm | Gateway-rendered cards in **this** browser’s stream | No ingress-vs-display routing (unneeded until split-session) |
 | PWA | manifest standalone | `display-mode` unused for kiosk/display face |
-| Body | Vitals grid + lifecycle + x-ray + audit | No Pi blueprint; no life tabs |
+| Body | Vitals grid + Life tab with nutrition day detail + lifecycle + x-ray + audit | No gym/habits/people/time/dues life sheets yet |
 
-**Verdict:** capture spine + chat-home **shipped**. Faces, companion mode, view registry, and PTT are **IA + CSS + one SSE event** — not new organs.
+**Verdict:** capture spine + chat-home **shipped**. Faces plus the first registry slice (`nutrition_day`) are now live; PTT, companion behaviors, and extra panels remain deferred.
 
 ---
 
@@ -827,10 +827,10 @@ v1.0 “avatar level” → **locked none** (orb is non-anthropomorphic). v1.0 �
 When OPEN defaults stand:
 
 1. **Faces:** `data-face` on `<html>`; `?face=` + picker; phone CSS (hide Body theater / orb / week).  
-2. **M17 P1 markdown** (still owed).  
-3. **View registry:** `nutrition_day` template from receipt or `/api/life/day`; SSE `view_open`; strip chip → Body tab.  
-4. **Companion toggle** on Mac; orb states; floater; one float slot.  
-5. **PTT+TTS** Mac-first, simplex; phone PTT without analyser.
+2. **M17 P1 markdown** — **shipped** (light allowlist only).  
+3. **View registry:** `nutrition_day` template from receipt or `/api/life/day`; SSE `view_open`; strip chip → Body tab — **shipped for `nutrition_day` only**.  
+4. **Companion toggle** on Mac; orb states; floater; one float slot — **not shipped**.  
+5. **PTT+TTS** Mac-first, simplex; phone PTT without analyser — **not shipped**.
 
 **Do not start:** mail OAuth, Next on Pi, always-listen, 3D/ADA-own-face, split-session, Mac actuator, week Gemini boards, unconstrained speak rewrite.
 
@@ -844,7 +844,7 @@ When OPEN defaults stand:
 
 **Daily habit vs PhD:** this pass locks four operator decisions from the follow-up after v1.5. It does **not** start P2 mail, HUD/voice/pack/registry code, or a sibling filename.
 
-**v1.6.1 (2026-08-18):** P0 stamp + faces + Mac desk skeleton **shipped** on this HUD. P1.5 PTT/mouth and `view_open` remain not shipped. v1.6 locks below still hold.
+**v1.6.1 (2026-08-18):** P0 stamp + faces + Mac desk skeleton **shipped** on this HUD, and this slice also shipped M17 P1 light markdown + `nutrition_day` `view_open`. P1.5 PTT/mouth remain not shipped. v1.6 locks below still hold.
 
 v1.0 §A–§C market/SOTA/METAL and v1.5 ontology (ADA / organ / ingress / **face**), view registry, PTT simplex, Confirm-on-ingress, one `ChatService`, PARK split-session / ADA-own-face / Mac actuator / week boards **still hold**. Embodiment novelty stays **PARK**. There is still **no** canonical “ADA face.”
 

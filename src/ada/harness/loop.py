@@ -129,6 +129,17 @@ def _execute_tool(
     if result.needs_confirm:
         finished["pending_id"] = result.receipt_id
     sink.emit("tool_call_finished", finished)
+    if tool == "life_nutrition_day" and result.ok and isinstance(obs.get("data"), dict):
+        sink.emit(
+            "view_open",
+            {
+                "panel_kind": "nutrition_day",
+                "receipt_id": result.receipt_id,
+                "tool": tool,
+                "data": obs.get("data") or {},
+                "speak": _speak_nutrition_day(obs.get("data") or {}),
+            },
+        )
     history.append(observation_to_content(obs, call_id=call_id or tool))
 
 

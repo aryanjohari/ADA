@@ -1,5 +1,6 @@
 /** Read-only ADA x-ray (Body drawer). */
 
+import { renderMarkdownSafe } from "./markdown.js";
 import { esc, getJson } from "./util.js";
 
 const xrayState = {
@@ -92,71 +93,6 @@ function detectPreviewKind(path, contentType) {
   if (p.endsWith(".md")) return "md";
   if ((contentType || "").includes("json")) return "json";
   return "text";
-}
-
-function renderMarkdownSafe(src) {
-  const lines = String(src || "").split(/\r?\n/);
-  const out = [];
-  let inCode = false;
-  let codeBuf = [];
-  for (const line of lines) {
-    if (line.trim().startsWith("```")) {
-      if (inCode) {
-        out.push("<pre><code>" + esc(codeBuf.join("\n")) + "</code></pre>");
-        codeBuf = [];
-        inCode = false;
-      } else {
-        inCode = true;
-      }
-      continue;
-    }
-    if (inCode) {
-      codeBuf.push(line);
-      continue;
-    }
-    const l = esc(line);
-    if (/^###\s+/.test(line)) {
-      out.push(
-        '<div class="md-h3">' + esc(line.replace(/^###\s+/, "")) + "</div>"
-      );
-      continue;
-    }
-    if (/^##\s+/.test(line)) {
-      out.push(
-        '<div class="md-h2">' + esc(line.replace(/^##\s+/, "")) + "</div>"
-      );
-      continue;
-    }
-    if (/^#\s+/.test(line)) {
-      out.push(
-        '<div class="md-h1">' + esc(line.replace(/^#\s+/, "")) + "</div>"
-      );
-      continue;
-    }
-    if (/^\s*[-*]\s+/.test(line)) {
-      out.push(
-        "<ul><li>" +
-          inlineMd(esc(line.replace(/^\s*[-*]\s+/, ""))) +
-          "</li></ul>"
-      );
-      continue;
-    }
-    if (!l.trim()) {
-      out.push("<br/>");
-      continue;
-    }
-    out.push("<p>" + inlineMd(l) + "</p>");
-  }
-  if (inCode) {
-    out.push("<pre><code>" + esc(codeBuf.join("\n")) + "</code></pre>");
-  }
-  return out.join("\n");
-}
-
-function inlineMd(escaped) {
-  return escaped
-    .replace(/`([^`]+)`/g, '<code class="md-code">$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
 function splitCiteFrontmatter(text) {

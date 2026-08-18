@@ -1,6 +1,6 @@
 # M17 — Surface design (clean · minimal · controllable)
 
-**Status:** design-lock card — **P0 + quiet stream shipped** (2026-08-16). Markdown renderer still **P1**.  
+**Status:** design-lock card — **P0 + quiet stream + P1 light markdown shipped** (2026-08-18).  
 **Date:** 2026-08-16  
 **Host:** `ada-pi5` · Client: Mac via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
@@ -31,7 +31,7 @@
 | **IA** | Chat-home + `#today-strip` + Body `<dialog>` — correct skeleton (M14/M16) | Chrome still **ops-dense**; first glance can feel like a lab toolbar over chat |
 | **Header** | `ADA` + welcome; mode dial; `#mode-suggest`; `auth=` badge; `armed=` chip; password+Login+Logout; Body | **Too many peer controls**; login fields fight brand; mono badges read NOC |
 | **Today** | Bordered strip, kind labels, wrap chips | Findable (good). Box + uppercase label still a bit “panel”; must stay **strip**, not grow |
-| **Stream** | Left-rail turns; tool/plan/confirm cards; usage footer | Rails + bordered cards + glow on Plan = **dashboard card farm**; assistant is **plain `textContent`** (no calm markdown) |
+| **Stream** | Left-rail turns; tool/plan/confirm cards; usage footer; assistant **light markdown** (`p`, flat list, `strong`, inline/fenced code) | Rails + bordered cards can still read a bit card-heavy under long tool runs |
 | **Composer** | Sticky textarea + Send | OK hierarchy; focus glow + accent buttons slightly loud |
 | **Body** | Right drawer, tabs, vitals grid, x-ray 3-col | Drawer pattern correct; vitals grid still lab-card dense (OK *inside* drawer) |
 | **Tokens** | Moss dark; IBM Plex Sans/Mono self-host; `--max-chat: 44rem`; dual radial bg; `--accent-glow` | Palette family is right; **glow + multi-surface ladder + accent-on-every-button** = glare / vibe-AI |
@@ -187,7 +187,7 @@ If removing **X** does not hurt control or understanding, **X is out.**
 | **P1** | Stream markdown · tool/plan/confirm card quieting · turn rails soften · usage footer quieter | Long-read comfort |
 | **P2** | Optional presence: focus border / drawer polish only — **still no Jarvis OS** | Quiet confidence |
 
-**Metal (2026-08-16):** P0 tokens/density/chrome + quiet stream cards shipped in `src/ada/hud/static/css/*`, `templates/index.html`, `js/session.js`, `js/today.js`. Markdown still P1. M19b v1.6.1 Mac assistant desk skeleton reuses these moss tokens / IBM Plex / ≤3 motions — no new palette.
+**Metal (2026-08-18):** P0 tokens/density/chrome + quiet stream cards shipped in `src/ada/hud/static/css/*`, `templates/index.html`, `js/session.js`, `js/today.js`; **P1 light markdown** shipped in `js/markdown.js` + `js/stream.js`. M19b v1.6.1 Mac assistant desk skeleton reuses these moss tokens / IBM Plex / ≤3 motions — no new palette.
 
 ---
 
@@ -212,7 +212,7 @@ If removing **X** does not hurt control or understanding, **X is out.**
 | 1 | **Implement P0 polish now?** | **Shipped** — P0 + quiet stream (2026-08-16) |
 | 2 | Mid-turn **Abort** control? | Defer; busy/disable Send is enough for P0 |
 | 3 | Session overflow = `<details>` vs tiny menu? | **Shipped** — `<details class="session-menu">` |
-| 4 | Assistant markdown in P0 or P1? | Still **P1** (plain text + quiet cards for now) |
+| 4 | Assistant markdown in P0 or P1? | **Shipped in P1** — light allowlist only |
 | 5 | Light theme ever? | **Out** of M17; soft-dark only |
 
 ---

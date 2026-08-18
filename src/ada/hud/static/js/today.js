@@ -1,14 +1,17 @@
 /** Today strip — dues / reminds / pending / shelf heads (M16 Phase 1). */
 
 import { fetchToday } from "./api.js";
+import { openBody, showBodyTab } from "./body.js";
 import { esc } from "./util.js";
 
-function itemLabel(kind, text, when) {
+function itemLabel(kind, text, when, attrs = "") {
   const whenBit = when ? " · " + esc(String(when).slice(0, 16)) : "";
   return (
     '<li class="today-item today-' +
     esc(kind) +
-    '"><span class="today-kind">' +
+    '"' +
+    attrs +
+    '><span class="today-kind">' +
     esc(kind) +
     "</span> " +
     esc(text) +
@@ -52,8 +55,13 @@ export async function refreshToday() {
     bits.push(
       itemLabel(
         "macros",
-        "kcal " + (n.kcal ?? "?") + " · P " + (n.protein_g ?? "?") + partial,
-        n.local_day
+        "kcal " +
+          (n.kcal != null ? n.kcal : "?") +
+          " · P " +
+          (n.protein_g != null ? n.protein_g : "?") +
+          partial,
+        n.local_day,
+        ' data-open-body="life" data-life-date="' + esc(n.local_day || "") + '"'
       )
     );
   }
@@ -128,6 +136,12 @@ export async function refreshToday() {
   }
 
   list.innerHTML = shown.join("");
+  list.querySelectorAll("[data-open-body='life']").forEach((item) => {
+    item.addEventListener("click", () => {
+      openBody();
+      showBodyTab("life");
+    });
+  });
   const has = bits.length > 0 || data.continuity;
   strip.hidden = !has;
 

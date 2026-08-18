@@ -71,6 +71,48 @@
   color: var(--fg);
 }
 
+.turn-assistant .body p,
+.turn-assistant .body ul,
+.turn-assistant .body pre {
+  margin: 0 0 0.55rem;
+}
+
+.turn-assistant .body p:last-child,
+.turn-assistant .body ul:last-child,
+.turn-assistant .body pre:last-child {
+  margin-bottom: 0;
+}
+
+.turn-assistant .body ul {
+  padding-left: 1.2rem;
+}
+
+.turn-assistant .body li + li {
+  margin-top: 0.2rem;
+}
+
+.turn-assistant .body code,
+.turn-assistant .body .md-code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  background: var(--surface-2);
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+}
+
+.turn-assistant .body pre {
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.turn-assistant .body pre code {
+  background: transparent;
+  padding: 0;
+}
+
 .turn-fault {
   padding: 0.5rem 0.75rem;
   border-left: 2px solid var(--deny);

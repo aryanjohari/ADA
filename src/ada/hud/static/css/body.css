@@ -140,6 +140,84 @@
   font-size: 0.82rem;
 }
 
+.life-sheets {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.life-sheet {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: var(--space-2);
+}
+
+.life-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.life-sheet-head h3 {
+  margin: 0;
+}
+
+.life-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.life-meta,
+.life-empty {
+  margin: 0;
+}
+
+.nutrition-meals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.nutrition-meal {
+  border-top: 1px solid var(--line-soft);
+  padding-top: var(--space-1);
+}
+
+.nutrition-meal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.nutrition-meal-slot,
+.nutrition-meal-meta,
+.nutrition-meal-foods {
+  font-size: 0.78rem;
+}
+
+.nutrition-meal-slot {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.nutrition-meal-meta {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.nutrition-meal-foods {
+  margin-top: 0.2rem;
+}
+
 .life-row {
   display: flex;
   justify-content: space-between;
@@ -280,6 +358,10 @@
 @media (max-width: 719px) {
   #body-drawer {
     width: 100vw;
+  }
+
+  .life-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
 

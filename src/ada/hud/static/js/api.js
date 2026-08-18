@@ -28,6 +28,11 @@ export function fetchToday() {
   return getJson("/api/today");
 }
 
+export function fetchLifeDay(date = null) {
+  const q = date ? "?date=" + encodeURIComponent(date) : "";
+  return getJson("/api/life/day" + q);
+}
+
 export async function postLogin(password) {
   const r = await fetch("/api/login", {
     method: "POST",
