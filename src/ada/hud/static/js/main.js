@@ -7,12 +7,16 @@ import {
   wireBody,
 } from "./body.js";
 import { wireComposerChips } from "./composer_chips.js";
+import { wireDevice } from "./device.js";
+import { wireFace } from "./face.js";
 import { wireModeDial } from "./mode.js";
 import { wireSession } from "./session.js";
 import { wireChat } from "./stream.js";
 import { startTodayPoll, refreshToday } from "./today.js";
 import { wireXray, xrayList } from "./xray.js";
 
+wireFace();
+wireDevice();
 wireSession({ refreshMode });
 wireComposerChips();
 wireModeDial();

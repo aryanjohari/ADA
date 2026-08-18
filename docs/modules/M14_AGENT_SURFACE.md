@@ -15,6 +15,8 @@
 
 **OUT unless research-earned as FEASIBLE Tier A:** Funnel / public ingress; replacing cortex; ignoring receipts; consciousness cosplay; second agent loop in the client; secrets-to-cloud; Next-on-Pi.
 
+**Sibling (surface evolution, not an M14 rewrite):** [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6** locks **device faces** (phone thin / one Mac assistant face / display) plus a **thin device registry** (names + provenance, not a login) as CSS/cookie on this same Python ASGI HUD. That is **not** M14 option E (native menu-bar companion) and **not** a second cortex — Serve still terminates on Pi; B-voice remains PTT → composer preview → Send → `POST /api/chat`. Split phone-ingress / monitor-display and Mac-as-actuator stay PARK. **v1.6.1 skeleton (2026-08-18):** Serve bind, Tailscale, and HUD session auth (`ada_hud_session`) are unchanged; the device cookie is a separate non-HttpOnly name stamp.
+
 ---
 
 ## 1. Slice rule + won’t-chase

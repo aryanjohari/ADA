@@ -1,0 +1,186 @@
+/* M19b v1.6 — faces + Mac desk skeleton. Reuses moss tokens. No new palette. */
+
+.session-menu .face-picker-label {
+  display: block;
+  margin: var(--space-2) 0 var(--space-1);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.face-dial {
+  appearance: none;
+  display: block;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8125rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.ada-orb {
+  display: none;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.ada-orb-disc {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 32% 28%,
+    color-mix(in srgb, var(--accent) 55%, var(--surface)),
+    var(--accent-dim) 70%
+  );
+  border: 1px solid var(--accent-dim);
+  opacity: 0.85;
+}
+
+.view-slot {
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 8rem;
+  padding: var(--space-2);
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.view-slot-empty {
+  margin: auto 0;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.desk-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.desk-row .today-strip {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.desk-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.desk-main .home-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.device-name-dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  padding: var(--space-3);
+  max-width: 20rem;
+}
+
+.device-name-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.device-name-copy {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95rem;
+}
+
+.device-name-dialog input[type="text"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.55rem;
+  color: var(--fg);
+}
+
+.device-name-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* Mac assistant — desk density first: stream visible, small orb, empty slot */
+html[data-face="mac"] .home {
+  max-width: min(56rem, 100%);
+}
+
+html[data-face="mac"] .ada-orb {
+  display: flex;
+}
+
+html[data-face="mac"] .desk-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(9rem, 13rem);
+  gap: var(--space-3);
+}
+
+html[data-face="mac"] .view-slot {
+  display: flex;
+}
+
+html[data-face="mac"][data-density="glance"] .ada-orb {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+html[data-face="mac"][data-density="glance"] .desk-main {
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 20rem);
+}
+
+/* Phone — thin ingress: composer + Send + Confirm; hide theater / orb / week-ish */
+html[data-face="phone"] .home {
+  max-width: var(--max-chat);
+}
+
+html[data-face="phone"] .ada-orb,
+html[data-face="phone"] .view-slot,
+html[data-face="phone"] .body-theater,
+html[data-face="phone"] .week-chrome,
+html[data-face="phone"] .today-item:nth-child(n + 2),
+html[data-face="phone"] .today-more,
+html[data-face="phone"] .today-pulse {
+  display: none !important;
+}
+
+/* Display — panels primary; composer/orb visualizer off; slot grows */
+html[data-face="display"] .home {
+  max-width: none;
+}
+
+html[data-face="display"] .chat-form,
+html[data-face="display"] .ada-orb {
+  display: none !important;
+}
+
+html[data-face="display"] .desk-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-3);
+}
+
+html[data-face="display"] .view-slot {
+  display: flex;
+  min-height: 16rem;
+}

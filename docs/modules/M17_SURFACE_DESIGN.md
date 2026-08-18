@@ -5,6 +5,7 @@
 **Host:** `ada-pi5` · Client: Mac via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Depends on:** [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) (chat-home, Body drawer, ASGI+static), [`M13_HUD_UX.md`](./M13_HUD_UX.md) (presentation history), [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) + [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (Plan/Confirm, Today strip, shelf — must stay findable), live `src/ada/hud/`  
+**Feeds / sibling:** [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6** — life sheets + view registry + PTT preview-then-Send; **device faces** (phone thin / one Mac assistant face / display) over the same ASGI HUD. Does **not** rewrite M17 locks: the Mac assistant face still has a **visible transcript/stream** (chat-home, not dashboard home); companion-as-separate-named-face is retired; density may shift within that one Mac face. Moss tokens and ≤3 motions still bind. Canonical “ADA face” and Iron Man HUD remain OUT.  
 
 **Name justification:** **`M17_SURFACE_DESIGN.md`**. M13/M14 shipped the shell; M16 added daily controls. This card locks **taste + density** so polish chats stop vibe-coding. Not a new organ; not a stack rewrite.
 
@@ -186,7 +187,7 @@ If removing **X** does not hurt control or understanding, **X is out.**
 | **P1** | Stream markdown · tool/plan/confirm card quieting · turn rails soften · usage footer quieter | Long-read comfort |
 | **P2** | Optional presence: focus border / drawer polish only — **still no Jarvis OS** | Quiet confidence |
 
-**Metal (2026-08-16):** P0 tokens/density/chrome + quiet stream cards shipped in `src/ada/hud/static/css/*`, `templates/index.html`, `js/session.js`, `js/today.js`. Markdown still P1.
+**Metal (2026-08-16):** P0 tokens/density/chrome + quiet stream cards shipped in `src/ada/hud/static/css/*`, `templates/index.html`, `js/session.js`, `js/today.js`. Markdown still P1. M19b v1.6.1 Mac assistant desk skeleton reuses these moss tokens / IBM Plex / ≤3 motions — no new palette.
 
 ---
 

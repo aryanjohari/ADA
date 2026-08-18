@@ -22,6 +22,16 @@ from ada.hud.auth import (
     passwords_match,
     require_agent_session,
     set_session_cookie,
+    tailscale_user,
+)
+from ada.hud.devices import (
+    DEVICE_COOKIE,
+    lookup_device,
+    normalize_face,
+    normalize_input_kind,
+    resolve_device_id,
+    set_device_cookie,
+    upsert_device,
 )
 from ada.hud.stream_bridge import run_with_bridge
 from ada.hud.today import build_today
@@ -42,6 +52,15 @@ class ChatBody(BaseModel):
     message: str = Field(min_length=1)
     mode: ModeName = "observe"
     chip: str | None = None
+    input: Literal["typed", "stt"] | None = None
+    face: str | None = None
+    device_id: str | None = None
+
+
+class DeviceBody(BaseModel):
+    name: str | None = None
+    device_id: str | None = None
+    face: str | None = None
 
 
 class ConfirmBody(BaseModel):
@@ -314,6 +333,63 @@ def api_xray_read(
         )
 
 
+def _stamp_device_row(
+    request: Request,
+    *,
+    body_id: str | None = None,
+    name: str | None = None,
+    face_hint: str | None = None,
+) -> tuple[dict[str, Any], str, bool]:
+    """Resolve cookie-over-body and stamp FACT. Names only."""
+    device_id, need_cookie = resolve_device_id(
+        cookie=request.cookies.get(DEVICE_COOKIE),
+        body=body_id,
+    )
+    try:
+        row = upsert_device(device_id, name=name, face_hint=face_hint, touch=True)
+    except (BodyFault, OSError, ValueError):
+        row = lookup_device(device_id) or {"id": device_id}
+    cookie_mismatch = request.cookies.get(DEVICE_COOKIE) != device_id
+    return row, device_id, need_cookie or cookie_mismatch
+
+
+@router.get("/device")
+def api_device_get(request: Request) -> JSONResponse:
+    """Mint/return this window's device_id. Names only — not a session gate."""
+    row, device_id, set_cookie = _stamp_device_row(request)
+    resp = JSONResponse(
+        content={
+            "device_id": row.get("id") or device_id,
+            "name": row.get("name"),
+            "face_hint": row.get("face_hint"),
+        }
+    )
+    if set_cookie:
+        set_device_cookie(resp, device_id)
+    return resp
+
+
+@router.post("/device")
+def api_device_post(request: Request, body: DeviceBody) -> JSONResponse:
+    """Optional name for this window. Skip (empty name) still stamps uuid."""
+    row, device_id, set_cookie = _stamp_device_row(
+        request,
+        body_id=body.device_id,
+        name=body.name,
+        face_hint=body.face,
+    )
+    resp = JSONResponse(
+        content={
+            "device_id": row.get("id") or device_id,
+            "name": row.get("name"),
+            "face_hint": row.get("face_hint"),
+        }
+    )
+    if set_cookie:
+        set_device_cookie(resp, device_id)
+    return resp
+
+
 @router.post("/chat", response_model=None)
 def api_chat(request: Request, body: ChatBody) -> StreamingResponse | JSONResponse:
     gate = require_agent_session(request, body.mode)
@@ -324,11 +400,30 @@ def api_chat(request: Request, body: ChatBody) -> StreamingResponse | JSONRespon
     message = body.message.strip()
     mode = body.mode
     chip = body.chip.strip() if body.chip else None
+    face = normalize_face(body.face)
+    input_kind = normalize_input_kind(body.input)
+    row, device_id, set_cookie = _stamp_device_row(
+        request,
+        body_id=body.device_id,
+        face_hint=face,
+    )
+    device_name = row.get("name") if isinstance(row.get("name"), str) else None
+    ts_user = tailscale_user(request)
 
     def worker(sink):
-        return chat.run_user_turn(message, mode=mode, sink=sink, chip=chip)
+        return chat.run_user_turn(
+            message,
+            mode=mode,
+            sink=sink,
+            chip=chip,
+            input_kind=input_kind,
+            face=face,
+            device_id=device_id,
+            device_name=device_name,
+            tailscale_user=ts_user,
+        )
 
-    return StreamingResponse(
+    resp = StreamingResponse(
         run_with_bridge(worker),
         media_type="text/event-stream",
         headers={
@@ -337,6 +432,9 @@ def api_chat(request: Request, body: ChatBody) -> StreamingResponse | JSONRespon
             "X-Accel-Buffering": "no",
         },
     )
+    if set_cookie:
+        set_device_cookie(resp, device_id)
+    return resp
 
 
 @router.post("/confirm", response_model=None)

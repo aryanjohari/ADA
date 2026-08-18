@@ -6,6 +6,7 @@
 **Parent vision:** [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (A/B/C tiers; Verb→Pack→Cortex-fill)  
 **Constitution:** [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) (Confirm Integrity, dual-store, quiet hours, no Funnel-as-default, no consciousness)  
 **Hang-on geometry (do not reinvent):** gateway outside model · Confirm Integrity · intent→plan→Confirm→receipt · FACTS/WORLDVIEW · Today/dues/remind/notify · artifacts · people stubs  
+**Surface + voice gate (post P0/P1 capture):** [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) — daily glance/drill-down IA + PTT transport; **sequence before M19 P2 mail**; design only in v1.0  
 
 ### Changelog
 

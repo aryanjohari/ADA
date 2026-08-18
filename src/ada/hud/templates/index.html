@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if face %} data-face="{{ face }}"{% endif %}>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -9,6 +9,15 @@
   <link rel="icon" href="/static/icons/ada-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/static/icons/ada-icon.svg" />
   <link rel="stylesheet" href="/static/app.css" />
+  <script>
+    (function () {
+      var aliases = { "mac-chat": "mac", "mac-companion": "mac" };
+      var faces = { phone: 1, mac: 1, display: 1 };
+      var q = new URLSearchParams(location.search).get("face");
+      var f = q && (aliases[q] || q);
+      if (f && faces[f]) document.documentElement.dataset.face = f;
+    })();
+  </script>
 </head>
 <body>
   <header class="top">
@@ -30,9 +39,17 @@
         <input type="password" id="password" placeholder="session password" autocomplete="current-password" />
         <button type="submit" class="primary">Login</button>
       </form>
-      <details id="session-menu" class="session-menu" hidden>
+      <details id="session-menu" class="session-menu">
         <summary>Session</summary>
-        <button type="button" id="logout-btn" class="ghost">Logout</button>
+        <div class="session-menu-panel">
+          <label class="face-picker-label" for="face-select">Face</label>
+          <select id="face-select" class="face-dial" title="Face">
+            <option value="phone">phone</option>
+            <option value="mac">mac</option>
+            <option value="display">display</option>
+          </select>
+          <button type="button" id="logout-btn" class="ghost" hidden>Logout</button>
+        </div>
       </details>
       <p id="auth-msg" class="msg" role="status"></p>
       <button type="button" id="body-open" class="ghost">Body</button>
@@ -40,32 +57,54 @@
   </header>
 
   <main class="home" id="home">
-    <section id="today-strip" class="today-strip" aria-label="Today" hidden>
-      <div class="today-strip-inner">
-        <span class="today-label">Today</span>
-        <ul id="today-items" class="today-items"></ul>
-        <p id="today-pulse" class="today-pulse" hidden></p>
+    <div class="desk-row">
+      <div class="ada-orb" id="ada-orb" role="img" aria-label="Presence" data-state="idle">
+        <span class="ada-orb-disc"></span>
       </div>
-    </section>
-    <section class="home-stream" aria-label="Chat">
-      <div id="stream" class="stream" role="log" aria-live="polite"></div>
-      <form id="chat-form" class="chat-form">
-        <div id="composer-chips" class="chip-row composer-chips" aria-label="Quick capture">
-          <button type="button" class="chip composer-chip" data-chip="meal" data-prefill="log meal: ">meal</button>
-          <button type="button" class="chip composer-chip" data-chip="lift" data-prefill="log lift: ">lift</button>
-          <button type="button" class="chip composer-chip" data-chip="focus" data-prefill="start focus: ">focus</button>
-          <button type="button" class="chip composer-chip" data-chip="due" data-prefill="add due: ">due</button>
-          <button type="button" class="chip composer-chip" data-chip="capture" data-prefill="capture: ">capture</button>
-          <button type="button" class="chip composer-chip" data-chip="habit" data-prefill="habit done: ">habit</button>
-          <button type="button" class="chip composer-chip" data-chip="met" data-prefill="met ">met</button>
-          <button type="button" class="chip composer-chip" data-chip="who" data-prefill="who is ">who</button>
+      <section id="today-strip" class="today-strip" aria-label="Today" hidden>
+        <div class="today-strip-inner">
+          <span class="today-label">Today</span>
+          <ul id="today-items" class="today-items"></ul>
+          <p id="today-pulse" class="today-pulse" hidden></p>
         </div>
-        <label class="sr-only" for="chat-input">Message</label>
-        <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
-        <button type="submit" id="chat-send" class="primary">Send</button>
-      </form>
-    </section>
+      </section>
+    </div>
+    <div class="desk-main">
+      <section class="home-stream" aria-label="Chat">
+        <div id="stream" class="stream" role="log" aria-live="polite"></div>
+        <form id="chat-form" class="chat-form">
+          <div id="composer-chips" class="chip-row composer-chips" aria-label="Quick capture">
+            <button type="button" class="chip composer-chip" data-chip="meal" data-prefill="log meal: ">meal</button>
+            <button type="button" class="chip composer-chip" data-chip="lift" data-prefill="log lift: ">lift</button>
+            <button type="button" class="chip composer-chip" data-chip="focus" data-prefill="start focus: ">focus</button>
+            <button type="button" class="chip composer-chip" data-chip="due" data-prefill="add due: ">due</button>
+            <button type="button" class="chip composer-chip" data-chip="capture" data-prefill="capture: ">capture</button>
+            <button type="button" class="chip composer-chip" data-chip="habit" data-prefill="habit done: ">habit</button>
+            <button type="button" class="chip composer-chip" data-chip="met" data-prefill="met ">met</button>
+            <button type="button" class="chip composer-chip" data-chip="who" data-prefill="who is ">who</button>
+          </div>
+          <label class="sr-only" for="chat-input">Message</label>
+          <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
+          <button type="submit" id="chat-send" class="primary">Send</button>
+        </form>
+      </section>
+      <aside class="view-slot" id="view-slot" aria-label="View">
+        <p class="view-slot-empty">no view open</p>
+      </aside>
+    </div>
   </main>
+
+  <dialog id="device-name-dialog" class="device-name-dialog">
+    <form id="device-name-form" method="dialog">
+      <p class="device-name-copy">Call this device</p>
+      <label class="sr-only" for="device-name-input">Device name</label>
+      <input id="device-name-input" type="text" maxlength="64" placeholder="iphone, macbook…" autocomplete="off" />
+      <div class="device-name-actions">
+        <button type="button" id="device-name-skip" class="ghost">Skip</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="body-drawer" aria-labelledby="body-drawer-title">
     <div class="body-drawer-inner">
@@ -84,7 +123,7 @@
 
         <div id="body-panel-vitals" class="body-panel active body-section">
           <h3>Organism</h3>
-          <div id="vitals-cards" class="vitals-grid"></div>
+          <div id="vitals-cards" class="vitals-grid body-theater"></div>
           <div id="doctor-badge" class="doctor-badge">doctor: …</div>
           <p id="vitals-meta" class="meta"></p>
           <div id="mode-chips" class="chip-row" style="margin-top: 0.75rem"></div>

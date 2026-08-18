@@ -46,6 +46,11 @@ class DataPaths:
         return self.facts / "prefs.yaml"
 
     @property
+    def hud_devices_yaml(self) -> Path:
+        """Thin named-window list (M19b). Not a Dream-whitelist prefs key."""
+        return self.facts / "hud_devices.yaml"
+
+    @property
     def open_loops_yaml(self) -> Path:
         return self.facts / "open_loops.yaml"
 

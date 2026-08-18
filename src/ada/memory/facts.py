@@ -16,6 +16,7 @@ from ada.io.atomic import atomic_write_text, cleanup_orphan_tmps
 from ada.io.paths import BodyFault, DataPaths, ada_data_mounted, require_ada_data
 
 # Body §5.3 / constitution — Dream auto-merge whitelist only.
+# facts/hud_devices.yaml is HUD-local (M19b v1.6); never add it here.
 WHITELIST_KEYS: frozenset[str] = frozenset(
     {
         "brief_time",

@@ -1,5 +1,7 @@
 /** Thin API wrappers. */
 
+import { currentFace } from "./face.js";
+import { getDeviceId } from "./device.js";
 import { getJson } from "./util.js";
 
 export function fetchMode() {
@@ -79,6 +81,13 @@ export async function openChatStream(message, mode, chip = null) {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({ message, mode, chip }),
+    body: JSON.stringify({
+      message,
+      mode,
+      chip,
+      input: "typed",
+      face: currentFace(),
+      device_id: getDeviceId(),
+    }),
   });
 }

@@ -41,17 +41,20 @@ export function applyModePayload(data) {
 
   const loginForm = document.getElementById("login-form");
   const sessionMenu = document.getElementById("session-menu");
+  const logoutBtn = document.getElementById("logout-btn");
   if (sessionState.agentArmed) {
     if (loginForm) loginForm.classList.add("hidden");
     if (sessionMenu) {
       sessionMenu.hidden = false;
       sessionMenu.open = false;
     }
+    if (logoutBtn) logoutBtn.hidden = false;
   } else {
     if (sessionMenu) {
-      sessionMenu.hidden = true;
+      sessionMenu.hidden = false;
       sessionMenu.open = false;
     }
+    if (logoutBtn) logoutBtn.hidden = true;
     // Keep login hidden until Plan/Agent gate (requireSessionForMode).
   }
 

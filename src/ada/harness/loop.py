@@ -736,16 +736,36 @@ def run_turn(
     sink: StreamSink | None = None,
     contents: list[Any] | None = None,
     end_session: bool = True,
+    input_kind: str | None = None,
+    face: str | None = None,
+    device_id: str | None = None,
+    device_name: str | None = None,
+    tailscale_user: str | None = None,
 ) -> LoopResult:
     """Run one user turn through the ReAct loop.
 
     Mutates *contents* in place when provided (REPL multi-turn history).
     Set end_session=False for REPL turns; call session.end() on exit.
+
+    HUD stamps optional provenance (face / device_* / tailscale_user).
+    CLI leaves those omitted; input_kind defaults to typed.
     """
     sink = sink or NullSink()
     session.ensure_started()
     session.reset_wall_clock()
-    session.writer.append("user", {"text": user_text})
+    kind = (input_kind or "typed").strip().lower()
+    if kind not in ("typed", "stt"):
+        kind = "typed"
+    user_payload: dict[str, Any] = {"text": user_text, "input": kind}
+    if face:
+        user_payload["face"] = face
+    if device_id:
+        user_payload["device_id"] = device_id
+    if device_name:
+        user_payload["device_name"] = device_name
+    if tailscale_user:
+        user_payload["tailscale_user"] = tailscale_user
+    session.writer.append("user", user_payload)
     try:
         from ada.harness.pack_router import route_utterance
 

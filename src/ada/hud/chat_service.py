@@ -87,6 +87,11 @@ class ChatService:
         mode: Mode = "observe",
         sink: StreamSink | None = None,
         chip: str | None = None,
+        input_kind: str | None = None,
+        face: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
+        tailscale_user: str | None = None,
     ) -> dict[str, Any]:
         """Synchronous turn — intended to run off the ASGI event loop thread."""
         with self._lock:
@@ -142,6 +147,11 @@ class ChatService:
                 sink=sink,
                 contents=self.history,
                 end_session=False,
+                input_kind=input_kind,
+                face=face,
+                device_id=device_id,
+                device_name=device_name,
+                tailscale_user=tailscale_user,
             )
             for receipt in result.tool_receipts:
                 if receipt.get("outcome") == "denied" or receipt.get("denied_reason"):

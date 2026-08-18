@@ -147,10 +147,26 @@
   border-color: var(--muted);
 }
 
+.session-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 11rem;
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  z-index: 40;
+}
+
 .session-menu #logout-btn {
   display: block;
-  margin-top: var(--space-1);
+  margin-top: var(--space-2);
   width: 100%;
+}
+
+.session-menu #logout-btn[hidden] {
+  display: none;
 }
 
 #body-open {
