@@ -1,6 +1,6 @@
 # M19b — Daily surface + voice UX (research card)
 
-**Status:** **v1.6.1 shipped** (2026-08-18) — provenance + faces + Mac desk slot on the live HUD, plus M17 P1 light markdown, additive SSE `view_open`, and the first deterministic `nutrition_day` panel. v1.6 addendum remains the lock pass. **Not shipped:** P1.5 PTT/STT/TTS, register-pass mouth, extra panels beyond `nutrition_day`.  
+**Status:** **v1.6.2 shipped** (2026-08-19) — provenance + faces + Mac desk slot + **first-open face+name modal** on the live HUD, plus M17 P1 light markdown, additive SSE `view_open`, and the first deterministic `nutrition_day` panel. v1.6 addendum remains the lock pass. **Not shipped:** P1.5 PTT/STT/TTS, register-pass mouth, extra panels beyond `nutrition_day`.  
 **Date:** 2026-08-18  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · Client: Mac / phone / later display via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
@@ -18,6 +18,7 @@
 | **v1.5** | 2026-08-18 | Addendum lock: organism/organ/ingress/**face** ontology; Mac companion as **opt-in mode** (chat-home remains default); view registry (receipt JSON → templates); optional receipt-bound register pass; phone thin / HDMI display faces; PTT simplex; PARK split-session + ADA-own-face + Mac actuator |
 | **v1.6** | 2026-08-18 | Operator lock pass: **thin device registry + turn provenance**; collapse two Mac faces into **one assistant face**; voice **preview-then-Send** (auto-send SUPERSEDED); **Gemini register pass ON** as the mouth after fast-path tools (template = fail-closed fallback). v1.5 treated device provenance as a gap, kept two Mac faces, PTT auto-send, register-pass OFF — those defaults are **SUPERSEDED** |
 | **v1.6.1** | 2026-08-18 | **Shipped on HUD:** `ada_hud_device` cookie + `facts/hud_devices.yaml` + HUD `user` event stamp (`input`/`face`/`device_*`/`tailscale_user`); `data-face=phone\|mac\|display` + picker + phone CSS; one Mac desk (small idle orb + visible stream + one panel slot + Body); M17 P1 **light markdown**; deterministic `nutrition_day` view registry from receipt/API JSON; additive SSE `view_open` filling the Mac slot. P1.5 PTT/mouth still **not** shipped |
+| **v1.6.2** | 2026-08-19 | **First-open (M20 phase 3a):** modal requires face confirm (phone/mac/display) + optional name; Save posts existing `/api/device`; Skip still stamps uuid and hinted/chosen face. `?face=` still wins. Session picker remains the later override. Name-only prompt **SUPERSEDED**. |
 
 ### One-liner
 
@@ -922,10 +923,10 @@ Live (re-checked this pass; **v1.6.1 skeleton updated 2026-08-18**): [`routes_ap
 | Chat POST | `ChatBody`: message, mode, chip, optional `input` / `face` / `device_id` (**v1.6.1**) | STT still unused (`input=typed` from HUD) |
 | User event | HUD: `text` + `input` + `face` + `device_id`/`device_name` if known + `tailscale_user` if header. CLI: `text` + `input=typed`, omit face/device | Analysis UI later |
 | Soft identity | `Tailscale-User-Login` → chrome display; **copied onto HUD user events when present** | Still not Agent authority |
-| Device names | Cookie `ada_hud_device` (non-HttpOnly) + `facts/hud_devices.yaml`; optional name prompt; skip still stamps uuid | Not a permission ladder |
+| Device names | Cookie `ada_hud_device` (non-HttpOnly) + `facts/hud_devices.yaml`; **first-open** face confirm + optional name (v1.6.2); skip still stamps uuid | Not a permission ladder |
 | Speak | Deterministic `_speak_*` after receipts; `token_delta`; `steps=0` | Register pass + numeric guard **not** shipped (P1.5 mouth) |
 | Session | **One** writer | Split phone-talk / monitor-show still **not cheap** |
-| Faces | One `index.html`; `data-face=phone\|mac\|display`; `?face=` + aliases; picker in session overflow; phone CSS hide; Mac idle orb + empty view slot | PTT/analyser/`view_open` panel fill **not** shipped |
+| Faces | One `index.html`; `data-face=phone\|mac\|display`; `?face=` + aliases; **first-open face confirm** then picker in session overflow; phone CSS hide; Mac idle orb + empty view slot | PTT/analyser/`view_open` panel fill **not** shipped |
 
 **Verdict (v1.6.1):** capture spine + chat-home + **thin registry + faces + Mac desk slot** shipped. Preview-then-Send PTT, Gemini mouth, and `view_open` nutrition panel are **still IA / later phases** — not this skeleton.
 
@@ -933,7 +934,7 @@ Live (re-checked this pass; **v1.6.1 skeleton updated 2026-08-18**): [`routes_ap
 
 | Surface | Shipped | Not this slice |
 |---------|---------|----------------|
-| **Registry** | Non-HttpOnly `ada_hud_device` uuid; optional “Call this device ___” (skip still stamps); `facts/hud_devices.yaml`; cookie wins over body `device_id`; HUD `user` JSONL: `input`+`face`+device if known+`tailscale_user` if header; CLI `input=typed` omit face/device | Permission ladder / OAuth; Dream whitelist; analytics UI |
+| **Registry** | Non-HttpOnly `ada_hud_device` uuid; **first-open modal** confirms face + optional name (name-only prompt **SUPERSEDED**); Skip still stamps; `facts/hud_devices.yaml`; cookie wins over body `device_id`; HUD `user` JSONL: `input`+`face`+device if known+`tailscale_user` if header; CLI `input=typed` omit face/device | Permission ladder / OAuth; Dream whitelist; analytics UI |
 | **Faces** | One `index.html`; `data-face=phone\|mac\|display`; `?face=` wins; `mac-chat`/`mac-companion` alias to `mac`; picker in session overflow; client hints; phone CSS hides orb / view slot / Body theater / extra Today chips | Second HTML; Next/React; kiosk Chromium on Pi |
 | **Mac slot** | Desk: small idle orb (no analyser) + existing stream/composer/Today/Body + one empty “no view open” panel slot; glance density = CSS hooks only | `view_open` fill; nutrition_day panel; two named Mac faces; orb-only hide of stream/Confirm |
 
@@ -958,7 +959,7 @@ Code: [`devices.py`](../../src/ada/hud/devices.py) · [`routes_api.py`](../../sr
 
 1. Device is on **Aryan’s tailnet** (ACL already decided who may open the URL). **POLICY** / Tailscale [ACL applies to Serve](https://tailscale.com/docs/features/tailscale-serve).
 2. Open HUD.
-3. Optional prompt: **“Call this device ___”** (placeholder `iphone`, `macbook`, …). Skip → unnamed id still stamps.
+3. Optional prompt: **“Call this device ___”** (placeholder `iphone`, `macbook`, …). Skip → unnamed id still stamps. **v1.6.2 SUPERSEDES name-only:** first-open modal confirms **face** (hinted, operator confirms) + optional name; Skip still stamps.
 4. Store names in FACT YAML (small list). Cookie or `localStorage` `device_id` for return visits.
 5. Confirm still on **this** ingress browser. Registry is **not** a new permission ladder.
 
@@ -1141,7 +1142,7 @@ v1.5 F-M19b-11 (register pass speaks a number not in JSON) is now a **ship gate*
 | # | Question | Default until locked |
 |---|----------|----------------------|
 | 1 | **Mac density persistence** (desk vs glance inside the one Mac face) | Window-size / operator drag this session; FACT later. **Not** a second named face |
-| 2 | **Device name prompt** | Optional on first visit; skip → unnamed uuid still stamps |
+| 2 | **Device name prompt** | **SUPERSEDED v1.6.2:** first-open requires face confirm; name remains optional; skip → unnamed uuid still stamps. Session picker stays the later face/name change path |
 | 3 | **TTS provider** | Cloud default (v1.0); Piper PARK for canned fallback acks |
 | 4 | **STT placement** | Mac/phone **browser** first; Pi proxy if keys must stay on Pi |
 | 5 | **Observe + voice** | Read-only packs without session OK; writes need HUD login (v1.0) |

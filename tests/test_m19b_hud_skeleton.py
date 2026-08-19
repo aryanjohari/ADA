@@ -109,6 +109,64 @@ def test_device_skip_still_stamps_uuid(data_root, monkeypatch):
     assert "schema_version: 1" in text
 
 
+def test_device_skip_stamps_hinted_face(data_root, monkeypatch):
+    client = _client(data_root, monkeypatch)
+    resp = client.post("/api/device", json={"face": "display"})
+    assert resp.status_code == 200
+    body = resp.json()
+    uuid.UUID(body["device_id"])
+    assert body.get("name") in (None, "")
+    assert body["face_hint"] == "display"
+    yaml_path = data_root / "memory" / "facts" / "hud_devices.yaml"
+    text = yaml_path.read_text(encoding="utf-8")
+    assert "face_hint: display" in text
+
+
+def test_first_open_posts_face_and_name(data_root, monkeypatch):
+    client = _client(data_root, monkeypatch)
+    resp = client.post(
+        "/api/device",
+        json={"device_id": str(uuid.uuid4()), "name": "iphone", "face": "phone"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "iphone"
+    assert body["face_hint"] == "phone"
+    yaml_path = data_root / "memory" / "facts" / "hud_devices.yaml"
+    text = yaml_path.read_text(encoding="utf-8")
+    assert "name: iphone" in text
+    assert "face_hint: phone" in text
+
+
+def test_first_open_dialog_requires_face_confirm():
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "src/ada/hud/templates/index.html").read_text(encoding="utf-8")
+    js = (root / "src/ada/hud/static/js/device.js").read_text(encoding="utf-8")
+    assert 'id="device-name-dialog"' in html
+    assert 'name="device-face"' in html
+    assert 'value="phone"' in html
+    assert 'value="mac"' in html
+    assert 'value="display"' in html
+    assert "iphone, macbook, studio-display" in html
+    assert 'id="device-name-skip"' in html
+    assert 'id="face-select"' in html
+    assert "postDevice" in js
+    assert "device-face" in js
+    assert "urlFace" in js
+
+
+def test_device_post_face_alias_collapses(data_root, monkeypatch):
+    client = _client(data_root, monkeypatch)
+    resp = client.post(
+        "/api/device",
+        json={"name": "studio-display", "face": "mac-companion"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "studio-display"
+    assert body["face_hint"] == "mac"
+
+
 def test_face_query_sets_data_face(data_root, monkeypatch):
     client = _client(data_root, monkeypatch)
     phone = client.get("/?face=phone")

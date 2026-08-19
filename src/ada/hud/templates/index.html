@@ -101,9 +101,26 @@
 
   <dialog id="device-name-dialog" class="device-name-dialog">
     <form id="device-name-form" method="dialog">
-      <p class="device-name-copy">Call this device</p>
-      <label class="sr-only" for="device-name-input">Device name</label>
-      <input id="device-name-input" type="text" maxlength="64" placeholder="iphone, macbook…" autocomplete="off" />
+      <p class="device-name-copy">This window</p>
+      <fieldset class="device-face-fieldset">
+        <legend class="sr-only">Face</legend>
+        <div class="device-face-row" role="radiogroup" aria-label="Face">
+          <label class="device-face-choice">
+            <input class="sr-only" type="radio" name="device-face" value="phone" />
+            phone
+          </label>
+          <label class="device-face-choice">
+            <input class="sr-only" type="radio" name="device-face" value="mac" />
+            mac
+          </label>
+          <label class="device-face-choice">
+            <input class="sr-only" type="radio" name="device-face" value="display" />
+            display
+          </label>
+        </div>
+      </fieldset>
+      <label class="sr-only" for="device-name-input">Device name (optional)</label>
+      <input id="device-name-input" type="text" maxlength="64" placeholder="iphone, macbook, studio-display" autocomplete="off" />
       <div class="device-name-actions">
         <button type="button" id="device-name-skip" class="ghost">Skip</button>
         <button type="submit" class="primary">Save</button>

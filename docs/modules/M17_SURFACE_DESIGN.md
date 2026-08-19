@@ -187,7 +187,7 @@ If removing **X** does not hurt control or understanding, **X is out.**
 | **P1** | Stream markdown · tool/plan/confirm card quieting · turn rails soften · usage footer quieter | Long-read comfort |
 | **P2** | Optional presence: focus border / drawer polish only — **still no Jarvis OS** | Quiet confidence |
 
-**Metal (2026-08-18):** P0 tokens/density/chrome + quiet stream cards shipped in `src/ada/hud/static/css/*`, `templates/index.html`, `js/session.js`, `js/today.js`; **P1 light markdown** shipped in `js/markdown.js` + `js/stream.js`. M19b v1.6.1 Mac assistant desk skeleton reuses these moss tokens / IBM Plex / ≤3 motions — no new palette.
+**Metal (2026-08-18):** P0 tokens/density/chrome + quiet stream cards shipped in `src/ada/hud/static/css/*`, `templates/index.html`, `js/session.js`, `js/today.js`; **P1 light markdown** shipped in `js/markdown.js` + `js/stream.js`. M19b v1.6.1 Mac assistant desk skeleton reuses these moss tokens / IBM Plex / ≤3 motions — no new palette. **2026-08-19 (M20 3a):** first-open `#device-name-dialog` keeps the same moss surface/line tokens; face choices are quiet radios, one primary Save, ghost Skip — not a new taste lock.
 
 ---
 

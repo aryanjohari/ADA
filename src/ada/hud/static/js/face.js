@@ -27,9 +27,15 @@ export function hintFace() {
   return "mac";
 }
 
+export function urlFace() {
+  return normalizeFace(new URLSearchParams(location.search).get("face"));
+}
+
 export function currentFace() {
   return (
-    normalizeFace(document.documentElement.dataset.face) || hintFace()
+    urlFace() ||
+    normalizeFace(document.documentElement.dataset.face) ||
+    hintFace()
   );
 }
 
@@ -47,8 +53,7 @@ export function applyFace(face) {
 }
 
 export function resolveFace() {
-  const q = new URLSearchParams(location.search).get("face");
-  const fromQ = normalizeFace(q);
+  const fromQ = urlFace();
   if (fromQ) return fromQ;
   try {
     const stored = normalizeFace(sessionStorage.getItem(STORAGE_KEY));

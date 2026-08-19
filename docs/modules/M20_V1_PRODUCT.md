@@ -1,7 +1,7 @@
 # M20 — v1 product (sequence · fence)
 
-**Status:** design lock only — **no implement this card**  
-**Date:** 2026-08-19 (v1.0)  
+**Status:** sequence fence — **phase 3a first-open METAL** (2026-08-19); wedge / remaining polish / package not this card  
+**Date:** 2026-08-19 (v1.3)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone / later display via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** product fence + ordered next work — **not** a new organ, **not** a taste rewrite, **not** a voice-vendor thesis  
@@ -15,9 +15,10 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
-| **v1.0** | 2026-08-19 | Sequence + fence lock. No code. |
+| **v1.3** | 2026-08-19 | **METAL phase 3a:** first-open face+name on the existing device registry (`ada_hud_device` + `facts/hud_devices.yaml` + `POST /api/device`). Modal owns first visit; operator confirms face; optional name; Skip still stamps. Session picker remains the later override. Not 3b/3c/3d, not phase 4. |
 | **v1.2** | 2026-08-19 | METAL: TTS of final ack skips `stop=error` / `no_key` (do not speak cortex dumps). Confirm-pending skip unchanged. |
 | **v1.1** | 2026-08-19 | Pointer only → [`M20a_VOICE_PATH.md`](./M20a_VOICE_PATH.md). OPEN #1 cheap path **locked** (Pi STT+TTS organs). Local full-loop still PARK. |
+| **v1.0** | 2026-08-19 | Sequence + fence lock. No code. |
 
 ---
 
@@ -75,7 +76,7 @@ Daily ADA already works (chat-home, Confirm, life capture, faces, `nutrition_day
 | Chat-home | Stream + composer + Today strip + Body drawer (M14/M17). Chat owns height. |
 | Confirm | Gateway cards in stream (M15). Observe/Plan/Agent still the dial. |
 | Life capture | M19a P0/P1 packs + fast-path tools; `_speak_*` templates are the **mouth today**. |
-| Faces | One HTML; `data-face=phone\|mac\|display`; thin device cookie + `facts/hud_devices.yaml`; HUD `user` events stamp `input`/`face`/`device_*`. |
+| Faces | One HTML; `data-face=phone\|mac\|display`; thin device cookie + `facts/hud_devices.yaml`; HUD `user` events stamp `input`/`face`/`device_*`. **First-open** modal confirms face + optional name before daily use (`?face=` still wins; Session picker stays the later change path). |
 | Mac desk | Small idle orb + **visible** stream + **one** panel slot + Body 1 click. |
 | First panel | Deterministic `nutrition_day` from receipt / `GET /api/life/day` JSON; additive SSE `view_open`. Light markdown. |
 | Birth / Dream / tests | M16 birth-pack CLI + seeds; Dream = overnight manage (M04/M11); pytest uses `ADA_DATA_ROOT`. |
@@ -87,7 +88,7 @@ Daily ADA already works (chat-home, Confirm, life capture, faces, `nutrition_day
 | Voice transport | **No** mic / STT / TTS. `input=typed` only. |
 | Mouth | Register pass + numeric guard **not** shipped. Fast-path still sounds like a template. |
 | Life panels | **Only** `nutrition_day`. Gym / time / habits / people / dues packs exist; HUD templates do not. |
-| Feel | Faces/stream/Body work; they do not yet read as a finished ADA product (M17 still owns taste). |
+| Feel | Faces/stream/Body work; first-open is no longer “picker buried in Session only.” Phone/Mac visual polish, hide Plan, morning workflows still later (3b–3d). M17 still owns taste. |
 | Package | Birth pack is an operator CLI, not a clean-newborn **product** (onboarding + secrets + “add a window ≠ reinstall”). |
 | Later | P2 mail, Plan/campaigns as product, split-session, native companion, kiosk. |
 
@@ -144,7 +145,7 @@ M19b F-M19b-* still bind the wedge/mouth/faces slice when that code is written.
 | 1 | **Cheap STT/TTS path** | **LOCKED in M20a:** Pi-owned cascade (faster-whisper + Piper). Cloud speech / Gemini Live **rejected**. Local full-loop still **PARK**. |
 | 2 | **Which remaining panels land in polish** | Registry pattern locked; inventory is taste + live UI, not a ship checklist here. |
 | 3 | **Newborn UX depth** | M16 `ada body birth` + secrets dir remain the spine; HUD wizard vs CLI-only is phase 4, not a wedge gate. |
-| 4 | **Phone PTT vs Mac-first** | Same wedge architecture; Mac desk first if a slice must split — not a second product. |
+| 4 | **Phone PTT vs Mac-first** | Same wedge architecture; Mac desk first if a slice must split — not a second product. **Phase 3a did not split this:** one first-open modal, same `phone\|mac\|display` faces, same registry. Mac-first visual polish is 3c, not a new plane. |
 | 5 | **TTS mute** | Wedge speaks final text; a FACT mute is allowed later. Not a reason to skip TTS in phase 2. |
 
 **Do not reopen as OPEN:** sequence 1→5; preview-then-Send; register pass ON with fail-closed template; chat-home; one Mac face; three auth planes; Dream-as-manage; modes as permission gates; P2-not-now.
@@ -165,4 +166,4 @@ This card exists so later chats **execute** without re-arguing sequence.
 
 ---
 
-*End M20 v1 product fence. Design only.*
+*End M20 v1 product fence. Sequence 1→5 still locked; phase 3a first-open is METAL.*

@@ -1,6 +1,6 @@
-/** Thin device registry client — names + cookie/localStorage id (M19b v1.6). */
+/** Thin device registry client — names + cookie/localStorage id (M19b v1.6 / M20 3a). */
 
-import { currentFace } from "./face.js";
+import { applyFace, currentFace, hintFace, urlFace } from "./face.js";
 
 const STORAGE_ID = "ada_hud_device";
 const STORAGE_PROMPTED = "ada_hud_device_prompted";
@@ -100,16 +100,36 @@ function alreadyPrompted(id) {
   }
 }
 
-async function closePrompt(dialog, { name, id }) {
-  if (name) {
-    await postDevice({
-      name,
-      device_id: id,
-      face: currentFace(),
-    });
-  }
+function selectedFace(form) {
+  const checked = form && form.querySelector('input[name="device-face"]:checked');
+  return (checked && checked.value) || currentFace() || hintFace();
+}
+
+function hintFirstOpenFace() {
+  return urlFace() || currentFace() || hintFace();
+}
+
+function applyConfirmedFace(face) {
+  if (urlFace()) return;
+  applyFace(face);
+}
+
+function setFaceRadios(form, face) {
+  const radios = form.querySelectorAll('input[name="device-face"]');
+  let matched = false;
+  radios.forEach((el) => {
+    el.checked = el.value === face;
+    if (el.checked) matched = true;
+  });
+  if (!matched && radios[0]) radios[0].checked = true;
+}
+
+async function stampWindow(id, { name, face }) {
+  const payload = { device_id: id, face };
+  if (name) payload.name = name;
+  await postDevice(payload);
+  applyConfirmedFace(face);
   markPrompted(id);
-  if (dialog && dialog.open) dialog.close();
 }
 
 export async function wireDevice() {
@@ -135,18 +155,37 @@ export async function wireDevice() {
   const input = document.getElementById("device-name-input");
   const skip = document.getElementById("device-name-skip");
   if (!dialog || !form) {
-    await postDevice({ device_id: id, face: currentFace() });
-    markPrompted(id);
+    await stampWindow(id, { name: null, face: currentFace() });
     return;
   }
 
-  skip?.addEventListener("click", async () => {
-    await closePrompt(dialog, { name: null, id });
+  setFaceRadios(form, hintFirstOpenFace());
+
+  let finishing = false;
+  const finish = async ({ name }) => {
+    if (finishing) return;
+    finishing = true;
+    const face = selectedFace(form);
+    try {
+      await stampWindow(id, { name, face });
+    } catch (_) {
+      markPrompted(id);
+      applyConfirmedFace(face);
+    }
+    if (dialog.open) dialog.close();
+  };
+
+  skip?.addEventListener("click", () => {
+    finish({ name: null });
   });
-  form.addEventListener("submit", async (ev) => {
+  dialog.addEventListener("cancel", (ev) => {
+    ev.preventDefault();
+    finish({ name: null });
+  });
+  form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const name = (input && input.value.trim()) || "";
-    await closePrompt(dialog, { name, id });
+    finish({ name });
   });
   try {
     dialog.showModal();
