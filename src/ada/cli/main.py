@@ -59,6 +59,10 @@ life_app = typer.Typer(
     help="Life capture: meals, gym, time (M19a).",
     no_args_is_help=True,
 )
+voice_app = typer.Typer(
+    help="Voice organs: pull local STT/TTS weights (M20).",
+    no_args_is_help=True,
+)
 app.add_typer(body_app, name="body")
 app.add_typer(hud_app, name="hud")
 app.add_typer(memory_app, name="memory")
@@ -69,6 +73,7 @@ app.add_typer(watch_app, name="watch")
 app.add_typer(web_app, name="web")
 app.add_typer(tier_a_app, name="tier-a")
 app.add_typer(life_app, name="life")
+app.add_typer(voice_app, name="voice")
 
 
 def _exit_body_fault(exc: BodyFault) -> None:
@@ -1688,6 +1693,20 @@ def tier_a_check(
             console.print(tail)
     if proc.returncode != 0:
         raise typer.Exit(code=proc.returncode)
+
+
+@voice_app.command("pull")
+def voice_pull() -> None:
+    """Download tiny.en + Piper lessac-medium onto the HDD models/voice tree."""
+    try:
+        from ada.voice.pull import pull_voice_models
+
+        result = pull_voice_models()
+    except Exception as exc:  # noqa: BLE001
+        err_console.print(f"[red]voice pull failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"whisper: {result['whisper']}")
+    console.print(f"piper:   {result['piper']}")
 
 
 @app.callback()

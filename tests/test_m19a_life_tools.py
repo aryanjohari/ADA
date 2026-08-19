@@ -11,7 +11,7 @@ from ada.io.paths import get_paths
 from ada.logs.connection import open_life_db
 from ada.logs.gym_import import import_exercise_seed
 from ada.tools.gateway import Gateway
-from ada.tools.toolspec import SPECS_BY_NAME, WRITE_TOOL_NAMES
+from ada.tools.toolspec import SPECS_BY_NAME, WRITE_TOOL_NAMES, function_declarations
 
 
 @pytest.fixture
@@ -148,3 +148,51 @@ def test_observe_allows_gym_status(data_root: Path) -> None:
     obs = gw.execute("life_gym_status", {})
     assert obs.ok
     assert "sets_today" in (obs.data or {})
+
+
+def _iter_array_schemas(node: object, path: str):
+    if not isinstance(node, dict):
+        return
+    if node.get("type") == "array":
+        yield path, node
+        items = node.get("items")
+        if isinstance(items, dict):
+            yield from _iter_array_schemas(items, path + ".items")
+    props = node.get("properties")
+    if isinstance(props, dict):
+        for key, val in props.items():
+            child = f"{path}.{key}" if path else key
+            yield from _iter_array_schemas(val, child)
+
+
+def test_function_declaration_arrays_have_items() -> None:
+    missing: list[str] = []
+    for decl in function_declarations():
+        name = str(decl.get("name") or "?")
+        params = decl.get("parameters") or {}
+        for path, schema in _iter_array_schemas(params, name):
+            if "items" not in schema:
+                missing.append(path)
+    assert missing == []
+
+
+def test_life_array_item_schemas_match_organs() -> None:
+    """Honest/minimal items — fields the organ reads; no fake required."""
+    meal_lines = SPECS_BY_NAME["life_meal_log"].schema["parameters"]["properties"]["lines"]
+    assert meal_lines["items"]["type"] == "object"
+    assert "required" not in meal_lines["items"]
+    assert "display_name" in meal_lines["items"]["properties"]
+    fix_lines = SPECS_BY_NAME["life_meal_fix"].schema["parameters"]["properties"]["lines"]
+    assert fix_lines["items"]["type"] == "object"
+    assert "required" not in fix_lines["items"]
+    sets = SPECS_BY_NAME["life_lift_log"].schema["parameters"]["properties"]["sets"]
+    assert sets["items"]["type"] == "object"
+    assert "exercise_name" in sets["items"]["properties"]
+    assert "required" not in sets["items"]
+    components = SPECS_BY_NAME["life_food_preset_save"].schema["parameters"]["properties"][
+        "components"
+    ]
+    assert components["items"]["type"] == "object"
+    assert "required" not in components["items"]
+    steps = SPECS_BY_NAME["life_routine_run"].schema["parameters"]["properties"]["steps"]
+    assert steps["items"]["type"] == "string"

@@ -11,8 +11,9 @@ import { wireDevice } from "./device.js";
 import { wireFace } from "./face.js";
 import { wireModeDial } from "./mode.js";
 import { wireSession } from "./session.js";
-import { wireChat } from "./stream.js";
+import { streamState, wireChat } from "./stream.js";
 import { startTodayPoll, refreshToday } from "./today.js";
+import { wireVoice } from "./voice.js";
 import { wireXray, xrayList } from "./xray.js";
 
 wireFace();
@@ -20,6 +21,10 @@ wireDevice();
 wireSession({ refreshMode });
 wireComposerChips();
 wireModeDial();
+wireVoice({
+  isBusy: () => streamState.busy,
+  sawConfirm: () => streamState.sawConfirm,
+});
 wireChat({
   refreshTail: async () => {
     await refreshTail();

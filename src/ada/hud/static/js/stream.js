@@ -6,6 +6,13 @@ import { getSelectedMode, setSelectedMode } from "./mode.js";
 import { requireSessionForMode } from "./session.js";
 import { esc, truncJson } from "./util.js";
 import { applyViewOpen } from "./view_registry.js";
+import {
+  composerInputKind,
+  resetComposerInputKind,
+  setVoiceState,
+  speakFinal,
+  voiceState,
+} from "./voice.js";
 
 /** Set by wireChat — avoids circular import with body.js */
 let _refreshTail = async () => {};
@@ -19,12 +26,17 @@ const CONFIRMABLE = new Set([
   "artifact_write",
 ]);
 
+/** Cortex/config faults — do not TTS the dump. Confirm-pending skip stays. */
+const SKIP_TTS_STOPS = new Set(["error", "no_key"]);
+
 export const streamState = {
   lastUsage: null,
   lastToolCardId: null,
   lastPlanText: null,
   lastPlan: null,
   busy: false,
+  sawConfirm: false,
+  pendingInput: "typed",
 };
 
 function appendNode(node) {
@@ -214,6 +226,20 @@ function appendTurnFooter(payload) {
   streamState.lastUsage = null;
   div.textContent = t;
   appendNode(div);
+  if (streamState.pendingInput === "stt") {
+    if (streamState.sawConfirm) {
+      setVoiceState("confirm-pending");
+    } else if (SKIP_TTS_STOPS.has(payload.stop_reason || "")) {
+      setVoiceState("idle");
+    } else {
+      const ack = (payload && payload.text) || "";
+      speakFinal(ack);
+    }
+  } else if (streamState.sawConfirm) {
+    setVoiceState("confirm-pending");
+  } else {
+    setVoiceState("idle");
+  }
 }
 
 function makeToolCard(payload) {
@@ -250,6 +276,8 @@ function makeConfirmCard(payload) {
   const tool = payload.tool || "?";
   const args = payload.args || {};
   const pendingId = payload.pending_id || payload.receipt_id || null;
+  streamState.sawConfirm = true;
+  setVoiceState("confirm-pending");
   const card = document.createElement("div");
   card.className = "confirm-card";
   const wired = CONFIRMABLE.has(tool);
@@ -397,16 +425,19 @@ function parseSseChunk(buffer, onEvent) {
   return rest;
 }
 
-export async function sendChat(message, mode, chip = null) {
+export async function sendChat(message, mode, chip = null, input = "typed") {
   if (!requireSessionForMode(mode)) {
     appendFault({ message: "session required for " + mode });
     return;
   }
   const btn = document.getElementById("chat-send");
   streamState.busy = true;
+  streamState.sawConfirm = false;
+  streamState.pendingInput = input === "stt" ? "stt" : "typed";
+  setVoiceState("busy");
   btn.disabled = true;
   try {
-    const resp = await openChatStream(message, mode, chip);
+    const resp = await openChatStream(message, mode, chip, streamState.pendingInput);
     if (resp.status === 401) {
       const err = await resp.json();
       appendFault({
@@ -434,6 +465,9 @@ export async function sendChat(message, mode, chip = null) {
   } finally {
     streamState.busy = false;
     btn.disabled = false;
+    if (voiceState() === "busy") {
+      setVoiceState(streamState.sawConfirm ? "confirm-pending" : "idle");
+    }
   }
 }
 
@@ -447,10 +481,12 @@ export function wireChat({ refreshTail, refreshMode } = {}) {
     if (!msg || streamState.busy) return;
     const mode = getSelectedMode();
     const chip = input.dataset.packChip || null;
+    const kind = composerInputKind();
     if (!requireSessionForMode(mode)) return;
     appendUserTurn(msg);
     input.value = "";
     input.dataset.packChip = "";
-    sendChat(msg, mode, chip);
+    resetComposerInputKind();
+    sendChat(msg, mode, chip, kind);
   });
 }

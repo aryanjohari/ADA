@@ -341,3 +341,65 @@
   min-height: 3rem;
   font-weight: 600;
 }
+
+.mic-btn {
+  min-width: 3rem;
+  min-height: 3rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+}
+
+.mic-btn:focus-visible {
+  outline-offset: 3px;
+}
+
+.mic-btn[data-state="idle"] {
+  color: var(--muted);
+}
+
+.mic-btn[data-state="listening"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.mic-btn[data-state="busy"],
+.mic-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mic-btn[data-state="speaking"] {
+  color: var(--accent);
+}
+
+.mic-btn[data-state="confirm-pending"] {
+  border-color: var(--warn, #c4a35a);
+  color: var(--warn, #c4a35a);
+}
+
+.voice-speak-chip {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+.voice-speak-chip[hidden] {
+  display: none;
+}
+
+.chat-form {
+  flex-wrap: wrap;
+}

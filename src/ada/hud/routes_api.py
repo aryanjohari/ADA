@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, File, Request, UploadFile
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ada.body import identity as identity_mod
@@ -38,6 +38,8 @@ from ada.hud.today import build_today
 from ada.hud.xray import XrayError, list_entries, read_file
 from ada.io.paths import BodyFault, DataPaths, get_paths
 from ada.tools.body_tools import run_body_doctor
+from ada.voice.organs import synthesize_speech, transcribe_audio
+from ada.voice.stt import MAX_AUDIO_BYTES
 
 router = APIRouter(prefix="/api")
 
@@ -78,6 +80,10 @@ class PlanAcceptBody(BaseModel):
     plan_id: str | None = None
     steps: list[PlanStepBody] = Field(default_factory=list)
     raw_text: str | None = None
+
+
+class TtsBody(BaseModel):
+    text: str = Field(min_length=1)
 
 
 # Tools whose schemas accept confirmed=true (Consent Integrity re-drive).
@@ -435,6 +441,41 @@ def api_chat(request: Request, body: ChatBody) -> StreamingResponse | JSONRespon
     if set_cookie:
         set_device_cookie(resp, device_id)
     return resp
+
+
+@router.post("/voice/stt")
+def api_voice_stt(audio: UploadFile = File(...)) -> JSONResponse:
+    """Pi STT organ. Fills composer only — never run_turn. No Agent session."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        piece = audio.file.read(64 * 1024)
+        if not piece:
+            break
+        total += len(piece)
+        if total > MAX_AUDIO_BYTES:
+            return JSONResponse(
+                content={"transcript": "", "refused": True, "reason": "too_large"}
+            )
+        chunks.append(piece)
+    blob = b"".join(chunks)
+    result = transcribe_audio(blob)
+    return JSONResponse(
+        content={
+            "transcript": result.transcript,
+            "refused": bool(result.refused),
+            "reason": result.reason,
+        }
+    )
+
+
+@router.post("/voice/tts")
+def api_voice_tts(body: TtsBody) -> Response:
+    """Pi TTS organ. Speaks the final ack only. 503 skip on load refuse."""
+    wav = synthesize_speech(body.text)
+    if wav is None:
+        return Response(status_code=503, content=b"", media_type="audio/wav")
+    return Response(content=wav, media_type="audio/wav")
 
 
 @router.post("/confirm", response_model=None)

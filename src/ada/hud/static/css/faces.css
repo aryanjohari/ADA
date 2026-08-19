@@ -31,18 +31,21 @@
   justify-content: center;
 }
 
-.ada-orb-disc {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 32% 28%,
-    color-mix(in srgb, var(--accent) 55%, var(--surface)),
-    var(--accent-dim) 70%
-  );
-  border: 1px solid var(--accent-dim);
-  opacity: 0.85;
+.ada-orb[data-state="listening"] .ada-orb-disc {
+  opacity: 1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.ada-orb[data-state="busy"] .ada-orb-disc {
+  opacity: 0.55;
+}
+
+.ada-orb[data-state="speaking"] .ada-orb-disc {
+  opacity: 1;
+}
+
+.ada-orb[data-state="confirm-pending"] .ada-orb-disc {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn, #c4a35a) 55%, transparent);
 }
 
 .view-slot {

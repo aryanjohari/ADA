@@ -85,7 +85,12 @@
           </div>
           <label class="sr-only" for="chat-input">Message</label>
           <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
+          <button type="button" id="chat-mic" class="mic-btn" aria-label="Hold to talk" data-state="idle">mic</button>
           <button type="submit" id="chat-send" class="primary">Send</button>
+          <p id="voice-speak-chip" class="voice-speak-chip" hidden>
+            <span>ADA speaking…</span>
+            <button type="button" id="voice-stop" class="ghost">Stop</button>
+          </p>
         </form>
       </section>
       <aside class="view-slot" id="view-slot" aria-label="View">

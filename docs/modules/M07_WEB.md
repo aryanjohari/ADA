@@ -518,6 +518,7 @@ ToolSpec(
 - `TOOL_NAMES = frozenset(s.name for s in SPECS)`  
 - `WRITE_TOOL_NAMES` derived from `append_local` / confirm writes  
 - `function_declarations()` = `[s.schema for s in SPECS]`  
+- Gemini FunctionDeclaration arrays need `items` (METAL 2026-08-19 — 400 INVALID_ARGUMENT otherwise). ADA schemas live in [`toolspec.py`](../../src/ada/tools/toolspec.py); the Gemini adapter must not special-case this.  
 - `Gateway.execute`: lookup spec → mode/egress/allowlist → handler  
 - **Grouped schemas** = `group` field for HUD menus + charter sections — Gemini still gets a **flat** list (Cursor-like menus are UX, not a bus)  
 - Allowlists **per tool** (`web_fetch` hosts; later `email_send` recipients) live next to the spec or in FACTS (`prefs.web_allowlist`) — not a plugin `hooks.py`

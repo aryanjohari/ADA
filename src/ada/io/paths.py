@@ -153,6 +153,29 @@ class DataPaths:
     def dream_sent(self) -> Path:
         return self.dream / "sent"
 
+    @property
+    def models(self) -> Path:
+        """Organ weights on the HDD — not autobiography, not git."""
+        return self.root / "models"
+
+    @property
+    def models_voice(self) -> Path:
+        return self.models / "voice"
+
+    @property
+    def models_voice_whisper(self) -> Path:
+        """faster-whisper download_root (never ~/.cache/huggingface)."""
+        return self.models_voice / "faster-whisper"
+
+    @property
+    def models_voice_piper(self) -> Path:
+        return self.models_voice / "piper"
+
+    def ensure_voice_model_dirs(self) -> None:
+        """Create models/voice/{faster-whisper,piper} lazily. Not a memory dir."""
+        self.models_voice_whisper.mkdir(parents=True, exist_ok=True)
+        self.models_voice_piper.mkdir(parents=True, exist_ok=True)
+
     def ensure_memory_dirs(self) -> None:
         """Create memory layout dirs lazily (facts, worldview, dreams, staging)."""
         for d in (

@@ -15,6 +15,7 @@ from ada.cortex.charter import (
 )
 from ada.cortex.cost import estimate_usd
 from ada.cortex.gemini import observation_to_content, user_content
+from ada.harness.mouth import apply_register_pass
 from ada.harness.pack_router import ADMIN_WRITE_VERBS, CONFIRM_BOUND_VERBS, READ_PACK_VERBS
 from ada.harness.plan_artifact import parse_plan_from_assistant
 from ada.harness.session import ChatSession
@@ -29,6 +30,9 @@ _CHILL_CUE = re.compile(
 _FACT_TOOLS_BLOCKED_ON_LIFE_PACK = frozenset(
     {"memory_facts_append", "memory_facts_propose_edit"}
 )
+
+# Honest ack when Gemini returns no text and no tools (not a retry, not a mouth).
+EMPTY_CORTEX_ACK = "No reply that turn. Try once more."
 
 
 def detect_chill_cue(user_text: str) -> bool:
@@ -817,8 +821,14 @@ def run_turn(
     if fast_stop:
         stop_reason = fast_stop
         last_text = fast_text
-        if fast_text:
-            sink.emit("token_delta", {"text": fast_text})
+        if fast_stop == "pack_fast_path" and fast_text:
+            last_text = apply_register_pass(
+                adapter,
+                receipts=receipts,
+                template=fast_text,
+            )
+        if last_text:
+            sink.emit("token_delta", {"text": last_text})
         if end_session:
             session.end(stop_reason=stop_reason, steps=steps)
         return LoopResult(
@@ -861,7 +871,13 @@ def run_turn(
             sink.emit("token_delta", {"text": turn.text})
 
         if not turn.tool_calls:
-            stop_reason = "completed"
+            if not turn.text:
+                stop_reason = "empty_cortex"
+                last_text = EMPTY_CORTEX_ACK
+                session.writer.append("fault", {"where": "cortex.empty"})
+                sink.emit("token_delta", {"text": last_text})
+            else:
+                stop_reason = "completed"
             if turn.raw is not None and getattr(turn.raw, "candidates", None):
                 cand = turn.raw.candidates[0]
                 if getattr(cand, "content", None) is not None:

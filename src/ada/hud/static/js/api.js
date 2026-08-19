@@ -78,7 +78,7 @@ export async function postPlanAccept(plan) {
   return { ok: r.ok, status: r.status, data };
 }
 
-export async function openChatStream(message, mode, chip = null) {
+export async function openChatStream(message, mode, chip = null, input = "typed") {
   return fetch("/api/chat", {
     method: "POST",
     credentials: "same-origin",
@@ -90,9 +90,30 @@ export async function openChatStream(message, mode, chip = null) {
       message,
       mode,
       chip,
-      input: "typed",
+      input: input === "stt" ? "stt" : "typed",
       face: currentFace(),
       device_id: getDeviceId(),
     }),
+  });
+}
+
+export async function postVoiceStt(blob) {
+  const body = new FormData();
+  body.append("audio", blob, "utterance.webm");
+  const r = await fetch("/api/voice/stt", {
+    method: "POST",
+    credentials: "same-origin",
+    body,
+  });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
+}
+
+export async function postVoiceTts(text) {
+  return fetch("/api/voice/tts", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
   });
 }

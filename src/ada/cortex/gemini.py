@@ -100,14 +100,17 @@ class GeminiAdapter:
         contents: list[Any],
         tools: list[Any] | None = None,
     ) -> CortexTurn:
-        tool_list = tools if tools is not None else [_declarations_as_tool()]
-        config = types.GenerateContentConfig(
-            system_instruction=system,
-            tools=tool_list,
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+        config_kwargs: dict[str, Any] = {
+            "system_instruction": system,
+            "automatic_function_calling": types.AutomaticFunctionCallingConfig(
                 disable=True
             ),
-        )
+        }
+        if tools is None:
+            config_kwargs["tools"] = [_declarations_as_tool()]
+        elif tools:
+            config_kwargs["tools"] = tools
+        config = types.GenerateContentConfig(**config_kwargs)
         response = self._client.models.generate_content(
             model=self.model,
             contents=contents,

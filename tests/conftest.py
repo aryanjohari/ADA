@@ -14,6 +14,12 @@ def _gym_catalog_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ADA_GYM_CATALOG_FETCH", "off")
 
 
+@pytest.fixture(autouse=True)
+def _voice_no_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests never load Whisper/Piper or download weights."""
+    monkeypatch.setenv("ADA_VOICE_WARMUP", "0")
+
+
 @pytest.fixture
 def data_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "ada-data"

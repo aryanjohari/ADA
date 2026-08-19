@@ -28,6 +28,42 @@ _OBSERVE_AGENT_PLAN: frozenset[ModeName] = frozenset({"observe", "agent", "plan"
 _OBSERVE_AGENT: frozenset[ModeName] = frozenset({"observe", "agent"})
 _AGENT_ONLY: frozenset[ModeName] = frozenset({"agent"})
 
+# Item schemas for Gemini FunctionDeclaration arrays (items required).
+# Fields match what the organs already read; no fake required keys.
+_FOOD_LINE_ITEMS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "display_name": {"type": "string"},
+        "ref_id": {"type": "string"},
+        "preset_id": {"type": "string"},
+        "serving_qty": {"type": "number"},
+        "serving_unit": {"type": "string"},
+        "serving_grams": {"type": "number"},
+        "provenance": {"type": "string"},
+        "nutrients": {"type": "object"},
+        "snapshot_json": {"type": "object"},
+    },
+}
+_GYM_SET_ITEMS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "exercise_name": {"type": "string"},
+        "name": {"type": "string"},
+        "load_kg": {"type": "number"},
+        "reps": {"type": "integer"},
+        "set_type": {"type": "string"},
+    },
+}
+_PRESET_COMPONENT_ITEMS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "ref_id": {"type": "string"},
+        "display_name": {"type": "string"},
+        "serving_qty": {"type": "number"},
+        "serving_unit": {"type": "string"},
+    },
+}
+
 
 def _schema(
     name: str,
@@ -635,7 +671,11 @@ SPECS: tuple[ToolSpec, ...] = (
             "life_meal_log",
             "Log a meal with food lines and nutrient snapshots.",
             {
-                "lines": {"type": "array", "description": "Food line objects"},
+                "lines": {
+                    "type": "array",
+                    "items": _FOOD_LINE_ITEMS,
+                    "description": "Food line objects",
+                },
                 "note": {"type": "string"},
                 "meal_slot": {"type": "string"},
             },
@@ -651,7 +691,14 @@ SPECS: tuple[ToolSpec, ...] = (
         schema=_schema(
             "life_meal_fix",
             "Fix a meal by append-only revision.",
-            {"meal_id": {"type": "string"}, "lines": {"type": "array"}},
+            {
+                "meal_id": {"type": "string"},
+                "lines": {
+                    "type": "array",
+                    "items": _FOOD_LINE_ITEMS,
+                    "description": "Food line objects",
+                },
+            },
             required=["lines"],
         ),
     ),
@@ -689,7 +736,11 @@ SPECS: tuple[ToolSpec, ...] = (
             "life_lift_log",
             "Append gym sets to session.",
             {
-                "sets": {"type": "array"},
+                "sets": {
+                    "type": "array",
+                    "items": _GYM_SET_ITEMS,
+                    "description": "Gym set objects",
+                },
                 "session_id": {"type": "string"},
             },
             required=["sets"],
@@ -777,7 +828,11 @@ SPECS: tuple[ToolSpec, ...] = (
             "Save food preset to FACTS.",
             {
                 "name": {"type": "string"},
-                "components": {"type": "array"},
+                "components": {
+                    "type": "array",
+                    "items": _PRESET_COMPONENT_ITEMS,
+                    "description": "Preset food components",
+                },
                 "confirmed": {"type": "boolean"},
             },
             required=["name"],
@@ -827,7 +882,11 @@ SPECS: tuple[ToolSpec, ...] = (
             {
                 "routine_id": {"type": "string"},
                 "name": {"type": "string"},
-                "steps": {"type": "array"},
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Step labels to tick (omit = all)",
+                },
             },
         ),
     ),

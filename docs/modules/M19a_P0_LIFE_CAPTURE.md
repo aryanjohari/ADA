@@ -1,6 +1,6 @@
 # M19a — P0 Life Capture (implement spec)
 
-**Status:** design + implement spec (**v1.7**) — **P0.5 + gym catalog remote-default / NL fold lookup shipped**; M19b PTT/camera still blocked until **live** operator HUD smoke PASS  
+**Status:** design + implement spec (**v1.8**) — **P0.5 + gym catalog remote-default / NL fold lookup shipped**; Gemini FunctionDeclaration `items` on life array schemas (2026-08-19); M19b PTT/camera still blocked until **live** operator HUD smoke PASS  
 **Date:** 2026-08-17  
 **Kind:** Tier B **implement slice** — child of [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md)  
 **Depends on:** M19 (catalog/phases) · [`M18_CLOSE_TIER_A.md`](./M18_CLOSE_TIER_A.md) (kernel freeze gate) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) / [`M16_OPERATOR_NOTE.md`](./M16_OPERATOR_NOTE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (strip/sheet locks) · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`../01_BODY.md`](../01_BODY.md) (SQLite WAL durability notes §6.2) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill) · [`M07_WEB.md`](./M07_WEB.md) (egress for USDA/OFF only)  
@@ -14,6 +14,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.8** | 2026-08-19 | **METAL:** Gemini FunctionDeclaration arrays require `items` (400 INVALID_ARGUMENT otherwise). ADA schemas live in [`toolspec.py`](../../src/ada/tools/toolspec.py) — `life_meal_log`/`fix` `lines`, `life_lift_log` `sets`, `life_food_preset_save` `components`, `life_routine_run` `steps`. Adapter does not special-case this. |
 | **v1.7** | 2026-08-18 | **Gym catalog boot default + NL gap:** first empty `open_life_db` fetches free-exercise-db (opt out `ADA_GYM_CATALOG_FETCH=off`); fold/alias lookup so `pull-ups` hits `Pullups`; merge bundled seed aliases (`flat bench`); import stores `force`→movement, primary+secondary muscles, `body only`→bodyweight. Rebuild tags: `DELETE FROM exercise_catalog` then `ada life gym-init`. |
 | **v1.6** | 2026-08-18 | **P0.5 close:** FDC **detail** fetch (`GET /fdc/v1/food/{fdcId}`) before cache insert; expanded `FDC_NUTRIENT_MAP` + CORE slots (Ca/Fe/Mg/P/K/Zn, A/C/D, B-vits per §5); `honest_partial` on CORE null only. Bodyweight gym NL (`pull-ups x8`, `10 pull-ups`, `3x10 pull-ups`; `load_kg: null`). `gym-import-seed --path` accepts wger/exercisedb JSON. HUD fast-path emits `token_delta` canned speak (no Gemini; `steps=0`). Operator smoke: [`M19a_P05_HARDENING.md`](../reviews/M19a_P05_HARDENING.md). |
 | **v1.5** | 2026-08-17 | **P0.2 close:** YAML `aliases:` (not per-organ ifs); read packs (`nutrition_day` / `time_status` / `due_list` / `gym_status` / `life_status`) fast-path in **Observe + Agent**; admin writes `due_add` / `remind` / `due_done` + `due_spine.py` Agent-only; due chip bind (`chips.due` → `due_add`, prefill `add due: `); custom Banana class-fix (`ada life food-forget`) — thin custom stubs miss through to USDA when key present. Do not invent Ca/Fe/C/D. |
@@ -182,6 +183,7 @@
 | Composer chips | Prefill + `data-chip` → `POST /api/chat` `chip` param → `resolve_chip()` | **METAL** (P0.1b) |
 | Food cache / USDA for meal NL | **METAL**: thin custom miss → USDA **detail** when key present; CORE slots null ⇒ `honest_partial` (do not invent Ca/Fe/C/D). `ada life food-forget --name banana` | **METAL** |
 | HUD fast-path speak | **METAL**: `token_delta` canned text on pack fast-path; `steps=0`; no Gemini | **METAL** (P0.5) |
+| Gemini tool schemas | **METAL**: every `function_declarations()` array property has `items` in [`toolspec.py`](../../src/ada/tools/toolspec.py). Social Observe turns still send the full tool list; a missing `items` 400s the whole generate. Not a Gemini-adapter special case. | **METAL** (v1.8) |
 
 ---
 
