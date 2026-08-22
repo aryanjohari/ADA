@@ -39,16 +39,32 @@ export function currentFace() {
   );
 }
 
-export function applyFace(face) {
-  const f = normalizeFace(face) || "mac";
-  document.documentElement.dataset.face = f;
+function persistFace(face) {
   try {
-    sessionStorage.setItem(STORAGE_KEY, f);
+    sessionStorage.setItem(STORAGE_KEY, face);
   } catch (_) {
     /* private mode */
   }
+  try {
+    localStorage.setItem(STORAGE_KEY, face);
+  } catch (_) {
+    /* private mode */
+  }
+}
+
+function notifyFace(face) {
+  document.documentElement.dispatchEvent(
+    new CustomEvent("ada-face", { detail: { face } })
+  );
+}
+
+export function applyFace(face) {
+  const f = normalizeFace(face) || "mac";
+  document.documentElement.dataset.face = f;
+  persistFace(f);
   const sel = document.getElementById("face-select");
   if (sel && sel.value !== f) sel.value = f;
+  notifyFace(f);
   return f;
 }
 
@@ -56,8 +72,14 @@ export function resolveFace() {
   const fromQ = urlFace();
   if (fromQ) return fromQ;
   try {
-    const stored = normalizeFace(sessionStorage.getItem(STORAGE_KEY));
-    if (stored) return stored;
+    const session = normalizeFace(sessionStorage.getItem(STORAGE_KEY));
+    if (session) return session;
+  } catch (_) {
+    /* private mode */
+  }
+  try {
+    const lasting = normalizeFace(localStorage.getItem(STORAGE_KEY));
+    if (lasting) return lasting;
   } catch (_) {
     /* private mode */
   }

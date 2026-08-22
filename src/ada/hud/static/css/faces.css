@@ -1,4 +1,4 @@
-/* M19b v1.6 — faces + Mac desk skeleton. Reuses moss tokens. No new palette. */
+/** M19b v1.6 + M20b §7 + M20c — faces, Mac desk, phone taste, display panels. Steel tokens (M17 §10). */
 
 .session-menu .face-picker-label {
   display: block;
@@ -45,7 +45,7 @@
 }
 
 .ada-orb[data-state="confirm-pending"] .ada-orb-disc {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn, #c4a35a) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--deny) 55%, transparent);
 }
 
 .view-slot {
@@ -256,9 +256,67 @@
   margin-top: var(--space-3);
 }
 
-/* Mac assistant — desk density first: stream visible, small orb, empty slot */
+/* Mac assistant — desk density: stream owns height, thin chrome (M20c) */
 html[data-face="mac"] .home {
   max-width: min(56rem, 100%);
+}
+
+html[data-face="mac"] .brand-block h1 {
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+}
+
+html[data-face="mac"] .welcome-line {
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+html[data-face="mac"] .mode-dial {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.3rem 0.45rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+html[data-face="mac"] .tts-toggle {
+  border: none;
+  padding: 0.35rem;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 0;
+}
+
+html[data-face="mac"] .tts-toggle .tts-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+html[data-face="mac"] .session-menu summary {
+  border: none;
+  padding: 0.35rem 0.45rem;
+  letter-spacing: 0.03em;
+}
+
+html[data-face="mac"] #body-open {
+  border: none;
+  padding: 0.35rem 0.45rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+html[data-face="mac"] #body-open:hover {
+  color: var(--fg);
 }
 
 html[data-face="mac"] .ada-orb {
@@ -273,6 +331,132 @@ html[data-face="mac"] .desk-main {
 
 html[data-face="mac"] .view-slot {
   display: flex;
+  border-style: solid;
+  border-color: var(--line-soft);
+  background: transparent;
+}
+
+html[data-face="mac"] .turn-assistant {
+  border-left-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+html[data-face="mac"] .turn-user {
+  border-left-color: color-mix(in srgb, var(--user) 40%, transparent);
+}
+
+html[data-face="mac"] .confirm-card {
+  border-left-color: var(--deny);
+}
+
+html[data-face="mac"] .confirm-card .card-title {
+  color: var(--deny);
+}
+
+html[data-face="mac"] .tool-card,
+html[data-face="mac"] .plan-card {
+  border-color: var(--line-soft);
+  background: transparent;
+}
+
+html[data-face="mac"] .chat-form textarea {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: var(--space-2) 0;
+}
+
+html[data-face="mac"] .chat-form textarea:focus {
+  border-bottom-color: var(--accent);
+}
+
+html[data-face="mac"] .mic-btn {
+  background: transparent;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-face="mac"] .mic-btn[data-state="listening"] {
+  box-shadow: none;
+}
+
+html[data-face="mac"] .send-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  min-width: auto;
+  min-height: auto;
+  padding: 0.4rem 0.55rem;
+}
+
+html[data-face="mac"] .send-btn:hover:not(:disabled) {
+  background: transparent;
+  color: var(--fg);
+}
+
+html[data-face="mac"] .composer-chips-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: flex-end;
+}
+
+html[data-face="mac"] .composer-chips-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+html[data-face="mac"] .composer-chips-toggle:hover,
+html[data-face="mac"] .composer-chips-toggle.is-open {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+/* .chip-row { display:flex } beats bare [hidden] — gate with !important */
+html[data-face="mac"] .composer-chips {
+  display: none !important;
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  min-width: 12rem;
+  max-width: min(22rem, 70vw);
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+html[data-face="mac"] .composer-chips.is-open {
+  display: flex !important;
+}
+
+html[data-face="mac"] .composer-chips .composer-chip {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--line-soft);
+  cursor: pointer;
+}
+
+html[data-face="mac"] .composer-chips .composer-chip:hover {
+  color: var(--fg);
+  border-color: var(--line);
 }
 
 html[data-face="mac"][data-density="glance"] .ada-orb {
@@ -284,38 +468,258 @@ html[data-face="mac"][data-density="glance"] .desk-main {
   grid-template-columns: minmax(0, 1fr) minmax(12rem, 20rem);
 }
 
-/* Phone — thin ingress: composer + Send + Confirm; hide theater / orb / week-ish */
+/* Phone — thin ingest: composer + Send + Confirm; hide theater / clutter (M20b §7) */
 html[data-face="phone"] .home {
   max-width: var(--max-chat);
+  padding-top: var(--space-2);
 }
 
 html[data-face="phone"] .ada-orb,
 html[data-face="phone"] .view-slot,
 html[data-face="phone"] .body-theater,
 html[data-face="phone"] .week-chrome,
+html[data-face="phone"] #body-open,
+html[data-face="phone"] .tool-card,
+html[data-face="phone"] .plan-card,
+html[data-face="phone"] .turn-footer,
+html[data-face="phone"] #welcome-line,
+html[data-face="phone"] #today-strip,
+html[data-face="phone"] #composer-chips,
+html[data-face="phone"] #composer-chips-wrap,
+html[data-face="phone"] #composer-chips-toggle,
+html[data-face="phone"] #mode-suggest,
+html[data-face="phone"] #session-crumb,
+html[data-face="phone"] #auth-msg,
+html[data-face="phone"] #mode-select,
 html[data-face="phone"] .today-item:nth-child(n + 2),
 html[data-face="phone"] .today-more,
 html[data-face="phone"] .today-pulse {
   display: none !important;
 }
 
-/* Display — panels primary; composer/orb visualizer off; slot grows */
+html[data-face="phone"] #mode-segment {
+  display: inline-flex;
+}
+
+html[data-face="phone"] .top {
+  min-height: var(--phone-header-h);
+  padding: 0.4rem var(--space-3);
+}
+
+html[data-face="phone"] .brand-block h1 {
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+}
+
+html[data-face="phone"] .brand-block {
+  flex-direction: row;
+  align-items: center;
+}
+
+html[data-face="phone"] .tts-toggle {
+  border: none;
+  padding: 0.35rem;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 0;
+}
+
+html[data-face="phone"] .tts-toggle .tts-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+html[data-face="phone"] .session-menu summary {
+  border: none;
+  padding: 0.35rem 0.45rem;
+  letter-spacing: 0.03em;
+}
+
+html[data-face="phone"] body {
+  background:
+    linear-gradient(180deg, var(--bg1) 0%, var(--bg) 48%, var(--bg) 100%);
+  transition: background var(--field-ease) var(--ease);
+}
+
+html[data-face="phone"][data-field-state="listen"] body {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent) 9%, var(--bg1)) 0%,
+      var(--bg) 55%,
+      var(--bg) 100%
+    );
+}
+
+html[data-face="phone"][data-field-state="busy"] body {
+  background:
+    linear-gradient(180deg, var(--bg) 0%, var(--bg1) 62%, var(--bg) 100%);
+}
+
+html[data-face="phone"][data-field-state="confirm"] body {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--deny) 11%, var(--bg1)) 0%,
+      var(--bg) 52%,
+      var(--bg) 100%
+    );
+}
+
+html[data-face="phone"] .stream:empty::before {
+  content: "Ask ADA anything.";
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+}
+
+html[data-face="phone"] .turn-user .who,
+html[data-face="phone"] .turn-assistant .who {
+  display: none;
+}
+
+html[data-face="phone"] .turn-assistant {
+  border-left-color: transparent;
+  padding-left: 0;
+}
+
+html[data-face="phone"] .turn-user {
+  border-left-color: color-mix(in srgb, var(--user) 35%, transparent);
+}
+
+html[data-face="phone"] .confirm-card {
+  border-left-color: var(--deny);
+}
+
+html[data-face="phone"] .confirm-card .card-title {
+  color: var(--deny);
+}
+
+/* Composer stays one line: override shared flex-wrap + min-content flex base (M20b §7). */
+html[data-face="phone"] .chat-form {
+  flex-wrap: nowrap;
+  width: 100%;
+  align-items: center;
+  min-width: 0;
+}
+
+html[data-face="phone"] .chat-form textarea {
+  flex: 1 1 0;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: var(--space-2) 0;
+}
+
+html[data-face="phone"] .chat-form textarea:focus {
+  border-top-color: var(--accent);
+}
+
+html[data-face="phone"] .mic-btn {
+  flex: 0 0 auto;
+  width: 3rem;
+  height: 3rem;
+  min-width: 3rem;
+  min-height: 3rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+html[data-face="phone"] .mic-btn[data-state="listening"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+html[data-face="phone"] .mic-btn[data-state="confirm-pending"] {
+  border-color: var(--deny);
+  color: var(--deny);
+}
+
+html[data-face="phone"] .send-btn {
+  flex: 0 0 auto;
+  min-width: auto;
+  min-height: auto;
+  padding: 0.4rem 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+html[data-face="phone"] .send-btn:disabled {
+  opacity: 0.35;
+}
+
+html[data-face="phone"] .send-btn[hidden] {
+  display: none !important;
+}
+
+html[data-face="phone"] .desk-row {
+  display: none;
+}
+
+/* Display — panels primary; composer/orb off; quiet chrome (M20c) */
 html[data-face="display"] .home {
   max-width: none;
 }
 
+html[data-face="display"] .brand-block h1 {
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+}
+
 html[data-face="display"] .chat-form,
-html[data-face="display"] .ada-orb {
+html[data-face="display"] .ada-orb,
+html[data-face="display"] #body-open,
+html[data-face="display"] #today-strip,
+html[data-face="display"] #welcome-line,
+html[data-face="display"] #mode-select,
+html[data-face="display"] #mode-segment,
+html[data-face="display"] #mode-suggest,
+html[data-face="display"] #tts-toggle,
+html[data-face="display"] #session-crumb,
+html[data-face="display"] #login-form,
+html[data-face="display"] #composer-chips-wrap {
   display: none !important;
 }
 
 html[data-face="display"] .desk-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr);
   gap: var(--space-3);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+html[data-face="display"] .home-stream {
+  opacity: 0.72;
+}
+
+html[data-face="display"] .stream {
+  font-size: 0.9rem;
 }
 
 html[data-face="display"] .view-slot {
   display: flex;
-  min-height: 16rem;
+  min-height: 20rem;
+  flex: 1 1 auto;
+  border-style: solid;
+  border-color: var(--line-soft);
+  background: transparent;
+  padding: var(--space-3);
 }

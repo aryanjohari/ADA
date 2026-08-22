@@ -148,6 +148,15 @@ export async function wireDevice() {
     }
   }
   const id = info.device_id || localId;
+  if (!urlFace() && info.face_hint) {
+    applyFace(info.face_hint);
+  }
+  const sel = document.getElementById("face-select");
+  if (sel) {
+    sel.addEventListener("change", () => {
+      postDevice({ device_id: id, face: sel.value }).catch(() => {});
+    });
+  }
   if (info.name || alreadyPrompted(id)) return;
 
   const dialog = document.getElementById("device-name-dialog");

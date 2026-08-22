@@ -87,6 +87,68 @@
   background: var(--surface-2);
 }
 
+.tts-toggle {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.5rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 0;
+}
+
+.tts-toggle .tts-glyph {
+  display: block;
+}
+
+.tts-toggle .tts-off-slash {
+  display: block;
+}
+
+.tts-toggle.tts-on .tts-off-slash {
+  display: none;
+}
+
+.tts-toggle:not(.tts-on) .tts-waves {
+  opacity: 0.4;
+}
+
+.mode-segment {
+  display: none;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.mode-segment-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 transparent;
+  transition: color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+.mode-segment-btn:hover:not(:disabled) {
+  color: var(--fg);
+  background: transparent;
+}
+
+.mode-segment-btn.active,
+.mode-segment-btn[aria-pressed="true"] {
+  color: var(--fg);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.mode-segment-btn:focus-visible {
+  outline-offset: 2px;
+}
+
 .session-crumb {
   font-size: 0.75rem;
   color: var(--muted);

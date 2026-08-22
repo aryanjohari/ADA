@@ -99,7 +99,12 @@ export async function openChatStream(message, mode, chip = null, input = "typed"
 
 export async function postVoiceStt(blob) {
   const body = new FormData();
-  body.append("audio", blob, "utterance.webm");
+  const type = (blob && blob.type) || "";
+  const name =
+    type.includes("mp4") || type.includes("aac") || type.includes("m4a")
+      ? "utterance.m4a"
+      : "utterance.webm";
+  body.append("audio", blob, name);
   const r = await fetch("/api/voice/stt", {
     method: "POST",
     credentials: "same-origin",

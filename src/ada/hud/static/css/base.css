@@ -74,7 +74,7 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  background: #4a6340;
+  background: #4a6672;
   color: var(--fg);
 }
 

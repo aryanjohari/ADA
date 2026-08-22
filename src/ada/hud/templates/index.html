@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0e1210" />
+  <meta name="theme-color" content="#0a0c0e" />
   <title>{{ title }}</title>
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" href="/static/icons/ada-icon.svg" type="image/svg+xml" />
@@ -32,7 +32,19 @@
         <option value="plan">Plan</option>
         <option value="agent">Agent</option>
       </select>
+      <div id="mode-segment" class="mode-segment" role="group" aria-label="Mode" hidden>
+        <button type="button" class="mode-segment-btn" data-mode="observe" aria-pressed="true">Ask</button>
+        <button type="button" class="mode-segment-btn" data-mode="agent" aria-pressed="false">Agent</button>
+      </div>
       <button type="button" id="mode-suggest" class="mode-suggest" hidden></button>
+      <button type="button" id="tts-toggle" class="ghost tts-toggle" aria-pressed="false" title="Voice replies off">
+        <svg class="tts-glyph" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path class="tts-speaker" d="M11 5 6 9H3v6h3l5 4V5z" />
+          <path class="tts-waves" d="M15.54 8.46a5 5 0 0 1 0 7.07M18.07 5.93a9 9 0 0 1 0 12.14" />
+          <path class="tts-off-slash" d="M2 2l20 20" />
+        </svg>
+        <span class="tts-label sr-only">TTS off</span>
+      </button>
       <span id="session-crumb" class="session-crumb">mesh</span>
       <form id="login-form" class="login-form hidden">
         <label class="sr-only" for="password">Session password</label>
@@ -73,20 +85,33 @@
       <section class="home-stream" aria-label="Chat">
         <div id="stream" class="stream" role="log" aria-live="polite"></div>
         <form id="chat-form" class="chat-form">
-          <div id="composer-chips" class="chip-row composer-chips" aria-label="Quick capture">
-            <button type="button" class="chip composer-chip" data-chip="meal" data-prefill="log meal: ">meal</button>
-            <button type="button" class="chip composer-chip" data-chip="lift" data-prefill="log lift: ">lift</button>
-            <button type="button" class="chip composer-chip" data-chip="focus" data-prefill="start focus: ">focus</button>
-            <button type="button" class="chip composer-chip" data-chip="due" data-prefill="add due: ">due</button>
-            <button type="button" class="chip composer-chip" data-chip="capture" data-prefill="capture: ">capture</button>
-            <button type="button" class="chip composer-chip" data-chip="habit" data-prefill="habit done: ">habit</button>
-            <button type="button" class="chip composer-chip" data-chip="met" data-prefill="met ">met</button>
-            <button type="button" class="chip composer-chip" data-chip="who" data-prefill="who is ">who</button>
+          <div class="composer-chips-wrap" id="composer-chips-wrap">
+            <button type="button" id="composer-chips-toggle" class="composer-chips-toggle" aria-expanded="false" aria-controls="composer-chips" title="Quick capture" hidden>
+              <span aria-hidden="true">+</span>
+              <span class="sr-only">Quick capture</span>
+            </button>
+            <div id="composer-chips" class="chip-row composer-chips" aria-label="Quick capture" hidden>
+              <button type="button" class="chip composer-chip" data-chip="meal" data-prefill="log meal: ">meal</button>
+              <button type="button" class="chip composer-chip" data-chip="lift" data-prefill="log lift: ">lift</button>
+              <button type="button" class="chip composer-chip" data-chip="focus" data-prefill="start focus: ">focus</button>
+              <button type="button" class="chip composer-chip" data-chip="due" data-prefill="add due: ">due</button>
+              <button type="button" class="chip composer-chip" data-chip="capture" data-prefill="capture: ">capture</button>
+              <button type="button" class="chip composer-chip" data-chip="habit" data-prefill="habit done: ">habit</button>
+              <button type="button" class="chip composer-chip" data-chip="met" data-prefill="met ">met</button>
+              <button type="button" class="chip composer-chip" data-chip="who" data-prefill="who is ">who</button>
+            </div>
           </div>
           <label class="sr-only" for="chat-input">Message</label>
           <textarea id="chat-input" rows="2" placeholder="Message ADA…" required></textarea>
-          <button type="button" id="chat-mic" class="mic-btn" aria-label="Hold to talk" data-state="idle">mic</button>
-          <button type="submit" id="chat-send" class="primary">Send</button>
+          <button type="button" id="chat-mic" class="mic-btn" aria-label="Tap to talk" data-state="idle">
+            <svg class="mic-glyph" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </button>
+          <button type="submit" id="chat-send" class="send-btn">Send</button>
           <p id="voice-speak-chip" class="voice-speak-chip" hidden>
             <span>ADA speaking…</span>
             <button type="button" id="voice-stop" class="ghost">Stop</button>

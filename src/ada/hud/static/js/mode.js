@@ -1,5 +1,6 @@
 /** Mode dial + session gate + soft intent→mode suggest (M15). */
 
+import { currentFace } from "./face.js";
 import { requireSessionForMode, sessionState } from "./session.js";
 
 const _PLAN_RE =
@@ -18,6 +19,7 @@ export function setSelectedMode(mode) {
   const el = document.getElementById("mode-select");
   if (el) el.value = mode;
   sessionState.mode = mode;
+  syncModeSegment();
   updateModeSuggest(null);
 }
 
@@ -41,7 +43,8 @@ export function updateModeSuggest(forced) {
           (document.getElementById("chat-input") || {}).value || ""
         );
   const current = getSelectedMode();
-  if (!suggested || suggested === current) {
+  const phone = currentFace() === "phone";
+  if (!suggested || suggested === current || (phone && suggested === "plan")) {
     chip.hidden = true;
     chip.textContent = "";
     chip.dataset.suggest = "";
@@ -52,23 +55,75 @@ export function updateModeSuggest(forced) {
       ? "Plan"
       : suggested === "agent"
         ? "Agent"
-        : "Observe";
+        : phone
+          ? "Ask"
+          : "Observe";
   chip.hidden = false;
   chip.textContent = "Suggest: " + label;
   chip.dataset.suggest = suggested;
 }
 
+/** Phone: Ask label, hide Plan. Value stays observe|agent|plan. */
+export function syncFaceModeDial() {
+  const el = document.getElementById("mode-select");
+  if (!el) return;
+  const phone = currentFace() === "phone";
+  const observeOpt = el.querySelector('option[value="observe"]');
+  const planOpt = el.querySelector('option[value="plan"]');
+  if (observeOpt) observeOpt.textContent = phone ? "Ask" : "Observe";
+  if (planOpt) {
+    planOpt.hidden = phone;
+    planOpt.disabled = phone;
+  }
+  if (phone && el.value === "plan") {
+    el.value = "observe";
+    sessionState.mode = "observe";
+  }
+  syncModeSegment();
+  updateModeSuggest(null);
+}
+
+function syncModeSegment() {
+  const seg = document.getElementById("mode-segment");
+  const el = document.getElementById("mode-select");
+  if (!seg || !el) return;
+  const phone = currentFace() === "phone";
+  seg.hidden = !phone;
+  if (!phone) return;
+  seg.querySelectorAll(".mode-segment-btn").forEach((btn) => {
+    const active = btn.dataset.mode === el.value;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
 export function wireModeDial() {
   const el = document.getElementById("mode-select");
   if (!el) return;
+  syncFaceModeDial();
+  document.documentElement.addEventListener("ada-face", syncFaceModeDial);
   el.addEventListener("change", () => {
     const mode = el.value;
     sessionState.mode = mode;
     if (!requireSessionForMode(mode)) {
       /* stay on selection so user sees intent; chat will also gate */
     }
+    syncModeSegment();
     updateModeSuggest(null);
   });
+
+  const seg = document.getElementById("mode-segment");
+  if (seg) {
+    seg.querySelectorAll(".mode-segment-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.mode;
+        if (!mode) return;
+        setSelectedMode(mode);
+        syncModeSegment();
+        requireSessionForMode(mode);
+      });
+    });
+  }
 
   const chip = document.getElementById("mode-suggest");
   if (chip) {

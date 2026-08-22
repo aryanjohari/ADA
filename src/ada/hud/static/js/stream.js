@@ -11,6 +11,8 @@ import {
   resetComposerInputKind,
   setVoiceState,
   speakFinal,
+  syncComposerChrome,
+  ttsEnabled,
   voiceState,
 } from "./voice.js";
 
@@ -231,6 +233,8 @@ function appendTurnFooter(payload) {
       setVoiceState("confirm-pending");
     } else if (SKIP_TTS_STOPS.has(payload.stop_reason || "")) {
       setVoiceState("idle");
+    } else if (!ttsEnabled()) {
+      setVoiceState("idle");
     } else {
       const ack = (payload && payload.text) || "";
       speakFinal(ack);
@@ -435,6 +439,7 @@ export async function sendChat(message, mode, chip = null, input = "typed") {
   streamState.sawConfirm = false;
   streamState.pendingInput = input === "stt" ? "stt" : "typed";
   setVoiceState("busy");
+  syncComposerChrome();
   btn.disabled = true;
   try {
     const resp = await openChatStream(message, mode, chip, streamState.pendingInput);
@@ -464,7 +469,7 @@ export async function sendChat(message, mode, chip = null, input = "typed") {
     await _refreshMode();
   } finally {
     streamState.busy = false;
-    btn.disabled = false;
+    syncComposerChrome();
     if (voiceState() === "busy") {
       setVoiceState(streamState.sawConfirm ? "confirm-pending" : "idle");
     }
@@ -487,6 +492,7 @@ export function wireChat({ refreshTail, refreshMode } = {}) {
     input.value = "";
     input.dataset.packChip = "";
     resetComposerInputKind();
+    syncComposerChrome();
     sendChat(msg, mode, chip, kind);
   });
 }

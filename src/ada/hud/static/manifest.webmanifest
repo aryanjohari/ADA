@@ -4,8 +4,8 @@
   "description": "ADA agent control plane — Tailscale Serve",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0c0f0d",
-  "theme_color": "#0c0f0d",
+  "background_color": "#0a0c0e",
+  "theme_color": "#0a0c0e",
   "icons": [
     {
       "src": "/static/icons/ada-icon.svg",

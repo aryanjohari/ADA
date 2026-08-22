@@ -336,10 +336,21 @@
   outline: none;
 }
 
-.chat-form #chat-send {
+.chat-form #chat-send,
+.chat-form .send-btn {
   min-width: 4.5rem;
   min-height: 3rem;
   font-weight: 600;
+}
+
+html:not([data-face="phone"]):not([data-face="mac"]) .send-btn {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+html:not([data-face="phone"]):not([data-face="mac"]) .send-btn:hover:not(:disabled) {
+  background: #4a6672;
 }
 
 .mic-btn {
@@ -355,6 +366,14 @@
   cursor: pointer;
   user-select: none;
   touch-action: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.mic-btn .mic-glyph {
+  display: block;
 }
 
 .mic-btn:focus-visible {
@@ -382,8 +401,8 @@
 }
 
 .mic-btn[data-state="confirm-pending"] {
-  border-color: var(--warn, #c4a35a);
-  color: var(--warn, #c4a35a);
+  border-color: var(--deny);
+  color: var(--deny);
 }
 
 .voice-speak-chip {

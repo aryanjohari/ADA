@@ -1,11 +1,11 @@
 # M17 — Surface design (clean · minimal · controllable)
 
-**Status:** design-lock card — **P0 + quiet stream + P1 light markdown shipped** (2026-08-18).  
-**Date:** 2026-08-16  
+**Status:** design-lock card — **P0 + quiet stream + P1 light markdown shipped** (2026-08-18). **Steel-blue token evolution locked** (§10 · 2026-08-22) — phone taste pass ships first; **Mac 3c inherits** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)).  
+**Date:** 2026-08-23  
 **Host:** `ada-pi5` · Client: Mac via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Depends on:** [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) (chat-home, Body drawer, ASGI+static), [`M13_HUD_UX.md`](./M13_HUD_UX.md) (presentation history), [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) + [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (Plan/Confirm, Today strip, shelf — must stay findable), live `src/ada/hud/`  
-**Feeds / sibling:** [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6** — life sheets + view registry + PTT preview-then-Send; **device faces** (phone thin / one Mac assistant face / display) over the same ASGI HUD. Does **not** rewrite M17 locks: the Mac assistant face still has a **visible transcript/stream** (chat-home, not dashboard home); companion-as-separate-named-face is retired; density may shift within that one Mac face. Moss tokens and ≤3 motions still bind. Canonical “ADA face” and Iron Man HUD remain OUT.  
+**Feeds / sibling:** [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6** — life sheets + view registry + PTT preview-then-Send; **device faces** (phone thin / one Mac assistant face / display) over the same ASGI HUD. Does **not** rewrite M17 locks: the Mac assistant face still has a **visible transcript/stream** (chat-home, not dashboard home); companion-as-separate-named-face is retired; density may shift within that one Mac face. **§10 steel-blue tokens** replace moss as primary accent; ≤3 motions still bind. Canonical “ADA face” and Iron Man HUD remain OUT. [`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md) §7 locks phone-home chrome against these tokens. [`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md) locks Mac desk + display against the same tokens.  
 
 **Name justification:** **`M17_SURFACE_DESIGN.md`**. M13/M14 shipped the shell; M16 added daily controls. This card locks **taste + density** so polish chats stop vibe-coding. Not a new organ; not a stack rewrite.
 
@@ -87,20 +87,20 @@
 
 ### 3.4 Color (≤10 semantic tokens)
 
-Keep moss family; **restful** soft dark — reduce glow.
+**Shipped (2026-08-18):** moss soft dark — reduce glow. **Evolution (2026-08-22 · §10):** near-black + **cool steel-blue** primary; moss retired as `--accent`. Phone ships first; Mac 3c inherits same `:root`.
 
-| Token | Target | Role |
-|-------|--------|------|
-| `--bg` | `#0e1210` | Page |
-| `--surface` | `#161c18` | Cards / composer field |
-| `--line` | `rgba(fg, ~0.12)` | Hairlines only |
-| `--fg` | `#e4e9e3` | Body text (WCAG-ish on bg) |
-| `--muted` | `#8a938b` | Secondary |
-| `--accent` | `#7fad63` | Primary actions + ok state **only** |
-| `--user` | `#6d8f9c` | User rail / label |
-| `--warn` | `#c4a035` | Due / confirm / pending |
-| `--deny` | `#c97070` | Fault / deny |
-| `--radius` | `6px` | One radius (drop pill-everything) |
+| Token | Shipped (moss) | §10 lock (steel) | Role |
+|-------|----------------|------------------|------|
+| `--bg` | `#0e1210` | `#0a0c0e` | Page |
+| `--surface` | `#161c18` | `#12151a` | Cards / composer field |
+| `--line` | `rgba(fg, ~0.12)` | `rgba(220, 228, 236, 0.10)` | Hairlines only |
+| `--fg` | `#e4e9e3` | `#dde3ea` | Body text |
+| `--muted` | `#8a938b` | `#7a8494` | Secondary |
+| `--accent` | `#7fad63` (moss) | `#6d8f9c` (steel) | Primary actions + listen state **only** |
+| `--user` | `#6d8f9c` | `#5a7a88` | User rail / label |
+| `--warn` | `#c4a035` | demote on phone; keep for Mac non-confirm pending until 3c | Due / pending (not confirm on phone) |
+| `--deny` | `#c97070` | `#c45c5c` | Fault / deny / **confirm-pending** on phone |
+| `--radius` | `6px` | `6px` | One radius |
 
 **Drop / demote:** ambient `--accent-glow` fills; Plan card gradient wash; default `button` = accent border (ghost becomes default chrome). Accent reserved for **state + primary CTAs**.
 
@@ -187,7 +187,7 @@ If removing **X** does not hurt control or understanding, **X is out.**
 | **P1** | Stream markdown · tool/plan/confirm card quieting · turn rails soften · usage footer quieter | Long-read comfort |
 | **P2** | Optional presence: focus border / drawer polish only — **still no Jarvis OS** | Quiet confidence |
 
-**Metal (2026-08-18):** P0 tokens/density/chrome + quiet stream cards shipped in `src/ada/hud/static/css/*`, `templates/index.html`, `js/session.js`, `js/today.js`; **P1 light markdown** shipped in `js/markdown.js` + `js/stream.js`. M19b v1.6.1 Mac assistant desk skeleton reuses these moss tokens / IBM Plex / ≤3 motions — no new palette. **2026-08-19 (M20 3a):** first-open `#device-name-dialog` keeps the same moss surface/line tokens; face choices are quiet radios, one primary Save, ghost Skip — not a new taste lock.
+**Metal (2026-08-18):** P0 tokens/density/chrome + quiet stream cards shipped. **2026-08-22:** §10 steel-blue evolution **shipped** in `tokens.css` + phone taste pass ([`M20b`](./M20b_PHONE_FACE.md) §7) in `faces.css` / `chrome.css` / `stream.css`.
 
 ---
 
@@ -202,6 +202,7 @@ If removing **X** does not hurt control or understanding, **X is out.**
 | F5 | `prefers-reduced-motion` still shows decorative motion |
 | F6 | Today becomes a **peer column** or steals chat height |
 | F7 | Stack forks to Next/React on Pi without EVIDENCE+FEASIBLE+OPEN |
+| F8 | Two active accent palettes (moss on one face, steel on another) after §10 taste pass ships |
 
 ---
 
@@ -234,5 +235,24 @@ If removing **X** does not hurt control or understanding, **X is out.**
 2. P0: Today/composer hierarchy pass (no IA change)  
 3. P1: `stream.css` + light markdown render path  
 4. P2: optional focus/drawer presence only  
+5. **§10 + M20b §7:** steel-blue token pass; phone home taste (glyph mic, conditional Send, field gradients) — **next implement chat**
 
 **Done when:** this card exists with locked IA + visual system + P0–P2 list so an implement chat can execute **without inventing taste**.
+
+---
+
+## 10. Token evolution — steel-blue (2026-08-22)
+
+**Status:** **LOCKED** — amends §3.4 moss pack. One shared `:root` for all faces; **phone ships first** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md) §7); Mac 3c adopts same tokens without a second palette.
+
+| Lock | Decision |
+|------|----------|
+| **Scope** | Global token rename/value pass — not phone-only skin |
+| **Primary accent** | `--accent: #6d8f9c` (cool steel-blue); retires moss `#7fad63` as default chrome accent |
+| **Confirm on phone** | `--deny` red for confirm-pending field + confirm card rail — not gold `--warn` |
+| **Identity** | Near-black + steel + IBM Plex; calm personal agent — not Jarvis / NOC / purple SaaS |
+| **Compat** | Existing alias vars (`--bg1`, `--surface-2`, `--accent-dim`) may remain for Body/drawer; implement updates fills to match steel family or transparent |
+
+**Mac 3c:** **METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)) — Mac/display inherit §10; Plan/Today/Body findability locks (§3.1, M16) unchanged — visual quieting only.
+
+**Falsifier F8:** Two active accent palettes (moss on Mac, steel on phone) after taste pass ships.

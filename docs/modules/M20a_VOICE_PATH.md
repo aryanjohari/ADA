@@ -1,7 +1,7 @@
 # M20a — Voice path (research · pick)
 
 **Status:** design lock only — **no implement this card**  
-**Date:** 2026-08-19 (v1.0)  
+**Date:** 2026-08-20 (v1.1)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** M20 phase-1 **child** — cheap STT/TTS path pick. Not a taste rewrite. Not a second cortex. Not a voice-vendor thesis that ends in “just call Deepgram.”  
@@ -15,6 +15,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.1** | 2026-08-20 | Pointer: HUD **gesture** is M20b — phone **tap-to-toggle**, Mac hold. Path unchanged (MediaRecorder blob → Pi STT). Phone may send `audio/mp4`. |
 | **v1.0** | 2026-08-19 | Domain map + SOTA + market + option matrix. **Pick:** Pi-owned cascade organs (local STT + local TTS) + existing Gemini cortex. No extra speech vendor. No trained proprietary speech model. No Gemini Live. |
 
 ---
@@ -301,7 +302,7 @@ That is the same split constitution already wrote: local models **ancillary** (d
 **Name:** Pi-owned cascade organs.  
 **STT:** faster-whisper `tiny.en` int8, upgrade to `base.en` if kitchen WER fails a 20-clip smoke.  
 **TTS:** Piper `en_US-lessac-medium`.  
-**Placement:** blob up, wav down, **same HUD origin** (or `127.0.0.1` sibling owned by ADA). Mac/phone = MediaRecorder + Web Audio.  
+**Placement:** blob up, wav down, **same HUD origin** (or `127.0.0.1` sibling owned by ADA). Mac/phone = MediaRecorder + Web Audio. Phone tap vs Mac hold is [`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md) (v1.2), not a second path.  
 **Cortex:** unchanged Gemini. **No** audio to Gemini.  
 **UX:** M19b v1.6 preview-then-Send; simplex mute-while-TTS; TTS of **final** speak line only.  
 **Secrets:** no new speech API keys. Model files live under `ADA_DATA_ROOT` (weights) — not git.
@@ -309,7 +310,7 @@ That is the same split constitution already wrote: local models **ancillary** (d
 ### Flow (phase 2 implement; this card does not code it)
 
 ```text
-[Hold mic] → MediaRecorder (webm/opus)
+[PTT: Mac hold / phone tap-to-toggle] → MediaRecorder (webm/opus or mp4)
           → POST /api/voice/stt          ← Pi organ
           → fill composer (input=stt)    ← STOP. Operator reads.
           → Send

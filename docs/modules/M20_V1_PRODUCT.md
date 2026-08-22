@@ -1,11 +1,11 @@
 # M20 — v1 product (sequence · fence)
 
-**Status:** sequence fence — **phase 3a first-open METAL** (2026-08-19); wedge / remaining polish / package not this card  
-**Date:** 2026-08-19 (v1.3)  
+**Status:** sequence fence — **phase 3a first-open METAL**; **phase 3b phone-face METAL** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md)); **phase 3c Mac+display METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)) — 3d panels pattern-only; package not this card  
+**Date:** 2026-08-23 (v1.7)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone / later display via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** product fence + ordered next work — **not** a new organ, **not** a taste rewrite, **not** a voice-vendor thesis  
-**Depends on:** [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) (Confirm bind; Observe/Plan/Agent stay **permission gates**) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (birth pack / dues / Today — ingredients, not this sequence) · [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (**taste stays there**) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6 / v1.6.1** (surface + voice design; wedge/mouth **not** shipped) · [`M05_VOICE_PERSONALITY_CONTROL.md`](./M05_VOICE_PERSONALITY_CONTROL.md) (register, not soul) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) / [`M11_DREAM_CONSOLIDATION.md`](./M11_DREAM_CONSOLIDATION.md) (Dream = overnight **manage**) · [`M20a_VOICE_PATH.md`](./M20a_VOICE_PATH.md) (**phase 1 pick:** Pi-owned STT/TTS organs; Gemini stays cortex)
+**Depends on:** [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) (Confirm bind; Observe/Plan/Agent stay **permission gates**) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (birth pack / dues / Today — ingredients, not this sequence) · [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (**taste stays there**) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6 / v1.6.1** (surface + voice design; wedge/mouth **not** shipped) · [`M05_VOICE_PERSONALITY_CONTROL.md`](./M05_VOICE_PERSONALITY_CONTROL.md) (register, not soul) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) / [`M11_DREAM_CONSOLIDATION.md`](./M11_DREAM_CONSOLIDATION.md) (Dream = overnight **manage**) · [`M20a_VOICE_PATH.md`](./M20a_VOICE_PATH.md) (**phase 1 pick:** Pi-owned STT/TTS organs; Gemini stays cortex) · [`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md) (**phase 3b METAL:** phone ingest window) · [`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md) (**phase 3c METAL:** Mac desk + display)
 
 **Name stays `M20_V1_PRODUCT.md`:** no collision. M16 is the **capability** package (self · you · Pi-doer · track) already metal. This card is the **v1 product sequence** after a working daily ADA — what to build next, and what not to reopen. Not an M19b addendum (that card is already the surface/voice design lock). Not `M16b` (would mash birth-pack with voice). A later voice-research child is allowed; **do not write it here**.
 
@@ -15,6 +15,10 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.7** | 2026-08-23 | **METAL phase 3c:** Mac desk + display panel-forward ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)). Chips behind `+`; steel hairline chrome. 3d = registry pattern only. Not package. |
+| **v1.6** | 2026-08-20 | Phone PTT **tap-to-toggle** (M20b v1.2): `#chat-mic` click on `data-face=phone`; queue stop if recorder not ready; Mac hold unchanged. |
+| **v1.5** | 2026-08-20 | **METAL phase 3b:** phone ingest face (M20b). Not 3c/3d, not package. |
+| **v1.4** | 2026-08-20 | Pointer only → [`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md). **Phase 3b phone-face design lock** (ingest organ, layout map, hide list). Not 3b code, not 3c/3d, not package. |
 | **v1.3** | 2026-08-19 | **METAL phase 3a:** first-open face+name on the existing device registry (`ada_hud_device` + `facts/hud_devices.yaml` + `POST /api/device`). Modal owns first visit; operator confirms face; optional name; Skip still stamps. Session picker remains the later override. Not 3b/3c/3d, not phase 4. |
 | **v1.2** | 2026-08-19 | METAL: TTS of final ack skips `stop=error` / `no_key` (do not speak cortex dumps). Confirm-pending skip unchanged. |
 | **v1.1** | 2026-08-19 | Pointer only → [`M20a_VOICE_PATH.md`](./M20a_VOICE_PATH.md). OPEN #1 cheap path **locked** (Pi STT+TTS organs). Local full-loop still PARK. |
@@ -88,7 +92,7 @@ Daily ADA already works (chat-home, Confirm, life capture, faces, `nutrition_day
 | Voice transport | **No** mic / STT / TTS. `input=typed` only. |
 | Mouth | Register pass + numeric guard **not** shipped. Fast-path still sounds like a template. |
 | Life panels | **Only** `nutrition_day`. Gym / time / habits / people / dues packs exist; HUD templates do not. |
-| Feel | Faces/stream/Body work; first-open is no longer “picker buried in Session only.” Phone/Mac visual polish, hide Plan, morning workflows still later (3b–3d). M17 still owns taste. |
+| Feel | Faces/stream/Body work; first-open is no longer “picker buried in Session only.” **3b phone METAL** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md)). **3c Mac+display METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)): chips behind `+`; hairline chrome; display panels-first. **3d** remaining life panels = registry pattern only (`nutrition_day` metal). M17 still owns taste. |
 | Package | Birth pack is an operator CLI, not a clean-newborn **product** (onboarding + secrets + “add a window ≠ reinstall”). |
 | Later | P2 mail, Plan/campaigns as product, split-session, native companion, kiosk. |
 
@@ -145,8 +149,8 @@ M19b F-M19b-* still bind the wedge/mouth/faces slice when that code is written.
 | 1 | **Cheap STT/TTS path** | **LOCKED in M20a:** Pi-owned cascade (faster-whisper + Piper). Cloud speech / Gemini Live **rejected**. Local full-loop still **PARK**. |
 | 2 | **Which remaining panels land in polish** | Registry pattern locked; inventory is taste + live UI, not a ship checklist here. |
 | 3 | **Newborn UX depth** | M16 `ada body birth` + secrets dir remain the spine; HUD wizard vs CLI-only is phase 4, not a wedge gate. |
-| 4 | **Phone PTT vs Mac-first** | Same wedge architecture; Mac desk first if a slice must split — not a second product. **Phase 3a did not split this:** one first-open modal, same `phone\|mac\|display` faces, same registry. Mac-first visual polish is 3c, not a new plane. |
-| 5 | **TTS mute** | Wedge speaks final text; a FACT mute is allowed later. Not a reason to skip TTS in phase 2. |
+| 4 | **Phone PTT vs Mac-first** | Same wedge architecture; **not** a second product. **Phone 3b v1.2 METAL:** tap-to-toggle mic (click); Mac keeps hold-to-talk. Mac-first *visual* polish is 3c, not a new plane. |
+| 5 | **TTS mute** | **Phone 3b METAL:** default off; `#tts-toggle` in nav. Mac may keep using the same control. |
 
 **Do not reopen as OPEN:** sequence 1→5; preview-then-Send; register pass ON with fail-closed template; chat-home; one Mac face; three auth planes; Dream-as-manage; modes as permission gates; P2-not-now.
 
@@ -158,7 +162,7 @@ This card exists so later chats **execute** without re-arguing sequence.
 
 1. **Research chat:** cheap voice path on Pi 5 8GB — **done:** [`M20a_VOICE_PATH.md`](./M20a_VOICE_PATH.md). Local full-loop stays PARK.  
 2. **Implement chat:** wedge **and** register-pass mouth together (M19b v1.6 flow + POLICY). No P2, no polish-as-escape.  
-3. **Implement chat:** UI polish + remaining life panels on the `nutrition_day` registry. Taste = M17.  
+3. **Implement chat:** UI polish + remaining life panels on the `nutrition_day` registry. Taste = M17. **3b phone** + **3c Mac/display** done ([`M20b`](./M20b_PHONE_FACE.md) · [`M20c`](./M20c_MAC_DISPLAY_FACE.md)); **3d** remaining panels = same registry when needed (not a ship catalog).  
 4. **Implement chat:** first-boot package (newborn root, onboarding, secrets; windows ≠ organism).  
 5. **Only then:** personal workflows / P2 mail.
 
@@ -166,4 +170,4 @@ This card exists so later chats **execute** without re-arguing sequence.
 
 ---
 
-*End M20 v1 product fence. Sequence 1→5 still locked; phase 3a first-open is METAL.*
+*End M20 v1 product fence. Sequence 1→5 still locked; phase 3a / 3b / 3c are METAL; 3d panels pattern-only.*
