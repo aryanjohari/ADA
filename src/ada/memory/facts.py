@@ -33,6 +33,18 @@ WHITELIST_KEYS: frozenset[str] = frozenset(
     }
 )
 
+# Brief *section* include list — NOT Dream-whitelisted (F-M22-3). Absent = all.
+BRIEF_INCLUDE_SECTIONS: tuple[str, ...] = (
+    "dues",
+    "overnight",
+    "meal_gap",
+    "open_gym",
+    "habits_due",
+    "nutrition_headline",
+    "continuity",
+)
+BRIEF_INCLUDE_DEFAULT: list[str] = list(BRIEF_INCLUDE_SECTIONS)
+
 # Identity fields Dream must never touch.
 SACRED_IDENTITY_KEYS: frozenset[str] = frozenset(
     {
@@ -227,6 +239,23 @@ def _coerce_pref_value(field: str, value: Any) -> Any:
         if isinstance(value, list):
             return [str(x).strip() for x in value if str(x).strip()]
         raise ValueError(f"{field} must be list or comma-string, got {value!r}")
+    if field == "brief_include":
+        # Section ids for Today / morning brief. Unknown ids dropped. Empty list
+        # is valid (operator hid everything). Absent key handled by consumers.
+        if value is None:
+            return list(BRIEF_INCLUDE_DEFAULT)
+        if isinstance(value, str):
+            raw_items = [p.strip() for p in value.split(",") if p.strip()]
+        elif isinstance(value, list):
+            raw_items = [str(x).strip() for x in value if str(x).strip()]
+        else:
+            raise ValueError(f"{field} must be list or comma-string, got {value!r}")
+        allowed = set(BRIEF_INCLUDE_SECTIONS)
+        out: list[str] = []
+        for item in raw_items:
+            if item in allowed and item not in out:
+                out.append(item)
+        return out
     if field in {"brief_time", "quiet_hours_start", "quiet_hours_end"}:
         s = str(value).strip()
         if not _HHMM_RE.match(s):

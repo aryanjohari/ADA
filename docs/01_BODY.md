@@ -455,7 +455,7 @@ Not implemented here; contract for upcoming code:
 
 | Piece | Intent |
 |-------|--------|
-| systemd user or system unit `ada-agent.service` | supervised always-on process |
+| systemd system unit `ada-hud.service` (historically sketched as `ada-agent`) | supervised always-on HUD / control plane (`127.0.0.1:8787`); see `deploy/systemd/ada-hud.service` |
 | systemd timer `ada-dream.timer` | ~**03:30 NZST** (+ on sleep) Dream seal / light LLM / optional push |
 | Python package under `ADA/` | vitals, lifecycle, memory, dream, agent loop, web HUD |
 | Secrets | outside git — Gemini API key; later rclone/S3 credentials |

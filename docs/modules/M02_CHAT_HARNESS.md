@@ -523,7 +523,7 @@ ada chat --jsonl-path …          # override (tests)
 Default model: **`gemini-2.5-flash`** via model map; override `ADA_GEMINI_MODEL`.  
 Print: assistant text; on tools, show gateway-rendered `tool(args)` + short receipt. Exit ≠0 on no key / hard fault.
 
-**systemd pointer (not a gate):** optional later `ada-agent.service` can wrap the same harness; M02 acceptance is CLI/REPL + tests.
+**systemd pointer (not a gate):** optional always-on HUD is `deploy/systemd/ada-hud.service` (body historically said `ada-agent`; use `ada-hud` only — do not ship both). M02 acceptance remains CLI/REPL + tests.
 
 ---
 

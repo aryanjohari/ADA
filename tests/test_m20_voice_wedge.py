@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from ada.cortex.adapter import CortexTurn
 from ada.harness.loop import EMPTY_CORTEX_ACK, run_turn
-from ada.harness.mouth import apply_register_pass, mouth_passes_guard, receipt_bundle
+from ada.harness.mouth import apply_register_pass, mouth_passes_guard, receipt_bundle, CONFIRM_LINE
 from ada.harness.session import ChatSession
 from ada.hud.app import create_app
 from ada.hud.xray import ALLOWED_ROOTS
@@ -225,7 +225,7 @@ def test_confirm_line_skips_model():
     text = apply_register_pass(
         adapter,
         receipts=_nutrition_receipts(),
-        template="Confirm candidates — no silent bind.",
+        template=CONFIRM_LINE,
     )
     assert "Confirm" in text
     assert adapter.last_contents is None

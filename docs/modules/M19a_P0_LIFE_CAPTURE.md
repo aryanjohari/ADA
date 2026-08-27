@@ -14,6 +14,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.9** | 2026-08-26 | Pointer only → [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md). `gym_split` / targets / presets are **teach-in-flow stores** (ask-once → Confirm → same YAML). CLI import remains optional, not the primary personalization path. No P0 METAL rewrite. |
 | **v1.8** | 2026-08-19 | **METAL:** Gemini FunctionDeclaration arrays require `items` (400 INVALID_ARGUMENT otherwise). ADA schemas live in [`toolspec.py`](../../src/ada/tools/toolspec.py) — `life_meal_log`/`fix` `lines`, `life_lift_log` `sets`, `life_food_preset_save` `components`, `life_routine_run` `steps`. Adapter does not special-case this. |
 | **v1.7** | 2026-08-18 | **Gym catalog boot default + NL gap:** first empty `open_life_db` fetches free-exercise-db (opt out `ADA_GYM_CATALOG_FETCH=off`); fold/alias lookup so `pull-ups` hits `Pullups`; merge bundled seed aliases (`flat bench`); import stores `force`→movement, primary+secondary muscles, `body only`→bodyweight. Rebuild tags: `DELETE FROM exercise_catalog` then `ada life gym-init`. |
 | **v1.6** | 2026-08-18 | **P0.5 close:** FDC **detail** fetch (`GET /fdc/v1/food/{fdcId}`) before cache insert; expanded `FDC_NUTRIENT_MAP` + CORE slots (Ca/Fe/Mg/P/K/Zn, A/C/D, B-vits per §5); `honest_partial` on CORE null only. Bodyweight gym NL (`pull-ups x8`, `10 pull-ups`, `3x10 pull-ups`; `load_kg: null`). `gym-import-seed --path` accepts wger/exercisedb JSON. HUD fast-path emits `token_delta` canned speak (no Gemini; `steps=0`). Operator smoke: [`M19a_P05_HARDENING.md`](../reviews/M19a_P05_HARDENING.md). |
@@ -26,7 +27,7 @@
 
 ### One-liner
 
-**Sticky daily capture** — meal + gym + time + admin capture — with honest receipts, Today strip honesty, and durable logs; calorie-tracker friction; **not** mail, jobs, habits product, analysis packs, Cronometer sync, or parallel timers.
+**Sticky daily capture** — meal + gym + time + admin capture — with honest receipts, Today strip honesty, and durable logs; calorie-tracker friction; **not** mail, jobs, habits product, analysis packs, Cronometer sync, or parallel timers. Personalization of targets/presets/`gym_split` = **teach-in-flow** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)), not “edit YAML first.”
 
 ---
 
@@ -539,7 +540,7 @@ presets:
     provenance: custom
 ```
 
-**Split templates:** `facts/gym_split.yaml` — days → focus body_parts (for `gym_start` default).
+**Split templates:** `facts/gym_split.yaml` — days → focus body_parts (for `gym_start` default). **Write path:** teach-in-flow Confirm ([`M22`](./M22_LIFE_TEACH_IN_FLOW.md)); hand-edit is an optional same-store door, not required to log lifts.
 
 ### 4.6 Capture classification
 

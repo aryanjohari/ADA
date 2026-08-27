@@ -123,6 +123,37 @@ def test_flat_bench_catalog_match(seeded_gym: None, data_root: Path) -> None:
     assert "chest" in parts
 
 
+def test_gym_status_and_end_expose_catalog_muscles(seeded_gym: None, data_root: Path) -> None:
+    gw = Gateway(mode="agent")
+    logged = gw.execute(
+        "life_lift_log",
+        {"sets": [{"exercise_name": "bench press", "load_kg": 50, "reps": 8}]},
+    )
+    assert logged.ok
+    status = gw.execute("life_gym_status", {})
+    assert status.ok
+    sets = (status.data or {}).get("sets_today") or []
+    assert sets
+    assert "chest" in (sets[0].get("muscles") or [])
+    exercises = (status.data or {}).get("exercises_today") or []
+    assert exercises
+    assert "chest" in (exercises[0].get("muscles") or [])
+    assert "triceps" in (exercises[0].get("muscles") or [])
+    ended = gw.execute("life_gym_end", {})
+    assert ended.ok
+    end_ex = (ended.data or {}).get("exercises") or []
+    assert end_ex
+    muscles = end_ex[0].get("muscles") or []
+    assert "chest" in muscles
+    assert "triceps" in muscles
+    from ada.harness.loop import _speak_gym_status
+
+    spoken = _speak_gym_status(ended.data or {})
+    assert "chest" in spoken.lower()
+    spoken_status = _speak_gym_status(status.data or {})
+    assert "chest" in spoken_status.lower()
+
+
 def test_unknown_exercise_creates_custom(data_root: Path) -> None:
     gw = Gateway(mode="agent")
     obs = gw.execute(

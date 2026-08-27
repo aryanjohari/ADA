@@ -109,6 +109,34 @@ def apply_manage_result(
                 stage_candidate(cand, reason="people_always_stage", paths=p)
             )
             continue
+        if (
+            field.startswith("nutrition_favorites")
+            or "nutrition_favorites" in cand["key"]
+            or field.startswith("nutrition_presets")
+        ):
+            staged.append(
+                stage_candidate(cand, reason="nutrition_favorites_always_stage", paths=p)
+            )
+            continue
+        if (
+            field.startswith("gym_split")
+            or "gym_split" in cand["key"]
+            or cand["key"] == "gym_split"
+            or cand["key"].startswith("gym_split.")
+        ):
+            staged.append(
+                stage_candidate(cand, reason="gym_split_always_stage", paths=p)
+            )
+            continue
+        if (
+            field == "brief_include"
+            or cand["key"] == "prefs.brief_include"
+            or cand["key"].endswith(".brief_include")
+        ):
+            staged.append(
+                stage_candidate(cand, reason="brief_include_always_stage", paths=p)
+            )
+            continue
         if field not in WHITELIST_KEYS:
             staged.append(
                 stage_candidate(cand, reason="non_whitelist", paths=p)

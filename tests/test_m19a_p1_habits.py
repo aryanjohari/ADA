@@ -91,9 +91,12 @@ def test_f_p1_1c_no_shame_streak_copy(p1_habits_root: Path) -> None:
 
 
 def test_habit_spine_unknown_misses(p1_habits_root: Path) -> None:
+    """Unknown name → Confirm-create (M22), not silent miss."""
     parsed = build_habit_tick_args("flurmble glorp", verb="habit_do")
     assert not parsed.get("ok")
-    assert parsed.get("reason") == "missing_life_receipt"
+    assert parsed.get("needs_confirm") is True
+    assert parsed.get("reason") == "create_habit"
+    assert parsed.get("create") is True
 
 
 def test_habit_fast_path_agent(p1_habits_root: Path) -> None:
@@ -115,6 +118,7 @@ def test_habit_fast_path_agent(p1_habits_root: Path) -> None:
 
 
 def test_habit_unknown_fast_path_missing_receipt(p1_habits_root: Path) -> None:
+    """Unknown habit → Confirm-create probe; no silent tick (M22 F-M22-2)."""
     session = ChatSession(mode="agent")
     session.gateway = Gateway(mode="agent")
     result = run_turn(
@@ -122,10 +126,20 @@ def test_habit_unknown_fast_path_missing_receipt(p1_habits_root: Path) -> None:
         "habit done: flurmble glorp",
         _ShouldNotRunAdapter(),
     )
-    assert result.stop_reason == "missing_life_receipt"
+    assert result.stop_reason == "pack_fast_path"
+    assert "Confirm save habit" in (result.text or "")
+    assert any(
+        str(r.get("tool") or "") == "life_habit_create" for r in result.tool_receipts
+    )
     with open_life_db() as conn:
         count = conn.execute("SELECT COUNT(*) FROM habit_events").fetchone()[0]
+        defs = conn.execute("SELECT COUNT(*) FROM habit_definitions").fetchone()[0]
     assert count == 0
+    # Seeded defs may exist from fixture; flurmble must not have been inserted.
+    assert (
+        habits_mod.resolve_habit("flurmble glorp").get("ok") is not True
+    )
+    _ = defs
 
 
 def test_routine_run_row(p1_habits_root: Path) -> None:

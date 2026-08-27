@@ -6,7 +6,8 @@ packs:
     tool: life_meal_log
     prefill: "log meal: "
     preferred_tools: [life_food_search, life_meal_log, life_nutrition_day]
-    spine: search_then_log
+    spine: resolve_confirm_then_log
+    confirm_class: confirm_bind_on_ambiguity
   lift_log:
     tool: life_lift_log
     prefill: "log lift: "
@@ -60,6 +61,16 @@ packs:
     tool: life_gym_status
     preferred_tools: [life_gym_status]
     spine: read
+  gym_start:
+    tool: life_gym_start
+    prefill: "start gym"
+    preferred_tools: [life_gym_start, life_split_set]
+    spine: ask_once_then_start
+  gym_end:
+    tool: life_gym_end
+    prefill: "end gym"
+    preferred_tools: [life_gym_end, life_gym_status]
+    spine: parse_then_end
   life_status:
     tool: life_nutrition_day
     preferred_tools: [life_nutrition_day, life_time_status, memory_open_loops_list]
@@ -105,7 +116,15 @@ aliases:
   - {pattern: "remind me", verb: remind}
   - {pattern: "what's due", verb: due_list}
   - {pattern: "on my plate", verb: due_list}
+  - {pattern: "have to buy", verb: due_list}
+  - {pattern: "what to buy", verb: due_list}
+  - {pattern: "grocery", verb: due_list}
+  - {pattern: "shopping list", verb: due_list}
   - {pattern: "what did i lift", verb: gym_status}
   - {pattern: "split today", verb: gym_status}
+  - {pattern: "start gym", verb: gym_start}
+  - {pattern: "close gym", verb: gym_end}
+  - {pattern: "end workout", verb: gym_end}
+  - {pattern: "end gym", verb: gym_end}
   - {pattern: "how's my day", verb: life_status}
   - {pattern: "today summary", verb: life_status}

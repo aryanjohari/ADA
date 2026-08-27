@@ -134,6 +134,73 @@ def _meal_gap_nudge(
         return None
 
 
+def _open_gym(paths: DataPaths) -> dict[str, Any] | None:
+    try:
+        from ada.logs.gym import gym_status
+
+        status = gym_status(paths=paths)
+        active = status.get("active_session")
+        if not active:
+            return None
+        return {
+            "session_id": active.get("session_id"),
+            "started_at": active.get("started_at"),
+            "split_day": active.get("split_day"),
+            "set_count": status.get("set_count"),
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# Section id → payload field(s) cleared when excluded from prefs.brief_include.
+_BRIEF_SECTION_FIELDS: dict[str, tuple[str, ...]] = {
+    "dues": ("due_todos",),
+    "overnight": ("overnight",),
+    "meal_gap": ("meal_gap_nudge",),
+    "open_gym": ("open_gym",),
+    "habits_due": ("habits_due", "habits_done", "habit_continuity"),
+    "nutrition_headline": ("nutrition_headline",),
+    "continuity": ("continuity",),
+}
+
+
+def _brief_include_list(paths: DataPaths) -> list[str] | None:
+    """None = key absent → include all. Else coerced list (may be empty)."""
+    from ada.memory.facts import BRIEF_INCLUDE_DEFAULT, load_prefs
+
+    try:
+        prefs = load_prefs(paths)
+    except Exception:  # noqa: BLE001
+        return None
+    if "brief_include" not in prefs:
+        return None
+    raw = prefs.get("brief_include")
+    if not isinstance(raw, list):
+        return list(BRIEF_INCLUDE_DEFAULT)
+    return [str(x) for x in raw]
+
+
+def _apply_brief_include(payload: dict[str, Any], include: list[str] | None) -> dict[str, Any]:
+    """Filter Today/brief sections by prefs.brief_include. None = all."""
+    if include is None:
+        payload["brief_include"] = None
+        return payload
+    allowed = set(include)
+    payload["brief_include"] = list(include)
+    for section, fields in _BRIEF_SECTION_FIELDS.items():
+        if section in allowed:
+            continue
+        for field in fields:
+            if field not in payload:
+                continue
+            # Empty / null fail-closed for omitted sections.
+            if isinstance(payload[field], list):
+                payload[field] = []
+            else:
+                payload[field] = None
+    return payload
+
+
 def build_today(
     *,
     paths: DataPaths | None = None,
@@ -166,6 +233,7 @@ def build_today(
     meal_gap_nudge = _meal_gap_nudge(
         p, now=now, suppressed=bool(suppress.get("suppressed"))
     )
+    open_gym = _open_gym(p)
     habits_due: list[dict[str, Any]] = []
     habits_done: list[dict[str, Any]] = []
     habit_continuity: dict[str, Any] | None = None
@@ -188,7 +256,7 @@ def build_today(
     except Exception:  # noqa: BLE001
         pass
 
-    return {
+    payload: dict[str, Any] = {
         "ok": True,
         "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "due_todos": [
@@ -225,9 +293,11 @@ def build_today(
         "running_timer": running_timer,
         "nutrition_headline": nutrition_headline,
         "meal_gap_nudge": meal_gap_nudge,
+        "open_gym": open_gym,
         "habits_due": habits_due,
         "habits_done": habits_done,
         "habit_continuity": habit_continuity,
         "birthday_soon": birthday_soon,
         "people_remind": people_remind,
     }
+    return _apply_brief_include(payload, _brief_include_list(p))

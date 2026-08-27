@@ -14,11 +14,12 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.1** | 2026-08-26 | Pointer only → [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md). Habit **defs** enter via teach-in-flow Confirm-create (after M21 resolve) or **optional** CLI seed — seed is not the primary door. OPEN #4 default unchanged as optional. No P1 schema rewrite. |
 | **v1.0** | 2026-08-18 | Initial P1 implement spec: habits + people + birthday/kin notify; operator locks from P0 + M19 brainstorm; phased close gates P1.1→P1.3; falsifiers + HUD smoke stub |
 
 ### One-liner
 
-**Continuity capture for routines and kin** — one-tap habit ticks + capture-first people cards + alias-safe resolve + birthday→Today/ntfy — compounding P0 Today/notify; **not** mail, jobs, analysis packs, CRM sync, learned ML schedules, parallel timers, or a standalone habit app.
+**Continuity capture for routines and kin** — one-tap habit ticks + capture-first people cards + alias-safe resolve + birthday→Today/ntfy — compounding P0 Today/notify; **not** mail, jobs, analysis packs, CRM sync, learned ML schedules, parallel timers, or a standalone habit app. First habit = **ask-once in chat** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)), not a required YAML/CLI seed.
 
 ---
 
@@ -249,7 +250,7 @@ utterance | chip | (future) PTT transcript
 
 ### Operator HUD smoke (P1.x close gate)
 
-**Prereqs:** P0 pytest green; **Agent** session + login; at least one habit def seeded; one people card or capture utterance.
+**Prereqs:** P0 pytest green; **Agent** session + login; at least one habit def **via Confirm-create, capture, or optional seed** (not “must CLI-seed first” — [`M22`](./M22_LIFE_TEACH_IN_FLOW.md)); one people card or capture utterance.
 
 **Restart HUD after code change** (same as P0):
 
@@ -608,7 +609,7 @@ Extends P0 §10 — same two-layer flow.
 | 1 | Habit **definitions** authoritative: SQLite only vs YAML+sync | **SQL authoritative** for ticks; YAML seed/import; optional one-way sync CLI |
 | 2 | Interactions: append to YAML list vs separate `person_interactions` table | **YAML notes-only v1**; table P2 if volume hurts |
 | 3 | Merge `life_p1.yaml` vs single growing `life_p0.yaml` | **Separate `life_p1.yaml`** merged at load — keeps P0 smoke isolated |
-| 4 | Default habit seeds (skincare, vitamins) | Ship **empty** + operator seed; one bundled `habits_seed.yaml` optional |
+| 4 | Default habit seeds (skincare, vitamins) | **Optional door only** — HUD teach-in-flow Confirm-create is primary ([`M22`](./M22_LIFE_TEACH_IN_FLOW.md)). Bundled `habits_seed.yaml` / `ada life habit-seed` OK for tests; must not be required to tick a new habit |
 | 5 | `kin_link` vs inline `kin` on card | **Inline v1**; `kin_link` verb aliases `person_update` |
 | 6 | EOD sweep: manual chip vs systemd timer | **Manual + optional** `ada life routine-sweep` CLI; timer P2 |
 | 7 | People fuzzy threshold | **0.85** display_name; alias exact match first |

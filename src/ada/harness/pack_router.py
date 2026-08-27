@@ -13,12 +13,31 @@ from ada.harness.time_intent import map_time_intent
 
 _DEFAULT_PACK = "life_p0.yaml"
 _P1_PACK = "life_p1.yaml"
-_MEAL_SLOT = re.compile(r"\b(?:to|for)\s+(breakfast|lunch|dinner|snack)\b", re.IGNORECASE)
+_MEAL_SLOT = re.compile(
+    r"\b(?:to|for)\s+(?:an?\s+|the\s+)?(breakfast|lunch|dinner|snack)\b",
+    re.IGNORECASE,
+)
+# STT often hears "Long meal" for "Log meal"; allow optional "meal" + article before slot.
 _ADD_MEAL = re.compile(
-    r"^(?:add|log)\s+(.+?)\s+(?:to|for)\s+(breakfast|lunch|dinner|snack)\b",
+    r"^(?:add|log|long)\s+(?:meal\s+)?(.+?)\s+(?:to|for)\s+(?:an?\s+|the\s+)?"
+    r"(breakfast|lunch|dinner|snack)\b",
     re.IGNORECASE,
 )
 _LIFT_LINE = re.compile(r"\b(?:\d+(?:\.\d+)?)\s*(?:kg|kgs|lb|lbs)\s*x\s*\d+\b", re.IGNORECASE)
+# Phone NL: "Habit done skincare" (no colon) — still pack-route, not prose Confirm.
+_HABIT_DONE_NL = re.compile(
+    r"^(?:habit\s+)?(?:done|tick|logged)\s+:?\s*(.+)$",
+    re.IGNORECASE,
+)
+_HABIT_MISS_NL = re.compile(
+    r"^(?:habit\s+)?miss(?:ed)?\s+:?\s*(.+)$",
+    re.IGNORECASE,
+)
+_BRIEF_PREF_NL = re.compile(
+    r"\b(?:don'?t|do\s+not|exclude|remove|hide|omit|add|include|put|show)\b.*\bbrief\b"
+    r"|\bbrief\b.*\b(?:don'?t|do\s+not|exclude|remove|hide|omit|add|include|put|show)\b",
+    re.IGNORECASE,
+)
 
 READ_PACK_VERBS = frozenset(
     {
@@ -35,6 +54,20 @@ READ_PACK_VERBS = frozenset(
 ADMIN_WRITE_VERBS = frozenset({"due_add", "remind", "due_done"})
 CONFIRM_BOUND_VERBS = frozenset(
     {"alias_set", "person_update", "routine_edit", "kin_link"}
+)
+# Model must never self-Confirm — HUD Confirm Yes is the only confirmed=true path.
+MODEL_STRIP_CONFIRMED = frozenset(
+    {
+        "life_habit_do",
+        "life_habit_miss",
+        "life_habit_create",
+        "life_split_set",
+        "life_meal_log",
+        "life_food_favorite_set",
+        "life_person_capture",
+        "memory_facts_propose_edit",
+        "memory_facts_append",
+    }
 )
 
 
@@ -124,6 +157,8 @@ def _route_from_pack(
     elif tool in {"life_habit_do", "life_habit_miss", "life_routine_run"}:
         args["utterance"] = body or raw
         args["name"] = body or raw
+    elif tool == "memory_facts_propose_edit" and verb == "brief_include":
+        args["utterance"] = body or raw
     elif tool == "life_person_capture":
         args["utterance"] = body or raw
     elif tool == "life_who_is":
@@ -207,6 +242,28 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
         if routed is not None:
             routed["args"]["meal_slot"] = meal.group(2).lower()
         return routed
+
+    # Habit NL before bare due — require "habit" / tick cue (not "done: thesis").
+    habit_done = _HABIT_DONE_NL.match(raw)
+    if habit_done and (
+        lower.startswith("habit ")
+        or lower.startswith("habit\t")
+        or lower.startswith("tick ")
+        or "habit done" in lower
+        or "habit tick" in lower
+    ):
+        body = habit_done.group(1).strip()
+        if body:
+            return _route_from_pack("habit_do", raw, body, config=cfg)
+
+    habit_miss = _HABIT_MISS_NL.match(raw)
+    if habit_miss and ("habit" in lower or lower.startswith("miss")):
+        body = habit_miss.group(1).strip()
+        if body:
+            return _route_from_pack("habit_miss", raw, body, config=cfg)
+
+    if _BRIEF_PREF_NL.search(raw):
+        return _route_from_pack("brief_include", raw, raw, config=cfg)
 
     if lower.startswith("log lift:") or _LIFT_LINE.search(raw):
         body = raw.split(":", 1)[1].strip() if ":" in raw else raw

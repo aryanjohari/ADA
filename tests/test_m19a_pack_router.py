@@ -154,6 +154,21 @@ def test_route_gym_status_alias() -> None:
     assert r["tool"] == "life_gym_status"
 
 
+def test_route_gym_start_alias() -> None:
+    r = route_utterance("start gym")
+    assert r is not None
+    assert r["verb"] == "gym_start"
+    assert r["tool"] == "life_gym_start"
+
+
+def test_route_gym_end_aliases() -> None:
+    for text in ("close gym", "end workout", "end gym"):
+        r = route_utterance(text)
+        assert r is not None, text
+        assert r["verb"] == "gym_end", text
+        assert r["tool"] == "life_gym_end", text
+
+
 def test_route_add_due_prefix() -> None:
     r = route_utterance("add due: finish thesis by Friday")
     assert r is not None
@@ -186,3 +201,32 @@ def test_p0_routes_unchanged_after_p1_merge() -> None:
     assert route_utterance("remind me to stretch")["verb"] == "remind"
     assert route_utterance("macros")["verb"] == "nutrition_day"
     assert route_utterance("log meal: banana")["verb"] == "meal_log"
+
+
+def test_route_stt_long_meal_for_breakfast() -> None:
+    r = route_utterance("Long meal two bananas for a breakfast.")
+    assert r is not None
+    assert r["verb"] == "meal_log"
+    assert r["tool"] == "life_meal_log"
+    assert "banana" in r["args"]["utterance"].lower()
+    assert r["args"]["meal_slot"] == "breakfast"
+
+
+def test_route_what_all_did_i_have_to_buy() -> None:
+    r = route_utterance("What all did I have to buy?")
+    assert r is not None
+    assert r["verb"] == "due_list"
+    assert r["tool"] == "memory_open_loops_list"
+
+
+def test_route_grocery_list() -> None:
+    r = route_utterance("What's on my grocery list?")
+    assert r is not None
+    assert r["verb"] == "due_list"
+
+
+def test_remind_me_to_buy_still_due_add() -> None:
+    r = route_utterance("Remind me to buy oat milk.")
+    assert r is not None
+    assert r["verb"] == "remind"
+    assert r["tool"] == "memory_open_loops_upsert"

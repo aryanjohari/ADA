@@ -222,27 +222,53 @@ def test_f10_honest_partial_surfaced(data_root: Path) -> None:
 
 
 def test_meal_spine_builds_lines_from_local_food(data_root: Path) -> None:
-    insert_food(
+    inserted = insert_food(
         name="Banana",
         source="custom",
         nutrients_per_100g={"energy_kcal": 89, "protein_g": 1.1, "carb_g": 22.8},
         default_serving_g=118,
         paths=get_paths(),
     )
+    from ada.logs.favorites import set_favorite
+
+    set_favorite(
+        query="banana",
+        ref_id=inserted["food_ref_id"],
+        label="Banana",
+        confirmed=True,
+        paths=get_paths(),
+    )
     built = build_meal_log_args("one medium banana", meal_slot="breakfast", fetch_remote=False)
     assert built["ok"] is True
+    assert built.get("needs_confirm") is False
     assert built["meal_slot"] == "breakfast"
     assert built["lines"]
     assert built["lines"][0]["display_name"] == "Banana"
     assert built["lines"][0]["serving_grams"] == 118.0
 
 
-def test_f_p01b_meal_fast_path_writes_receipts(data_root: Path) -> None:
-    insert_food(
+@pytest.mark.tier_a
+def test_f_p01b_meal_fast_path_writes_receipts(
+    data_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("USDA_FDC_API_KEY", raising=False)
+    secrets = data_root / "secrets"
+    secrets.mkdir(exist_ok=True)
+    monkeypatch.setenv("ADA_SECRETS_DIR", str(secrets))
+    inserted = insert_food(
         name="Banana",
         source="custom",
         nutrients_per_100g={"energy_kcal": 89, "protein_g": 1.1, "carb_g": 22.8},
         default_serving_g=118,
+        paths=get_paths(),
+    )
+    from ada.logs.favorites import set_favorite
+
+    set_favorite(
+        query="banana",
+        ref_id=inserted["food_ref_id"],
+        label="Banana",
+        confirmed=True,
         paths=get_paths(),
     )
     session = ChatSession(mode="agent")

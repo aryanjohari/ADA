@@ -15,7 +15,13 @@ from ada.cortex.charter import (
 )
 from ada.cortex.cost import estimate_usd
 from ada.cortex.gemini import observation_to_content, user_content
-from ada.harness.mouth import apply_register_pass
+from ada.harness.mouth import (
+    CONFIRM_HABIT,
+    CONFIRM_HABIT_CREATE,
+    CONFIRM_LINE,
+    CONFIRM_SPLIT,
+    apply_register_pass,
+)
 from ada.harness.pack_router import ADMIN_WRITE_VERBS, CONFIRM_BOUND_VERBS, READ_PACK_VERBS
 from ada.harness.plan_artifact import parse_plan_from_assistant
 from ada.harness.session import ChatSession
@@ -33,6 +39,7 @@ _FACT_TOOLS_BLOCKED_ON_LIFE_PACK = frozenset(
 
 # Honest ack when Gemini returns no text and no tools (not a retry, not a mouth).
 EMPTY_CORTEX_ACK = "No reply that turn. Try once more."
+LIFE_SAVE_FAIL_ACK = "That didn't save — try once more."
 
 
 def detect_chill_cue(user_text: str) -> bool:
@@ -190,7 +197,10 @@ def _fast_path_meal(
         args={},
         call_id="meal-rollup",
     )
-    return "pack_fast_path", "Logged meal — receipt on file."
+    meal_data = _receipt_data(receipts, "life_meal_log")
+    if meal_data.get("needs_confirm"):
+        return "pack_fast_path", CONFIRM_LINE
+    return "pack_fast_path", "Logged that meal."
 
 
 def _fast_path_time_start(
@@ -225,7 +235,7 @@ def _fast_path_time_start(
         call_id="time-status",
     )
     label = str(kind).replace("_", " ")
-    return "pack_fast_path", f"Started {label} block — receipt on file."
+    return "pack_fast_path", f"Started {label}."
 
 
 def _fast_path_time_stop(
@@ -252,7 +262,7 @@ def _fast_path_time_stop(
         args={},
         call_id="time-status",
     )
-    return "pack_fast_path", "Stopped timer — receipt on file."
+    return "pack_fast_path", "Stopped the timer."
 
 
 def _fast_path_lift(
@@ -279,7 +289,11 @@ def _fast_path_lift(
         args={"sets": lift_args["sets"]},
         call_id="lift-fast-path",
     )
-    return "pack_fast_path", "Logged lift — receipt on file."
+    last = receipts[-1] if receipts else {}
+    if not last.get("ok"):
+        return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+    data = last.get("data") if isinstance(last.get("data"), dict) else {}
+    return "pack_fast_path", _speak_lift_log(data)
 
 
 def _fast_path_capture(
@@ -301,7 +315,7 @@ def _fast_path_capture(
         args={"text": text},
         call_id="capture-fast-path",
     )
-    return "pack_fast_path", "Capture logged — receipt on file."
+    return "pack_fast_path", "Captured that."
 
 
 def _receipt_data(receipts: list[dict[str, Any]], tool: str) -> dict[str, Any]:
@@ -310,6 +324,54 @@ def _receipt_data(receipts: list[dict[str, Any]], tool: str) -> dict[str, Any]:
             data = row.get("data")
             return data if isinstance(data, dict) else {}
     return {}
+
+
+def _speak_gym_end(data: dict[str, Any]) -> str:
+    n = int(data.get("set_count") or 0)
+    if n == 0:
+        return "Closed the gym — no sets that session."
+    muscles: list[str] = []
+    for row in data.get("exercises") or []:
+        if not isinstance(row, dict):
+            continue
+        for m in row.get("muscles") or []:
+            token = str(m or "").strip()
+            if token and token not in muscles:
+                muscles.append(token)
+    text = f"Closed the gym — {n} sets logged."
+    if muscles:
+        text += f" Hit {', '.join(muscles[:4])}."
+    return text
+
+
+def _speak_lift_log(data: dict[str, Any]) -> str:
+    resolved = data.get("resolved") or []
+    row = resolved[0] if resolved and isinstance(resolved[0], dict) else {}
+    name = (
+        row.get("exercise_name")
+        or row.get("canonical_name")
+        or (data.get("exercise_names") or [None])[0]
+        or "lift"
+    )
+    load = row.get("load_kg")
+    reps = row.get("reps")
+    bits = [f"Logged {name}"]
+    if load is not None and reps is not None:
+        bits.append(f"— {load} kg × {reps}")
+    elif reps is not None:
+        bits.append(f"— {reps} reps")
+    last_load = data.get("last_load_kg")
+    if last_load is None:
+        last_load = row.get("last_load_kg")
+    last_reps = data.get("last_reps")
+    if last_reps is None:
+        last_reps = row.get("last_reps")
+    if last_load is not None and last_reps is not None:
+        bits.append(f"Last closed was {last_load} × {last_reps}.")
+    text = " ".join(bits)
+    if not text.endswith("."):
+        text += "."
+    return text
 
 
 def _speak_nutrition_day(data: dict[str, Any]) -> str:
@@ -327,7 +389,7 @@ def _speak_nutrition_day(data: dict[str, Any]) -> str:
             bits.append(f"{protein}g protein")
         text = " ".join(bits)
     if data.get("honest_partial"):
-        text += " honest_partial — Ca/Fe/C/D not invented."
+        text += " Partial micronutrients only — not inventing Ca/Fe/C/D."
     return text
 
 
@@ -347,10 +409,31 @@ def _speak_due_list(data: dict[str, Any]) -> str:
 
 
 def _speak_gym_status(data: dict[str, Any]) -> str:
+    if isinstance(data.get("exercises"), list):
+        return _speak_gym_end(data)
     n = len(data.get("sets_today") or [])
+    exercises = data.get("exercises_today") or []
+    if exercises and isinstance(exercises[0], dict):
+        row = exercises[0]
+        last_load = row.get("last_load_kg")
+        last_reps = row.get("last_reps")
+        if last_load is not None and last_reps is not None:
+            name = row.get("canonical_name") or row.get("exercise_name") or "lift"
+            prior = f"Last closed {name}: {last_load} × {last_reps}."
+            if data.get("active_session"):
+                if n == 0:
+                    return f"Gym session's open — no sets yet. {prior}"
+                return f"Gym session's open — {n} sets today. {prior}"
+            if n == 0:
+                return f"No gym sets logged today. {prior}"
+            return f"{n} sets today. {prior}"
     if data.get("active_session"):
-        return f"Open gym session, {n} sets today."
-    return f"No open gym session. {n} sets today."
+        if n == 0:
+            return "Gym session's open — no sets yet."
+        return f"Gym session's open — {n} sets today."
+    if n == 0:
+        return "No gym sets logged today."
+    return f"{n} sets logged today."
 
 
 def _speak_habit_status(data: dict[str, Any]) -> str:
@@ -373,7 +456,7 @@ def _speak_who_is(data: dict[str, Any]) -> str:
         cand = (data.get("candidates") or [{}])[0]
         name = cand.get("display_name") or data.get("person_id") or "person"
         return f"Matched {name}."
-    return f"{count} candidates — Confirm required, no silent bind."
+    return f"{count} matches — tap Confirm on the card."
 
 
 def _speak_people_remind(data: dict[str, Any]) -> str:
@@ -429,7 +512,7 @@ def _fast_path_read(
     elif verb == "people_remind" or tool == "life_people_remind":
         speech = _speak_people_remind(data)
     else:
-        speech = "Read receipt on file."
+        speech = "Here's what I found."
     return "pack_fast_path", speech
 
 
@@ -519,7 +602,65 @@ def _fast_path_due(
         args={"kind": "todo", "status": "open"},
         call_id=f"{verb}-list",
     )
-    return "pack_fast_path", f"{verb.replace('_', ' ')} — receipt on file."
+    return "pack_fast_path", f"{verb.replace('_', ' ')} logged."
+
+
+def _fast_path_gym_start(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
+    from ada.logs.gym_split import empty_day_slots, has_gym_split
+
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_gym_start",
+        args={},
+        call_id="gym-start-fast-path",
+    )
+    last = receipts[-1] if receipts else {}
+    if not last.get("ok"):
+        return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+    if not has_gym_split():
+        _execute_tool(
+            session,
+            sink,
+            history,
+            receipts,
+            tool="life_split_set",
+            args={"days": empty_day_slots(), "confirmed": False},
+            call_id="gym-split-confirm-probe",
+        )
+        split = receipts[-1] if receipts else {}
+        if split.get("needs_confirm") or (split.get("data") or {}).get("needs_confirm"):
+            return "pack_fast_path", CONFIRM_SPLIT
+    return "pack_fast_path", "Gym session's open."
+
+
+def _fast_path_gym_end(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_gym_end",
+        args={},
+        call_id="gym-end-fast-path",
+    )
+    last = receipts[-1] if receipts else {}
+    if not last.get("ok"):
+        return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+    data = last.get("data") if isinstance(last.get("data"), dict) else {}
+    return "pack_fast_path", _speak_gym_end(data)
 
 
 def _fast_path_habit(
@@ -538,8 +679,30 @@ def _fast_path_habit(
     from ada.harness.habit_spine import build_habit_tick_args
 
     parsed = build_habit_tick_args(utterance, verb=verb)
+    if parsed.get("needs_confirm"):
+        confirm_tool = str(parsed.get("confirm_tool") or tool)
+        tick_args = parsed.get("args")
+        if not isinstance(tick_args, dict):
+            return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+        _execute_tool(
+            session,
+            sink,
+            history,
+            receipts,
+            tool=confirm_tool,
+            args=tick_args,
+            call_id=f"{verb}-confirm-probe",
+        )
+        last = receipts[-1] if receipts else {}
+        if parsed.get("create"):
+            return "pack_fast_path", CONFIRM_HABIT_CREATE
+        if last.get("needs_confirm") or (last.get("data") or {}).get("needs_confirm"):
+            return "pack_fast_path", CONFIRM_HABIT
+        if last.get("ok"):
+            return "pack_fast_path", "Habit logged."
+        return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
     if not parsed.get("ok") or not parsed.get("args"):
-        return "missing_life_receipt", None
+        return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
     _execute_tool(
         session,
         sink,
@@ -565,10 +728,10 @@ def _fast_path_habit(
         call_id=f"{verb}-status",
     )
     if verb == "habit_miss":
-        return "pack_fast_path", "Habit miss logged — receipt on file."
+        return "pack_fast_path", "Habit miss logged."
     if verb == "routine_run":
-        return "pack_fast_path", "Routine logged — receipt on file."
-    return "pack_fast_path", "Habit logged — receipt on file."
+        return "pack_fast_path", "Routine logged."
+    return "pack_fast_path", "Habit logged."
 
 
 def _fast_path_people_write(
@@ -602,7 +765,7 @@ def _fast_path_people_write(
         last = receipts[-1] if receipts else {}
         if not last.get("ok"):
             return "missing_life_receipt", None
-        return "pack_fast_path", "Person capture — receipt on file."
+        return "pack_fast_path", "Person saved."
 
     if verb == "birthday_set":
         body = str(args.get("body") or args.get("utterance") or "").strip()
@@ -625,7 +788,7 @@ def _fast_path_people_write(
         last = receipts[-1] if receipts else {}
         if not last.get("ok"):
             return "missing_life_receipt", None
-        return "pack_fast_path", "Birthday set — receipt on file."
+        return "pack_fast_path", "Birthday saved."
 
     if verb == "person_note":
         text = str(args.get("text") or "").strip()
@@ -651,7 +814,7 @@ def _fast_path_people_write(
         last = receipts[-1] if receipts else {}
         if not last.get("ok"):
             return "missing_life_receipt", None
-        return "pack_fast_path", "Note saved — receipt on file."
+        return "pack_fast_path", "Note saved."
 
     return None, None
 
@@ -682,9 +845,9 @@ def _fast_path_confirm_bound(
     )
     last = receipts[-1] if receipts else {}
     if last.get("needs_confirm") or (last.get("data") or {}).get("needs_confirm"):
-        return "pack_fast_path", "Confirm candidates — no silent bind."
+        return "pack_fast_path", CONFIRM_LINE
     if last.get("ok"):
-        return "pack_fast_path", f"{verb.replace('_', ' ')} — receipt on file."
+        return "pack_fast_path", f"{verb.replace('_', ' ')} saved."
     return "missing_life_receipt", None
 
 
@@ -720,6 +883,12 @@ def _maybe_pack_fast_path(
         return _fast_path_habit(
             session, sink, history, receipts, verb=verb, tool=tool, args=args or {}
         )
+
+    if verb == "gym_start":
+        return _fast_path_gym_start(session, sink, history, receipts)
+
+    if verb == "gym_end":
+        return _fast_path_gym_end(session, sink, history, receipts)
 
     if verb in {"person_capture", "birthday_set", "person_note"}:
         return _fast_path_people_write(
@@ -821,6 +990,8 @@ def run_turn(
     if fast_stop:
         stop_reason = fast_stop
         last_text = fast_text
+        if fast_stop == "missing_life_receipt" and not last_text:
+            last_text = LIFE_SAVE_FAIL_ACK
         if fast_stop == "pack_fast_path" and fast_text:
             last_text = apply_register_pass(
                 adapter,
@@ -852,7 +1023,7 @@ def run_turn(
         except Exception as exc:  # noqa: BLE001
             session.writer.append("fault", {"error": str(exc), "where": "cortex.generate"})
             stop_reason = "error"
-            last_text = f"Cortex error: {exc}"
+            last_text = LIFE_SAVE_FAIL_ACK
             break
 
         usage_rounds.append(_append_usage(session, turn, sink))

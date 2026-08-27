@@ -1,0 +1,47 @@
+# Optional ops — NOT an acceptance gate for M02/M03 research cards.
+# Always-on control-plane HUD (uvicorn). Phone → Tailscale Serve → 127.0.0.1:8787.
+# Naming: prefer ada-hud over vague ada-agent (01_BODY §8 historically said ada-agent.service;
+#   this unit is that always-on process — do not ship a second conflicting service).
+#
+# Install (system unit; needs sudo):
+#   sudo cp deploy/systemd/ada-hud.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ada-hud.service
+#   systemctl status ada-hud.service
+#
+# One-time Tailscale Serve (persists --bg; NOT part of this unit; Funnel off):
+#   tailscale serve --bg 8787
+#   tailscale serve status
+#
+# After code pull / mouth changes (stale process won’t load new tree):
+#   sudo systemctl restart ada-hud.service
+#
+# Foreground debug: stop this unit first so two listeners don’t fight 8787:
+#   sudo systemctl stop ada-hud.service
+#   .venv/bin/ada hud serve --host 127.0.0.1 --port 8787
+#
+# Logs: journalctl -u ada-hud.service -f
+#
+# Restart=on-failure (not always): clean systemctl stop stays down for foreground
+# debug; crashes / nonzero exits come back. RestartSec=5 avoids tight crash loops.
+
+[Unit]
+Description=ADA HUD control plane (localhost 127.0.0.1:8787)
+After=network-online.target local-fs.target
+Wants=network-online.target
+RequiresMountsFor=/mnt/ada-data
+# Refuse if ada-data missing — organ raises BodyFault; mount must be up.
+
+[Service]
+Type=simple
+User=ada-pi5
+WorkingDirectory=/mnt/ada-data/ADA
+Environment=ADA_DATA_ROOT=/mnt/ada-data
+# Prefer venv ada on metal; adjust path if installed differently.
+# Secrets (hud.env / gemini.env) loaded by app from /mnt/ada-data/secrets/ — no EnvironmentFile.
+ExecStart=/mnt/ada-data/ADA/.venv/bin/ada hud serve --host 127.0.0.1 --port 8787
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

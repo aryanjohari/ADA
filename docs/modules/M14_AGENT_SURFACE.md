@@ -85,7 +85,7 @@
 
 | Check | Result | Tag |
 |-------|--------|-----|
-| Process | `ada hud serve --host 127.0.0.1 --port 8787` via `.venv` | **METAL** |
+| Process | `ada hud serve --host 127.0.0.1 --port 8787` via `.venv`; ops pointer `deploy/systemd/ada-hud.service` (always-on; not a research gate) | **METAL** |
 | Listen | `127.0.0.1:8787` only | **METAL** |
 | Serve | `https://ada-pi5.tailbc896a.ts.net` → `http://127.0.0.1:8787` (tailnet only) | **METAL** |
 | Funnel | Not used for this control plane | **POLICY** / **METAL** |

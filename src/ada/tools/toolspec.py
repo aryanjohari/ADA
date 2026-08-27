@@ -669,7 +669,10 @@ SPECS: tuple[ToolSpec, ...] = (
         modes=_AGENT_ONLY,
         schema=_schema(
             "life_meal_log",
-            "Log a meal with food lines and nutrient snapshots.",
+            (
+                "Log a meal with food lines and nutrient snapshots. "
+                "Ambiguous food binds return needs_confirm until confirmed=true."
+            ),
             {
                 "lines": {
                     "type": "array",
@@ -678,6 +681,18 @@ SPECS: tuple[ToolSpec, ...] = (
                 },
                 "note": {"type": "string"},
                 "meal_slot": {"type": "string"},
+                "confirmed": {
+                    "type": "boolean",
+                    "description": "Required when resolve gate held the bind",
+                },
+                "resolve": {
+                    "type": "object",
+                    "description": "M21 resolve payload (candidates / reasons); Confirm bind",
+                },
+                "save_favorite": {
+                    "type": "boolean",
+                    "description": "After Confirm Yes, remember query→ref_id",
+                },
             },
             required=["lines"],
         ),
@@ -839,6 +854,70 @@ SPECS: tuple[ToolSpec, ...] = (
         ),
     ),
     ToolSpec(
+        name="life_food_favorite_set",
+        group="life",
+        side_effect="confirm",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "life_food_favorite_set",
+            "Save operator food favorite (query→ref_id) to FACTS. Requires confirmed=true.",
+            {
+                "query": {"type": "string"},
+                "ref_id": {"type": "string"},
+                "label": {"type": "string"},
+                "brand": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            required=["query", "ref_id"],
+        ),
+    ),
+    ToolSpec(
+        name="life_split_set",
+        group="life",
+        side_effect="confirm",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "life_split_set",
+            "Save gym_split FACT (days→label/body_parts). Requires confirmed=true.",
+            {
+                "days": {
+                    "type": "object",
+                    "description": "mon..sun → {label, body_parts[]}",
+                },
+                "schema_version": {"type": "integer"},
+                "confirmed": {"type": "boolean"},
+            },
+            required=["days"],
+        ),
+    ),
+    ToolSpec(
+        name="life_habit_create",
+        group="life",
+        side_effect="confirm",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "life_habit_create",
+            "Create habit definition (teach-in-flow). Requires confirmed=true. "
+            "Optional tick_after marks done the same turn.",
+            {
+                "display_name": {"type": "string"},
+                "proposed_display_name": {"type": "string"},
+                "aliases": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "schedule": {"type": "object"},
+                "tick_after": {"type": "boolean"},
+                "note": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            required=["display_name"],
+        ),
+    ),
+    ToolSpec(
         name="life_habit_do",
         group="life",
         side_effect="append_local",
@@ -846,11 +925,16 @@ SPECS: tuple[ToolSpec, ...] = (
         modes=_AGENT_ONLY,
         schema=_schema(
             "life_habit_do",
-            "Mark habit done today (continuity tick).",
+            "Mark habit done today (continuity tick). "
+            "Ambiguous name returns needs_confirm until confirmed=true + habit_id.",
             {
                 "habit_id": {"type": "string"},
                 "name": {"type": "string"},
                 "note": {"type": "string"},
+                "confirmed": {
+                    "type": "boolean",
+                    "description": "Operator Confirm on ambiguous habit bind.",
+                },
             },
         ),
     ),
@@ -862,11 +946,15 @@ SPECS: tuple[ToolSpec, ...] = (
         modes=_AGENT_ONLY,
         schema=_schema(
             "life_habit_miss",
-            "Mark habit miss today.",
+            "Mark habit miss today. Ambiguous name returns needs_confirm until confirmed=true.",
             {
                 "habit_id": {"type": "string"},
                 "name": {"type": "string"},
                 "note": {"type": "string"},
+                "confirmed": {
+                    "type": "boolean",
+                    "description": "Operator Confirm on ambiguous habit bind.",
+                },
             },
         ),
     ),
@@ -914,11 +1002,16 @@ SPECS: tuple[ToolSpec, ...] = (
         modes=_AGENT_ONLY,
         schema=_schema(
             "life_person_capture",
-            "Capture-first people card from utterance.",
+            "Capture-first people card from utterance. "
+            "Explicit display_name wins; command utterances need Confirm.",
             {
                 "utterance": {"type": "string"},
                 "display_name": {"type": "string"},
                 "note": {"type": "string"},
+                "confirmed": {
+                    "type": "boolean",
+                    "description": "Required when proposed name needs Confirm",
+                },
             },
         ),
     ),

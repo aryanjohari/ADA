@@ -1,12 +1,14 @@
 # M05 — Voice Personality Control (register + intent, not soul)
 
 **Status:** module research card — **design locked; register + time-speak + friend-first (M05.2) shipped (text-first); audio still later**  
-**Date:** 2026-08-16 (M05.2 friend-register smooth)  
+**Date:** 2026-08-16 (M05.2 friend-register smooth); **pointer 2026-08-26** → life-ack feel is [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) (not an M05.3; M05 stays dials + social/about-me)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB)  
 **Depends on:** [`M02_CHAT_HARNESS.md`](./M02_CHAT_HARNESS.md), [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md), [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md), [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md), [`../VOICE_EXEMPLARS.md`](../VOICE_EXEMPLARS.md), [`../VOICE_REGISTER.md`](../VOICE_REGISTER.md)
 
 **Slice rule:** this card admits **design + coding** of: register contract (tunable dials), intent/response-class gating, humor gating, exemplar anti-parrot policy, FACT prefs for voice, **time-speak (surface render)**, and eval smokes.  
 It does **not** admit: audio STT/TTS productize as a gate, always-listen, LoRA/weight personality, local main-LLM cortex, SOUL.md, Funnel, consciousness claims, geolocation, or weather.
+
+**Life-ack / Confirm / error feel:** M05.2 friend-first is **social / catch-up / about-me**. Routine meal/gym/habit spoken feel + Confirm/error humanization + cortex/mouth speech denylist → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) (sequence after M22). Do not reopen M05 as a soul or always-roast card.
 
 **Personality definition (locked):** personality = **register contract + intent/humor gates + continuity (FACTS)** + short exemplars as demos.  
 Not weights. Not a soul. Dials can change (session / FACT prefs / “chill”).

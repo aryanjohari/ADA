@@ -171,6 +171,76 @@ def upsert_habit_definition(
     return {"ok": True, "habit_id": habit_id, "display_name": display_name}
 
 
+def _habit_id_from_display_name(display_name: str, *, paths: DataPaths | None = None) -> str:
+    """Slug habit_id from display name; avoid colliding with an existing id."""
+    slug = re.sub(r"[^a-z0-9]+", "_", _normalize_name(display_name)).strip("_")
+    base = f"habit_{slug}" if slug else f"habit_{uuid.uuid4().hex[:8]}"
+    existing = {h["habit_id"] for h in list_habit_definitions(paths=paths)}
+    if base not in existing:
+        return base
+    return f"{base}_{uuid.uuid4().hex[:6]}"
+
+
+def create_habit(
+    *,
+    display_name: str,
+    aliases: list[str] | None = None,
+    schedule: dict[str, Any] | None = None,
+    confirmed: bool = False,
+    tick_after: bool = False,
+    note: str | None = None,
+    receipt_id: str | None = None,
+    paths: DataPaths | None = None,
+) -> dict[str, Any]:
+    """Confirm-create habit def (teach-in-flow). No silent SQL insert (F-M22-2)."""
+    name = (display_name or "").strip()
+    if not name:
+        return {"ok": False, "reason": "missing_display_name"}
+    alias_list = [str(a).strip().lower() for a in (aliases or []) if str(a).strip()]
+    sched = schedule if isinstance(schedule, dict) else {"windows": ["morning"]}
+    if not confirmed:
+        return {
+            "ok": False,
+            "needs_confirm": True,
+            "reason": "create_habit",
+            "proposed_display_name": name,
+            "display_name": name,
+            "aliases": alias_list,
+            "schedule": sched,
+            "tick_after": bool(tick_after),
+            "source": "teach_in_flow",
+        }
+    habit_id = _habit_id_from_display_name(name, paths=paths)
+    written = upsert_habit_definition(
+        habit_id=habit_id,
+        display_name=name,
+        aliases=alias_list,
+        schedule=sched,
+        source="teach_in_flow",
+        receipt_id=receipt_id,
+        paths=paths,
+    )
+    out: dict[str, Any] = {
+        **written,
+        "source": "teach_in_flow",
+        "receipt_id": receipt_id,
+    }
+    if tick_after and receipt_id:
+        tick = habit_do(
+            habit_id=habit_id,
+            note=note,
+            receipt_id=receipt_id,
+            paths=paths,
+        )
+        out["tick"] = tick
+        if tick.get("ok"):
+            out["event_id"] = tick.get("event_id")
+            out["local_day"] = tick.get("local_day")
+        elif tick.get("reason") == "already_done":
+            out["tick_reason"] = "already_done"
+    return out
+
+
 def upsert_routine_definition(
     *,
     routine_id: str,
@@ -251,6 +321,14 @@ def habit_do(
     if not habit_id and not resolved.get("ok"):
         return {"ok": False, **resolved}
     hid = habit_id or str(resolved["habit_id"])
+    # Belt: never FK on invented / stale ids (phone H1).
+    if not any(h.get("habit_id") == hid for h in list_habit_definitions(paths=paths)):
+        return {
+            "ok": False,
+            "reason": "unknown_habit_id",
+            "habit_id": hid,
+            "name": name,
+        }
     now = utc_now_iso()
     local_day = utc_to_local_day(paths=paths)
     event_id = uuid.uuid4().hex

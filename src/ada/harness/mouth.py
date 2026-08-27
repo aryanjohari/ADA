@@ -11,16 +11,58 @@ from ada.cortex.charter import load_register_contract
 from ada.cortex.gemini import user_content
 
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
-_CONFIRM_LINE = "Confirm candidates — no silent bind."
+
+# Friend-shaped Confirm stream lines — mouth skips rewrite when template contains these.
+CONFIRM_LINE = "Pick the right one — tap Confirm on the card."
+CONFIRM_FOOD = "Which food — tap Confirm on the card."
+CONFIRM_SPLIT = "Gym's open — Confirm split on the card if you want me to remember it."
+CONFIRM_HABIT = "Which habit — tap Confirm on the card."
+CONFIRM_HABIT_CREATE = "Confirm save habit — tap Confirm on the card."
+
+# Back-compat aliases for substring skip checks.
+_CONFIRM_LINE = CONFIRM_LINE
+_CONFIRM_FOOD = CONFIRM_FOOD
+_CONFIRM_SPLIT = CONFIRM_SPLIT
+
+# Banned in spoken/TTS output (ok in runs/ + Confirm args).
+SPEECH_DENYLIST_TOKENS = (
+    "receipt_id",
+    "FOREIGN KEY",
+    "foreign key",
+    "ada life ",
+    "missing_life_receipt",
+)
 
 MOUTH_RULES = """
 REGISTER PASS (mouth only — not a tool turn):
 - Input is receipt JSON only. Rephrase fields that are present. 1–3 short sentences.
+- Friend result-first: warm, short, plain — competent friend already in the room.
 - Voice-brief (task ack). No HTML, CSS, markup, or code fences.
+- Roast OFF on routine meal/gym/habit/dues/miss acks unless receipt marks challenge.
+- Speech denylist: never say receipt_id, raw uuid crumbs, SQL/FK prose, ada life CLI,
+  missing_life_receipt, or raw JSON fences in spoken copy.
 - Numbers never from the model: every numeric token you emit must already appear
   in the JSON (string-equal, or a whole number for a .0 value, or N% for a 0–1 rate).
 - Do not invent kcal, protein, or success. Do not choose tools or panel_kind.
 """
+
+
+def speech_has_denylist(text: str) -> bool:
+    """True if spoken copy includes M23-banned metal tokens."""
+    blob = (text or "").lower()
+    if not blob:
+        return False
+    if "receipt_id" in blob:
+        return True
+    if re.search(
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+        blob,
+    ):
+        return True
+    for tok in SPEECH_DENYLIST_TOKENS:
+        if tok.lower() in blob:
+            return True
+    return False
 
 
 def _canon(token: str) -> str:
@@ -63,6 +105,8 @@ def mouth_passes_guard(output: str, receipt_json: str) -> bool:
     lower = text.lower()
     if "<" in text or "</" in text or "style=" in lower or "```" in text:
         return False
+    if speech_has_denylist(text):
+        return False
     allowed = allowed_numeric_tokens(receipt_json)
     out_nums = numeric_tokens(text)
     for tok in out_nums:
@@ -89,8 +133,16 @@ def receipt_bundle(receipts: list[dict[str, Any]]) -> dict[str, Any] | None:
 def should_skip_register_pass(template: str | None, receipts: list[dict[str, Any]]) -> bool:
     if not (template or "").strip():
         return True
-    if _CONFIRM_LINE in (template or ""):
-        return True
+    tmpl = template or ""
+    for marker in (
+        CONFIRM_LINE,
+        CONFIRM_FOOD,
+        CONFIRM_SPLIT,
+        CONFIRM_HABIT,
+        CONFIRM_HABIT_CREATE,
+    ):
+        if marker in tmpl:
+            return True
     for row in receipts or []:
         if row.get("needs_confirm") or (row.get("data") or {}).get("needs_confirm"):
             return True

@@ -13,7 +13,8 @@
 
 **Operator locks carried forward:** Tailscale-only control plane; Serve OK / Funnel NO; bind `127.0.0.1`; body §7.2 panes frozen; harness `stream_events` + `runs/` JSONL are the stream of truth; CLI `ada chat` remains valid; body numbers must match `ada body doctor` / organs.
 
-**METAL (shipped):** `src/ada/hud/` FastAPI ASGI (`ada hud serve` → `127.0.0.1:8787`); Tailscale Serve path; chat → harness `run_turn`. Presentation / IA: [`M13_HUD_UX.md`](./M13_HUD_UX.md).
+**METAL (shipped):** `src/ada/hud/` FastAPI ASGI (`ada hud serve` → `127.0.0.1:8787`); Tailscale Serve path; chat → harness `run_turn`. Presentation / IA: [`M13_HUD_UX.md`](./M13_HUD_UX.md).  
+**Ops (not a research gate):** always-on unit pointer `deploy/systemd/ada-hud.service` — install/enable on metal for phone use; Cursor foreground serve is **dev only**. Tailscale Serve remains a one-time `tailscale serve --bg 8787` (Funnel off). See README **Always-on HUD**.
 
 ---
 
@@ -336,12 +337,14 @@ ada hud serve --host 0.0.0.0 …     # must refuse or require explicit unsafe fl
 **Ops companion (not Python):**
 
 ```text
-# after HTTPS enabled in tailnet DNS (M01)
+# always-on HUD process (optional ops; not an M03 acceptance gate)
+# deploy/systemd/ada-hud.service → ada hud serve --host 127.0.0.1 --port 8787
+# after HTTPS enabled in tailnet DNS (M01) — one-time; persists --bg
 tailscale serve --bg 8787
 tailscale serve status          # expect proxy to 127.0.0.1; funnel off
 ```
 
-Exact Serve CLI flags evolve with Tailscale versions — verify with `tailscale serve --help` on metal at implement time ([Serve docs](https://tailscale.com/docs/features/tailscale-serve)).
+Exact Serve CLI flags evolve with Tailscale versions — verify with `tailscale serve --help` on metal at implement time ([Serve docs](https://tailscale.com/docs/features/tailscale-serve)). Install/restart notes: README **Always-on HUD**.
 
 ---
 

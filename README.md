@@ -54,7 +54,7 @@ Localhost-only control plane (five panes). Expose with **Tailscale Serve** — *
 
 ada hud serve --host 127.0.0.1 --port 8787
 
-# on the Pi (tailnet HTTPS / MagicDNS enabled):
+# on the Pi (tailnet HTTPS / MagicDNS enabled) — one-time; persists --bg:
 tailscale serve --bg 8787
 tailscale serve status          # expect proxy → 127.0.0.1; Funnel off
 ```
@@ -63,6 +63,23 @@ tailscale serve status          # expect proxy → 127.0.0.1; Funnel off
 - Observe chat works with mesh presence via Serve; Agent/Plan need session login.
 - Vitals panes call the same organs as `ada body doctor`.
 - Chat uses the same `harness.run_turn` / `runs/` JSONL as `ada chat` (one interactive writer at a time).
+
+### Always-on HUD (ops)
+
+Cursor/SSH foreground `ada hud serve` dies when the Mac sleeps or the session ends — **dev only**. Daily phone life capture needs the Pi process supervised:
+
+```bash
+sudo cp deploy/systemd/ada-hud.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ada-hud.service
+systemctl status ada-hud.service
+```
+
+- Unit pointer: `deploy/systemd/ada-hud.service` (same stack: `.venv`, `ADA_DATA_ROOT=/mnt/ada-data`, bind `127.0.0.1:8787`). Body historically named this `ada-agent.service` — **use `ada-hud`**; do not install both.
+- After code pull / mouth changes: `sudo systemctl restart ada-hud.service` (stale process won’t load the new tree).
+- Foreground debug: `sudo systemctl stop ada-hud.service` first (avoid two listeners on 8787).
+- Logs: `journalctl -u ada-hud.service -f`
+- Tailscale Serve is **not** inside the unit (already persists `--bg`).
 
 ## CLI — memory / Dream (M04)
 

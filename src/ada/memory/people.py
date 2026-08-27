@@ -232,28 +232,159 @@ def parse_capture_utterance(utterance: str) -> dict[str, Any]:
     return {"ok": True, "display_name": name, "note": note, "utterance": utterance}
 
 
+_COMMAND_START = re.compile(
+    r"^(?:it\s+)?(?:please\s+)?(?:can\s+you\s+)?"
+    r"(?:remind|call|tell|ask|text|message|ping|email|set\s+up|help|make)\b",
+    re.IGNORECASE,
+)
+_COMMAND_VERBS = re.compile(
+    r"\b(?:remind|call|tell|ask|text|message|ping|email)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_command_name(name: str, *, utterance: str | None = None) -> bool:
+    """True when the would-be display_name is a sentence/command, not a person label."""
+    text = (name or "").strip()
+    if not text:
+        return False
+    words = text.split()
+    if len(words) >= 4:
+        return True
+    if _COMMAND_START.match(text):
+        return True
+    if _COMMAND_VERBS.search(text) and len(words) >= 2:
+        return True
+    utt = (utterance or "").strip()
+    if utt and utt.lower() != text.lower() and _COMMAND_START.match(utt):
+        # Name itself may be fine; utterance context checked by caller.
+        return False
+    return False
+
+
+def _propose_name_from_command(utterance: str) -> str | None:
+    """Extract a short likely name from command-like utterance (e.g. mummy)."""
+    text = (utterance or "").strip()
+    if not text:
+        return None
+    lower = text.lower()
+    for marker in (" call ", " text ", " message ", " ping ", " email ", " ask "):
+        if marker in f" {lower} ":
+            # Take last capitalized-ish token after the verb, or last word.
+            idx = lower.rfind(marker.strip())
+            tail = text[idx + len(marker.strip()) :].strip(" .,!?:;")
+            # Drop leading "me to" / "to"
+            tail_l = tail.lower()
+            for prefix in ("me to ", "to ", "me "):
+                if tail_l.startswith(prefix):
+                    tail = tail[len(prefix) :].strip()
+                    tail_l = tail.lower()
+            tokens = [t.strip(".,!?") for t in tail.split() if t.strip(".,!?")]
+            if tokens:
+                # Prefer last token if short (mummy); else first.
+                cand = tokens[-1] if len(tokens[-1]) <= 24 else tokens[0]
+                if cand and not _COMMAND_VERBS.match(cand):
+                    return cand
+    # Fallback: last word if utterance is long.
+    words = [w.strip(".,!?") for w in text.split() if w.strip(".,!?")]
+    if len(words) >= 3:
+        return words[-1]
+    return None
+
+
 def person_capture(
     *,
     utterance: str | None = None,
     display_name: str | None = None,
     note: str | None = None,
+    confirmed: bool = False,
     paths: DataPaths | None = None,
 ) -> dict[str, Any]:
-    parsed = (
-        parse_capture_utterance(utterance or "")
-        if utterance
-        else {"ok": True, "display_name": display_name or "", "note": note or ""}
-    )
-    if not parsed.get("ok"):
-        return parsed
-    name = str(parsed.get("display_name") or display_name or "").strip()
-    interaction_note = str(parsed.get("note") or note or "").strip()
+    """Capture a person card. Explicit display_name always wins over utterance re-parse (M21)."""
+    explicit = (display_name or "").strip()
+    interaction_note = (note or "").strip()
+    raw_utt = (utterance or "").strip()
+
+    if explicit:
+        name = explicit
+        if raw_utt and not interaction_note:
+            parsed_utt = parse_capture_utterance(raw_utt)
+            if parsed_utt.get("ok") and parsed_utt.get("note"):
+                interaction_note = str(parsed_utt.get("note") or "").strip()
+            elif not raw_utt.lower().startswith("met "):
+                # Keep command utterances as interaction notes, never as the name.
+                interaction_note = interaction_note or raw_utt
+    elif raw_utt:
+        parsed = parse_capture_utterance(raw_utt)
+        if not parsed.get("ok"):
+            return parsed
+        name = str(parsed.get("display_name") or "").strip()
+        interaction_note = interaction_note or str(parsed.get("note") or "").strip()
+        if _looks_like_command_name(name, utterance=raw_utt):
+            proposed = _propose_name_from_command(raw_utt) or name
+            if not confirmed:
+                return {
+                    "ok": False,
+                    "needs_confirm": True,
+                    "outcome": "needs_confirm",
+                    "reason": "utterance_as_name",
+                    "proposed_display_name": proposed,
+                    "person_id": _person_id_from_name(proposed),
+                    "utterance": raw_utt,
+                    "candidates": [
+                        {
+                            "person_id": _person_id_from_name(proposed),
+                            "display_name": proposed,
+                            "confidence": 0.5,
+                            "reason": "proposed_from_command",
+                        }
+                    ],
+                }
+            name = proposed
+    else:
+        return {"ok": False, "reason": "missing_name"}
+
+    if not name:
+        return {"ok": False, "reason": "missing_name"}
+
+    # Refuse creating a slug from a command-like explicit name unless confirmed.
+    if _looks_like_command_name(name, utterance=raw_utt or name) and not confirmed:
+        proposed = _propose_name_from_command(raw_utt or name) or name
+        if proposed != name or _looks_like_command_name(name, utterance=name):
+            return {
+                "ok": False,
+                "needs_confirm": True,
+                "outcome": "needs_confirm",
+                "reason": "utterance_as_name",
+                "proposed_display_name": proposed,
+                "person_id": _person_id_from_name(proposed),
+                "utterance": raw_utt or name,
+                "candidates": [
+                    {
+                        "person_id": _person_id_from_name(proposed),
+                        "display_name": proposed,
+                        "confidence": 0.5,
+                        "reason": "proposed_from_command",
+                    }
+                ],
+            }
+
     resolved = resolve_mention(name, paths=paths)
     created = False
     if resolved.get("ok"):
         person_id = str(resolved["person_id"])
         loaded = load_person(person_id, paths=paths)
         doc = loaded.get("doc") or {}
+    elif (resolved.get("candidates") or []) and len(resolved.get("candidates") or []) > 1:
+        return {
+            "ok": False,
+            "needs_confirm": True,
+            "outcome": "needs_confirm",
+            "reason": "ambiguous",
+            "match_count": resolved.get("match_count"),
+            "candidates": resolved.get("candidates") or [],
+            "display_name": name,
+        }
     else:
         person_id = _person_id_from_name(name)
         doc = {
@@ -275,7 +406,7 @@ def person_capture(
             }
         )
         doc["last_contact_at"] = utc_now_iso()
-    result = write_person_card(doc, paths=paths, confirmed=created)
+    result = write_person_card(doc, paths=paths, confirmed=created or confirmed)
     if not result.get("ok"):
         return result
     return {
@@ -283,6 +414,7 @@ def person_capture(
         "person_id": person_id,
         "path": result.get("path"),
         "created": created,
+        "display_name": name,
         "interaction_id": len(doc.get("interactions") or []) - 1 if interaction_note else None,
     }
 

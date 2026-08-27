@@ -24,7 +24,8 @@ packs:
     tool: life_person_capture
     prefill: "met "
     preferred_tools: [life_person_capture]
-    spine: capture_then_write
+    spine: capture_confirm_then_write
+    confirm_class: confirm_bind_on_ambiguity
   person_note:
     tool: life_person_note
     prefill: "note for "
@@ -63,6 +64,11 @@ packs:
     prefill: "routine edit: "
     preferred_tools: [memory_facts_propose_edit]
     spine: confirm_edit
+  brief_include:
+    tool: memory_facts_propose_edit
+    preferred_tools: [memory_facts_propose_edit]
+    spine: teach_brief_sections
+    confirm_class: confirm_prefs_patch
 
 chips:
   habit: habit_do
@@ -78,3 +84,8 @@ aliases:
   - {pattern: "alias set", verb: alias_set}
   - {pattern: "people remind", verb: people_remind}
   - {pattern: "upcoming birthdays", verb: people_remind}
+  - {pattern: "habit done", verb: habit_do}
+  - {pattern: "don't put gym in", verb: brief_include}
+  - {pattern: "dont put gym in", verb: brief_include}
+  - {pattern: "exclude gym from", verb: brief_include}
+  - {pattern: "remove gym from", verb: brief_include}

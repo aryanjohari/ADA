@@ -1,7 +1,7 @@
 # M19b — Daily surface + voice UX (research card)
 
-**Status:** **v1.6.2 shipped** (2026-08-19) — provenance + faces + Mac desk slot + **first-open face+name modal** on the live HUD, plus M17 P1 light markdown, additive SSE `view_open`, and the first deterministic `nutrition_day` panel. v1.6 addendum remains the lock pass. **Not shipped:** P1.5 PTT/STT/TTS, register-pass mouth, extra panels beyond `nutrition_day`.  
-**Date:** 2026-08-18  
+**Status:** **v1.6.3 pointer** (2026-08-26) — register-pass mouth **METAL** at [`mouth.py`](../../src/ada/harness/mouth.py) (receipt JSON + numeric fail-closed; harness `apply_register_pass`). **Still not shipped as product wedge:** full P1.5 STT/TTS productize / always-on voice path. Extra panels beyond `nutrition_day` still pattern-only. **Feel** of life acks / Confirm / errors → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) (not this card). Prior: **v1.6.2 shipped** (2026-08-19) provenance + faces + Mac desk + first-open modal + `nutrition_day`.  
+**Date:** 2026-08-18 (addenda through 2026-08-26 pointer)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · Client: Mac / phone / later display via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** Tier B **surface + transport** card — child of [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md)  
@@ -19,6 +19,7 @@
 | **v1.6** | 2026-08-18 | Operator lock pass: **thin device registry + turn provenance**; collapse two Mac faces into **one assistant face**; voice **preview-then-Send** (auto-send SUPERSEDED); **Gemini register pass ON** as the mouth after fast-path tools (template = fail-closed fallback). v1.5 treated device provenance as a gap, kept two Mac faces, PTT auto-send, register-pass OFF — those defaults are **SUPERSEDED** |
 | **v1.6.1** | 2026-08-18 | **Shipped on HUD:** `ada_hud_device` cookie + `facts/hud_devices.yaml` + HUD `user` event stamp (`input`/`face`/`device_*`/`tailscale_user`); `data-face=phone\|mac\|display` + picker + phone CSS; one Mac desk (small idle orb + visible stream + one panel slot + Body); M17 P1 **light markdown**; deterministic `nutrition_day` view registry from receipt/API JSON; additive SSE `view_open` filling the Mac slot. P1.5 PTT/mouth still **not** shipped |
 | **v1.6.2** | 2026-08-19 | **First-open (M20 phase 3a):** modal requires face confirm (phone/mac/display) + optional name; Save posts existing `/api/device`; Skip still stamps uuid and hinted/chosen face. `?face=` still wins. Session picker remains the later override. Name-only prompt **SUPERSEDED**. |
+| **v1.6.3** | 2026-08-26 | **Status honesty pointer:** register-pass mouth is **METAL** (`mouth.py` + harness wire). PTT/STT/TTS **productize** and remaining panels stay separate. Life-ack **feel** → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md). Does not reopen v1.6 POLICY. |
 
 ### One-liner
 
