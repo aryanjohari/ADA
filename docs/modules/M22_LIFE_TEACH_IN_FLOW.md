@@ -17,6 +17,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.0.3** | 2026-08-27 | Pointer only — next sequence capture card → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (multi-slot decompose; not teach-in-flow stores). |
 | **v1.0.2** | 2026-08-26 | Pointer only — next sequence feel card → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) (spoken friend register; not teach-in-flow stores). |
 | **v1.0.1** | 2026-08-26 | Pointer only — implement plan → [`../reviews/M22_IMPLEMENT_PLAN.md`](../reviews/M22_IMPLEMENT_PLAN.md) (gap map + ordered slices; not METAL). |
 | **v1.0** | 2026-08-26 | Design lock from Life vision vs seed-first docs. **Pick:** three equivalent doors to the **same stores** — teach-in-flow (default) · optional first-run interview (package) · optional seed/CLI. Same Confirm integrity as M21. |
@@ -227,6 +228,8 @@ M20 phases **1→5 stay locked.** This card is a **3→4 insert after M21**, sam
   [3] UI polish + panels
   [3→4] M21 resolve + Confirm-bind     (food+people METAL; habits next)
   [3→4] M22 teach-in-flow              ← this card (not package)
+  [3→4] M23 friend mouth / feel
+  [3→4] M24 multi-intent capture       (skill-spine Phase 1; not this card)
   [4] first-boot package               (optional interview = one door)
   [5] personal workflows / P2 mail
 ```

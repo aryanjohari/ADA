@@ -309,6 +309,16 @@ def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
             f"- HARD: this turn is life capture — call `{tool}` (or the suggested order). "
             "NEVER use memory_facts_append / memory_facts_propose_edit for meals, lifts, timers, or capture."
         )
+        if tool == "life_meal_log":
+            lines.append(
+                "- M24: multi-item meals stay on this pack spine — do not freestyle "
+                "ref_id / kcal; Confirm when resolve holds brand_fight."
+            )
+        if tool == "life_lift_log":
+            lines.append(
+                "- M24: multi-set / ladder lifts stay on this pack spine — "
+                "complete sets[] or ask; never silent drop."
+            )
     return "\n".join(lines)
 
 

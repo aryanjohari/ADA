@@ -14,6 +14,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.10** | 2026-08-27 | Pointer only → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md). Multi-item meal / multi-set lift = **skill-spine Phase 1** (decompose + Confirm), not a P0 mega-rewrite. Sequence: after M23, before package. No P0 METAL rewrite in this pointer. |
 | **v1.9** | 2026-08-26 | Pointer only → [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md). `gym_split` / targets / presets are **teach-in-flow stores** (ask-once → Confirm → same YAML). CLI import remains optional, not the primary personalization path. No P0 METAL rewrite. |
 | **v1.8** | 2026-08-19 | **METAL:** Gemini FunctionDeclaration arrays require `items` (400 INVALID_ARGUMENT otherwise). ADA schemas live in [`toolspec.py`](../../src/ada/tools/toolspec.py) — `life_meal_log`/`fix` `lines`, `life_lift_log` `sets`, `life_food_preset_save` `components`, `life_routine_run` `steps`. Adapter does not special-case this. |
 | **v1.7** | 2026-08-18 | **Gym catalog boot default + NL gap:** first empty `open_life_db` fetches free-exercise-db (opt out `ADA_GYM_CATALOG_FETCH=off`); fold/alias lookup so `pull-ups` hits `Pullups`; merge bundled seed aliases (`flat bench`); import stores `force`→movement, primary+secondary muscles, `body only`→bodyweight. Rebuild tags: `DELETE FROM exercise_catalog` then `ada life gym-init`. |
@@ -27,7 +28,7 @@
 
 ### One-liner
 
-**Sticky daily capture** — meal + gym + time + admin capture — with honest receipts, Today strip honesty, and durable logs; calorie-tracker friction; **not** mail, jobs, habits product, analysis packs, Cronometer sync, or parallel timers. Personalization of targets/presets/`gym_split` = **teach-in-flow** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)), not “edit YAML first.”
+**Sticky daily capture** — meal + gym + time + admin capture — with honest receipts, Today strip honesty, and durable logs; calorie-tracker friction; **not** mail, jobs, habits product, analysis packs, Cronometer sync, or parallel timers. Personalization of targets/presets/`gym_split` = **teach-in-flow** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)), not “edit YAML first.” Multi-item / multi-set NL honesty = [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (sequence insert; not this P0 home).
 
 ---
 

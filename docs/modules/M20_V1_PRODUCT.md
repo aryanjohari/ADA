@@ -1,11 +1,11 @@
 # M20 — v1 product (sequence · fence)
 
-**Status:** sequence fence — **phase 3a first-open METAL**; **phase 3b phone-face METAL** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md)); **phase 3c Mac+display METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)) — 3d panels pattern-only; **life-write honesty** ([`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md)) then **life teach-in-flow** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)) then **friend mouth / feel** ([`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md)) after polish, before package; package not this card  
-**Date:** 2026-08-26 (v1.10)  
+**Status:** sequence fence — **phase 3a first-open METAL**; **phase 3b phone-face METAL** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md)); **phase 3c Mac+display METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)) — 3d panels pattern-only; **life-write honesty** ([`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md)) then **life teach-in-flow** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)) then **friend mouth / feel** ([`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md)) then **multi-intent capture** ([`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md)) then **resolve recover** ([`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md)) after polish, before package; package not this card  
+**Date:** 2026-08-27 (v1.12)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone / later display via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** product fence + ordered next work — **not** a new organ, **not** a taste rewrite, **not** a voice-vendor thesis  
-**Depends on:** [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) (Confirm bind; Observe/Plan/Agent stay **permission gates**) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (birth pack / dues / Today — ingredients, not this sequence) · [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (**taste stays there**) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6+** (surface + voice POLICY; register-pass mouth **METAL** in `mouth.py` — see M19b status pointer; PTT/STT/TTS productize still separate) · [`M05_VOICE_PERSONALITY_CONTROL.md`](./M05_VOICE_PERSONALITY_CONTROL.md) (register, not soul) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) / [`M11_DREAM_CONSOLIDATION.md`](./M11_DREAM_CONSOLIDATION.md) (Dream = overnight **manage**) · [`M20a_VOICE_PATH.md`](./M20a_VOICE_PATH.md) (**phase 1 pick:** Pi-owned STT/TTS organs; Gemini stays cortex) · [`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md) (**phase 3b METAL:** phone ingest window) · [`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md) (**phase 3c METAL:** Mac desk + display) · [`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md) (**after 3a–3c, before phase 4:** resolve + clarify-before-write) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (**after M21, before phase 4:** teach-in-flow personalization; not package) · [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) (**after M22, before phase 4:** friend mouth / life-ack feel; not a soul)
+**Depends on:** [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) (Confirm bind; Observe/Plan/Agent stay **permission gates**) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (birth pack / dues / Today — ingredients, not this sequence) · [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (**taste stays there**) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19b_DAILY_SURFACE_VOICE.md`](./M19b_DAILY_SURFACE_VOICE.md) **v1.6+** (surface + voice POLICY; register-pass mouth **METAL** in `mouth.py` — see M19b status pointer; PTT/STT/TTS productize still separate) · [`M05_VOICE_PERSONALITY_CONTROL.md`](./M05_VOICE_PERSONALITY_CONTROL.md) (register, not soul) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) / [`M11_DREAM_CONSOLIDATION.md`](./M11_DREAM_CONSOLIDATION.md) (Dream = overnight **manage**) · [`M20a_VOICE_PATH.md`](./M20a_VOICE_PATH.md) (**phase 1 pick:** Pi-owned STT/TTS organs; Gemini stays cortex) · [`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md) (**phase 3b METAL:** phone ingest window) · [`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md) (**phase 3c METAL:** Mac desk + display) · [`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md) (**after 3a–3c, before phase 4:** resolve + clarify-before-write) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (**after M21, before phase 4:** teach-in-flow personalization; not package) · [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) (**after M22, before phase 4:** friend mouth / life-ack feel; not a soul) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (**after M23, before phase 4:** multi-intent / multi-slot life capture; skill-spine capture half; not package) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) (**after M24, before phase 4:** pack-fenced resolve recover; skill-spine hard-case half; not package)
 
 **Name stays `M20_V1_PRODUCT.md`:** no collision. M16 is the **capability** package (self · you · Pi-doer · track) already metal. This card is the **v1 product sequence** after a working daily ADA — what to build next, and what not to reopen. Not an M19b addendum (that card is already the surface/voice design lock). Not `M16b` (would mash birth-pack with voice). A later voice-research child is allowed; **do not write it here**.
 
@@ -15,6 +15,8 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.12** | 2026-08-27 | Pointer only → [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md). **Pack-fenced resolve recover** (bounded alt queries + detail refresh + Confirm after `empty_macros` / miss) sits **after M24, still before phase-4 package**. Does **not** reorder 1→5. Not package. Not freestyle ReAct. Not analysis. |
+| **v1.11** | 2026-08-27 | Pointer only → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md). **Multi-intent life capture** (one utterance → N honest slot fills; deterministic spine + Confirm gate) sits **after M23, still before phase-4 package**. Does **not** reorder 1→5. Not package. Not retrieval. Not feel. |
 | **v1.10** | 2026-08-26 | Pointer only → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md). **Friend mouth / life-ack feel** (one register across cortex + mouth; Confirm/error speech human; roast = capacity not duty) sits **after M22, still before phase-4 package**. Does **not** reorder 1→5. Not package. Not a soul. |
 | **v1.9** | 2026-08-26 | Pointer only → [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md). **Life teach-in-flow** (learn-while-talking; seed/interview optional same-store doors) sits **after M21, still before phase-4 package**. Does **not** reorder 1→5. Not package. Not retrieval. |
 | **v1.8** | 2026-08-23 | Pointer only → [`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md). **Life-write honesty** (resolve + clarify-before-write) sits **after UI polish 3a–3c, before phase-4 package**. Does **not** reorder 1→5. Not package. Not retrieval. |
@@ -31,7 +33,7 @@
 
 ## One-liner
 
-Daily ADA already works (chat-home, Confirm, life capture, faces, `nutrition_day` panel). **v1** is a cheap voice wedge + Gemini mouth, then polish that still feels like ADA, then life-write honesty + **teach-in-flow** + **friend mouth / feel** (not YAML-janitor, not a soul), then a real newborn package — **then** personal workflows / P2 mail. Not fat Plan/campaigns. Not a second brain.
+Daily ADA already works (chat-home, Confirm, life capture, faces, `nutrition_day` panel). **v1** is a cheap voice wedge + Gemini mouth, then polish that still feels like ADA, then life-write honesty + **teach-in-flow** + **friend mouth / feel** + **multi-intent capture** + **resolve recover** (not YAML-janitor, not a soul, not freestyle ReAct), then a real newborn package — **then** personal workflows / P2 mail. Not fat Plan/campaigns. Not a second brain.
 
 ---
 
@@ -74,6 +76,12 @@ Daily ADA already works (chat-home, Confirm, life capture, faces, `nutrition_day
   [3→4 insert] friend mouth / feel  →  M23 (life acks + Confirm + errors)
         |         (after M22; still before package; not a soul / second cortex)
         v
+  [3→4 insert] multi-intent capture  →  M24 (N slot fills; skill-spine capture half)
+        |         (after M23; still before package; not freestyle ReAct / not analysis)
+        v
+  [3→4 insert] resolve recover  →  M25 (empty_macros / miss → bounded recover + Confirm)
+        |         (after M24; still before package; not freestyle ReAct / not invent kcal)
+        v
   [4] first-boot package (newborn root · optional interview · secrets)
         |
         v
@@ -102,7 +110,7 @@ Daily ADA already works (chat-home, Confirm, life capture, faces, `nutrition_day
 | Piece | Honest hole |
 |-------|-------------|
 | Voice transport | **No** mic / STT / TTS. `input=typed` only. |
-| Mouth | Register pass + numeric guard **METAL** (`mouth.py`). **Feel gap:** life acks / Confirm / errors still tool-y or roast-heavy — [`M23`](./M23_FRIEND_MOUTH.md). |
+| Mouth | Register pass + numeric guard **METAL** (`mouth.py`). **Feel:** [`M23`](./M23_FRIEND_MOUTH.md). **Capture honesty:** multi-slot decompose [`M24`](./M24_MULTI_INTENT_CAPTURE.md) **METAL**; hard-case empty-macro recover still gap — [`M25`](./M25_RESOLVE_RECOVER.md). |
 | Life panels | **Only** `nutrition_day`. Gym / time / habits / people / dues packs exist; HUD templates do not. |
 | Feel | Faces/stream/Body work; first-open is no longer “picker buried in Session only.” **3b phone METAL** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md)). **3c Mac+display METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)): chips behind `+`; hairline chrome; display panels-first. **3d** remaining life panels = registry pattern only (`nutrition_day` metal). M17 still owns taste. |
 | Package | Birth pack is an operator CLI, not a clean-newborn **product** (onboarding + secrets + “add a window ≠ reinstall”). |
@@ -178,11 +186,13 @@ This card exists so later chats **execute** without re-arguing sequence.
 3b. **Research → implement (life-write honesty):** [`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md) — resolve + clarify-before-write (food+people first). **After 3a–3c, before phase 4.** Does not reorder 1→5. Not package. Not retrieval sibling.  
 3c. **Research → implement (life teach-in-flow):** [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) — learn-while-talking into existing stores (gym split ask-once, last-session weights, brief section prefs; habits create after M21 resolve). **After M21, before phase 4.** Optional seed/interview are same-store doors, not the primary path. Not package. Not retrieval.  
 3d. **Research → implement (friend mouth / feel):** [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) — one friend-register across cortex + mouth; life-ack roast off by default; Confirm/error speech human; no spoken `receipt_id`. **After M22, before phase 4.** Not a soul. Not a second cortex.  
+3e. **Research → implement (multi-intent capture):** [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) — one utterance → N honest meal/lift slot fills; deterministic spine + Confirm gate; empty-nutrient / incomplete-parse fail closed. **After M23, before phase 4.** Not freestyle ReAct. Not P4 analysis. Not package.  
+3f. **Research → implement (resolve recover):** [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) — pack-fenced recover after `empty_macros` / miss (alt queries + detail refresh + Confirm); caps then ask. **After M24, before phase 4.** Not freestyle ReAct. Not invent kcal. Not package.  
 4. **Implement chat:** first-boot package (newborn root, **optional** interview, secrets; windows ≠ organism).  
 5. **Only then:** personal workflows / P2 mail.
 
-**Do not start:** mail OAuth, Next on Pi, always-listen, native menu-bar / kiosk as v1, split-session, device-provenance analytics, test-tree move, Dream split, collapsing Observe/Plan/Agent, Plan/campaigns as the v1 center, package before M21 life-write honesty when daily capture is lying, package before M22 when personalization still means “hand-seed YAML,” package before M23 when phone still sounds tool-y / receipt-dumping.
+**Do not start:** mail OAuth, Next on Pi, always-listen, native menu-bar / kiosk as v1, split-session, device-provenance analytics, test-tree move, Dream split, collapsing Observe/Plan/Agent, Plan/campaigns as the v1 center, package before M21 life-write honesty when daily capture is lying, package before M22 when personalization still means “hand-seed YAML,” package before M23 when phone still sounds tool-y / receipt-dumping, package before M24 when multi-item meals/lifts still silent-wrong or no-tool, package before M25 when hard-case foods stay forever honest-empty with no recover.
 
 ---
 
-*End M20 v1 product fence. Sequence 1→5 still locked; phase 3a / 3b / 3c are METAL; 3d panels pattern-only; M21 → M22 → M23 sit after polish, before package.*
+*End M20 v1 product fence. Sequence 1→5 still locked; phase 3a / 3b / 3c are METAL; 3d panels pattern-only; M21 → M22 → M23 → M24 → M25 sit after polish, before package.*

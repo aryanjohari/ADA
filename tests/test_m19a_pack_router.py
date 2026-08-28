@@ -147,6 +147,23 @@ def test_route_hows_my_day() -> None:
     assert "memory_open_loops_list" in r["preferred_tools"]
 
 
+def test_route_m24_coffee_eggs_multi_meal() -> None:
+    r = route_utterance("Log a cup of coffee and 7 boiled eggs for breakfast")
+    assert r is not None
+    assert r["tool"] == "life_meal_log"
+    assert r["args"]["meal_slot"] == "breakfast"
+    utt = str(r["args"].get("utterance") or "").lower()
+    assert "coffee" in utt and "egg" in utt
+
+
+def test_route_m24_lat_pulldown_ladder() -> None:
+    r = route_utterance(
+        "Log lat pulldown 30kg x 12 reps 35kg x12 reps 40kg x 8 reps"
+    )
+    assert r is not None
+    assert r["tool"] == "life_lift_log"
+
+
 def test_route_gym_status_alias() -> None:
     r = route_utterance("what did i lift")
     assert r is not None

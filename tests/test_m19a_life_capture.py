@@ -296,7 +296,9 @@ def test_f_p01c_unknown_meal_stays_honest(data_root: Path) -> None:
     )
     assert result.stop_reason == "missing_life_receipt"
     tools = [r.get("tool") for r in result.tool_receipts]
-    assert tools == ["life_food_search"]
+    assert tools.count("life_food_search") >= 1
+    assert "life_meal_log" not in tools
+    assert result.text
 
 
 def test_sleep_fast_path_writes_time_block(data_root: Path) -> None:

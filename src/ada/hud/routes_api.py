@@ -95,6 +95,13 @@ _CONFIRMABLE_TOOLS = frozenset(
         "artifact_write",
         "life_alias_set",
         "life_person_update",
+        "life_meal_log",
+        "life_food_favorite_set",
+        "life_person_capture",
+        "life_habit_do",
+        "life_habit_miss",
+        "life_habit_create",
+        "life_split_set",
     }
 )
 

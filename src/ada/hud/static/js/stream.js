@@ -26,6 +26,15 @@ const CONFIRMABLE = new Set([
   "memory_facts_append",
   "memory_open_loops_upsert",
   "artifact_write",
+  "life_alias_set",
+  "life_person_update",
+  "life_meal_log",
+  "life_food_favorite_set",
+  "life_person_capture",
+  "life_habit_do",
+  "life_habit_miss",
+  "life_habit_create",
+  "life_split_set",
 ]);
 
 /** Cortex/config faults — do not TTS the dump. Confirm-pending skip stays. */

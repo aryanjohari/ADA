@@ -24,6 +24,18 @@ _ADD_MEAL = re.compile(
     re.IGNORECASE,
 )
 _LIFT_LINE = re.compile(r"\b(?:\d+(?:\.\d+)?)\s*(?:kg|kgs|lb|lbs)\s*x\s*\d+\b", re.IGNORECASE)
+# Multi-set ladder without requiring "log lift:" (M24 pack preference).
+_LIFT_LADDER = re.compile(
+    r"\b\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\s*[x×]\s*\d+\s*"
+    r"(?:reps?\s+)?(?:\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\s*[x×]\s*\d+)",
+    re.IGNORECASE,
+)
+# Multi-item meal cue when operator skips "log meal:" (still needs slot).
+_MEAL_MULTI = re.compile(
+    r"\b(?:log|add|long)\b.+\b(?:and|\+)\b.+\b(?:for|to)\s+(?:an?\s+|the\s+)?"
+    r"(?:breakfast|lunch|dinner|snack)\b",
+    re.IGNORECASE,
+)
 # Phone NL: "Habit done skincare" (no colon) — still pack-route, not prose Confirm.
 _HABIT_DONE_NL = re.compile(
     r"^(?:habit\s+)?(?:done|tick|logged)\s+:?\s*(.+)$",
@@ -243,6 +255,28 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
             routed["args"]["meal_slot"] = meal.group(2).lower()
         return routed
 
+    # Multi-item meal NL without strict "add X to breakfast" shape (M24 pack fence).
+    if _MEAL_MULTI.search(raw):
+        slot = _MEAL_SLOT.search(raw)
+        if slot:
+            body = raw
+            for prefix in ("log meal:", "long meal:", "log meal", "long meal", "log ", "add "):
+                if body.lower().startswith(prefix):
+                    body = body[len(prefix) :].strip()
+                    break
+            body = re.sub(
+                r"\s+(?:to|for)\s+(?:an?\s+|the\s+)?"
+                + re.escape(slot.group(1))
+                + r"\b.*$",
+                "",
+                body,
+                flags=re.IGNORECASE,
+            ).strip()
+            routed = _route_from_pack("meal_log", raw, body, config=cfg)
+            if routed is not None:
+                routed["args"]["meal_slot"] = slot.group(1).lower()
+            return routed
+
     # Habit NL before bare due — require "habit" / tick cue (not "done: thesis").
     habit_done = _HABIT_DONE_NL.match(raw)
     if habit_done and (
@@ -265,7 +299,7 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
     if _BRIEF_PREF_NL.search(raw):
         return _route_from_pack("brief_include", raw, raw, config=cfg)
 
-    if lower.startswith("log lift:") or _LIFT_LINE.search(raw):
+    if lower.startswith("log lift:") or _LIFT_LINE.search(raw) or _LIFT_LADDER.search(raw):
         body = raw.split(":", 1)[1].strip() if ":" in raw else raw
         return _route_from_pack("lift_log", raw, body, config=cfg)
 

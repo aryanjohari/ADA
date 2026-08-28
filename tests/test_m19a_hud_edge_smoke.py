@@ -536,3 +536,68 @@ def test_hud_smoke_observe_due_add_no_write(hud_smoke_root: Path) -> None:
     assert "memory_open_loops_upsert" not in _tools(result)
     _assert_no_facts_append_ok(result)
     assert list_loops(kind="todo", status="open", paths=get_paths()) == []
+
+
+def test_hud_smoke_m24_coffee_eggs_confirm_not_silent(hud_smoke_root: Path) -> None:
+    """Coffee brand_fight → Confirm; no silent Gott meal write (F-M24-1)."""
+    insert_food(
+        name="COFFEE",
+        source="custom",
+        brand="Gott Ice Cream, LLC",
+        nutrients_per_100g={
+            "energy_kcal": 310,
+            "protein_g": 4,
+            "fat_g": 18,
+            "carb_g": 32,
+        },
+        paths=get_paths(),
+    )
+    egg = insert_food(
+        name="Egg, boiled",
+        source="custom",
+        nutrients_per_100g={
+            "energy_kcal": 155,
+            "protein_g": 13,
+            "fat_g": 11,
+            "carb_g": 1.1,
+        },
+        default_serving_g=50,
+        paths=get_paths(),
+    )
+    from ada.logs.favorites import set_favorite
+
+    set_favorite(
+        query="eggs",
+        ref_id=egg["food_ref_id"],
+        label="Egg, boiled",
+        confirmed=True,
+        paths=get_paths(),
+    )
+    set_favorite(
+        query="egg",
+        ref_id=egg["food_ref_id"],
+        label="Egg, boiled",
+        confirmed=True,
+        paths=get_paths(),
+    )
+    before = _meal_count()
+    result = _agent_turn("Log a cup of coffee and 7 boiled eggs for breakfast")
+    assert result.stop_reason == "pack_fast_path"
+    meal_receipts = [r for r in result.tool_receipts if r.get("tool") == "life_meal_log"]
+    assert meal_receipts
+    assert meal_receipts[0].get("needs_confirm") or (
+        meal_receipts[0].get("data") or {}
+    ).get("needs_confirm")
+    assert _meal_count() == before
+
+
+def test_hud_smoke_m24_lat_pulldown_ladder(hud_smoke_root: Path) -> None:
+    """Lat pulldown ladder → life_lift_log with 3 sets (F-M24-3)."""
+    result = _agent_turn(
+        "Log lat pulldown 30kg x 12 reps 35kg x12 reps 40kg x 8 reps"
+    )
+    assert result.stop_reason == "pack_fast_path"
+    assert "life_lift_log" in _tools(result)
+    with open_life_db(paths=get_paths()) as conn:
+        n = conn.execute("SELECT COUNT(*) AS n FROM gym_sets").fetchone()["n"]
+    assert int(n) >= 3

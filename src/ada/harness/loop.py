@@ -139,6 +139,23 @@ def _execute_tool(
     }
     if result.needs_confirm:
         finished["pending_id"] = result.receipt_id
+        # Surface resolve on Confirm card / pending stash (meal multi-slot).
+        data = result.data if isinstance(result.data, dict) else {}
+        card_args = dict(result.args or {})
+        if data.get("resolve") and not card_args.get("resolve"):
+            card_args["resolve"] = data["resolve"]
+        if data.get("candidates") and not card_args.get("candidates"):
+            card_args["candidates"] = data["candidates"]
+        if data.get("lines") and not card_args.get("lines"):
+            card_args["lines"] = data["lines"]
+        if data.get("meal_slot") is not None and card_args.get("meal_slot") is None:
+            card_args["meal_slot"] = data.get("meal_slot")
+        if data.get("save_favorite") is not None:
+            card_args["save_favorite"] = data.get("save_favorite")
+        finished["args"] = card_args
+        # Keep observation.args aligned so HUD pending_confirms stashes resolve.
+        obs["args"] = card_args
+        receipts[-1] = obs
     sink.emit("tool_call_finished", finished)
     if tool == "life_nutrition_day" and result.ok and isinstance(obs.get("data"), dict):
         sink.emit(
@@ -178,16 +195,36 @@ def _fast_path_meal(
             call_id=f"meal-search-{search.get('query')}",
         )
     if not meal_args.get("ok") or not meal_args.get("lines"):
+        ask = str(meal_args.get("ask") or "").strip()
+        if ask:
+            return "missing_life_receipt", ask
+        misses = meal_args.get("misses") or []
+        if any(str(m.get("reason") or "") == "empty_macros" for m in misses):
+            return (
+                "missing_life_receipt",
+                "Couldn't log that — nutrients came back empty. Try another food name.",
+            )
         return "missing_life_receipt", None
+    log_args: dict[str, Any] = {
+        "lines": meal_args["lines"],
+        "meal_slot": meal_args.get("meal_slot"),
+    }
+    if meal_args.get("resolve"):
+        log_args["resolve"] = meal_args["resolve"]
+        log_args["confirmed"] = False
+        log_args["save_favorite"] = bool(meal_args.get("save_favorite", True))
     _execute_tool(
         session,
         sink,
         history,
         receipts,
         tool="life_meal_log",
-        args={"lines": meal_args["lines"], "meal_slot": meal_args.get("meal_slot")},
+        args=log_args,
         call_id="meal-fast-path",
     )
+    meal_data = _receipt_data(receipts, "life_meal_log")
+    if meal_data.get("needs_confirm"):
+        return "pack_fast_path", CONFIRM_LINE
     _execute_tool(
         session,
         sink,
@@ -197,9 +234,6 @@ def _fast_path_meal(
         args={},
         call_id="meal-rollup",
     )
-    meal_data = _receipt_data(receipts, "life_meal_log")
-    if meal_data.get("needs_confirm"):
-        return "pack_fast_path", CONFIRM_LINE
     return "pack_fast_path", "Logged that meal."
 
 
@@ -279,7 +313,11 @@ def _fast_path_lift(
 
     lift_args = build_lift_log_args(utterance)
     if not lift_args.get("ok") or not lift_args.get("sets"):
-        return "missing_life_receipt", None
+        ask = str(lift_args.get("ask") or "").strip()
+        # Fail closed with a human ask — never silent no-tool (F-M24-3).
+        return "missing_life_receipt", ask or (
+            "Need load and reps for that lift — say it like 30kg x 12."
+        )
     _execute_tool(
         session,
         sink,
@@ -1102,13 +1140,20 @@ def run_turn(
                 history.append(observation_to_content(obs, call_id=tc.call_id))
                 continue
 
+            # Consent Integrity: model must never self-Confirm (F-M24-4).
+            call_args = dict(tc.args or {})
+            from ada.harness.pack_router import MODEL_STRIP_CONFIRMED
+
+            if tc.name in MODEL_STRIP_CONFIRMED and "confirmed" in call_args:
+                call_args.pop("confirmed", None)
+
             _execute_tool(
                 session,
                 sink,
                 history,
                 receipts,
                 tool=tc.name,
-                args=tc.args,
+                args=call_args,
                 call_id=tc.call_id,
             )
 

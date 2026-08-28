@@ -68,6 +68,30 @@ def run_life_meal_log(args: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(line, dict):
             continue
         clean = {k: v for k, v in line.items() if not str(k).startswith("_")}
+        # F-M24-2: refuse empty-macro durable write even after Confirm Yes.
+        nutrients = clean.get("nutrients")
+        if isinstance(nutrients, dict):
+            macros = ("energy_kcal", "protein_g", "fat_g", "carb_g")
+            if all(nutrients.get(k) is None for k in macros):
+                return {
+                    "ok": False,
+                    "outcome": "error",
+                    "reason": "empty_macros",
+                    "error": "empty_macros",
+                    "lines": lines,
+                }
+        snap = clean.get("snapshot_json")
+        if isinstance(snap, dict):
+            sn = snap.get("nutrients") if isinstance(snap.get("nutrients"), dict) else {}
+            macros = ("energy_kcal", "protein_g", "fat_g", "carb_g")
+            if sn and all(sn.get(k) is None for k in macros):
+                return {
+                    "ok": False,
+                    "outcome": "error",
+                    "reason": "empty_macros",
+                    "error": "empty_macros",
+                    "lines": lines,
+                }
         clean_lines.append(clean)
     outcome = meals_mod.meal_log(
         receipt_id=receipt_id,

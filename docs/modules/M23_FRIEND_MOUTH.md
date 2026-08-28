@@ -27,6 +27,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.0.2** | 2026-08-27 | Pointer only — next sequence capture card → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (multi-intent slot fills; not feel). |
 | **v1.0.1** | 2026-08-26 | Pointer only — implement plan → [`../reviews/M23_IMPLEMENT_PLAN.md`](../reviews/M23_IMPLEMENT_PLAN.md) (gap map; not METAL). |
 | **v1.0** | 2026-08-26 | Design lock: Justine-class **friend talking** for life acks + Confirm + errors; one register across cortex + mouth; roast = capacity not duty; speech denylist; fail-closed templates must sound human. |
 
@@ -298,11 +299,12 @@ M05 / M19b / M20 / M21 falsifiers still bind.
         → [3→4] M21 life-write honesty
         → [3→4] M22 teach-in-flow
         → [3→4] M23 friend mouth / feel     ← this card
+        → [3→4] M24 multi-intent capture
         → [4] first-boot package
         → [5] workflows / P2 mail
 ```
 
-Operator lock: next product slice after M22 is **mouth/feel**, then daily phone use on this data root.
+Operator lock: after M23 feel, next product slice is **multi-intent capture** ([`M24`](./M24_MULTI_INTENT_CAPTURE.md)), then package. Do not reopen feel for write-path lies.
 
 ---
 

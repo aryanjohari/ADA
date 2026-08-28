@@ -252,6 +252,39 @@ def get_food(ref_id: str, *, paths: DataPaths | None = None) -> dict[str, Any] |
     return dict(row) if row else None
 
 
+def update_food_nutrients(
+    ref_id: str,
+    *,
+    nutrients_per_100g: dict[str, Any],
+    name: str | None = None,
+    brand: str | None = None,
+    paths: DataPaths | None = None,
+) -> dict[str, Any] | None:
+    """Refresh cached nutrients when FDC detail returns honest CORE (M25 OPEN #4)."""
+    rid = (ref_id or "").strip()
+    if not rid:
+        return None
+    row = get_food(rid, paths=paths)
+    if not row:
+        return None
+    nutrients_json = json.dumps(
+        _normalize_nutrients(nutrients_per_100g),
+        separators=(",", ":"),
+    )
+    now = utc_now_iso()
+    with open_food_db(paths=paths) as conn:
+        conn.execute(
+            """
+            UPDATE foods
+            SET nutrients_per_100g_json = ?, imported_at = ?,
+                name = COALESCE(?, name), brand = COALESCE(?, brand)
+            WHERE food_ref_id = ?
+            """,
+            (nutrients_json, now, name, brand, rid),
+        )
+    return get_food(rid, paths=paths)
+
+
 def _nutrients_of(row: dict[str, Any]) -> dict[str, Any]:
     if isinstance(row.get("nutrients"), dict):
         return row["nutrients"]
@@ -272,6 +305,80 @@ def is_thin_custom_food(row: dict[str, Any]) -> bool:
     has_macro = any(nutrients.get(k) is not None for k in _MACRO_IDS)
     missing_micros = all(nutrients.get(k) is None for k in _CORE_MICRO_IDS)
     return missing_core or (has_macro and missing_micros)
+
+
+def _is_branded_food(row: dict[str, Any]) -> bool:
+    return bool(str(row.get("brand") or "").strip())
+
+
+def _ice_cream_demote(row: dict[str, Any]) -> int:
+    """Rank key: demote ice-cream brands for generic queries (Gott COFFEE)."""
+    hay = f"{row.get('name') or ''} {row.get('brand') or ''}".lower()
+    if "ice cream" in hay or "icecream" in hay:
+        return 1
+    return 0
+
+
+def _foundation_boost(row: dict[str, Any]) -> int:
+    """Prefer Foundation / SR Legacy / raw-generic over branded."""
+    name = str(row.get("name") or "").lower()
+    source = str(row.get("source") or "").lower()
+    data_type = str(row.get("data_type") or "").lower()
+    if "foundation" in data_type or "sr legacy" in data_type:
+        return 0
+    if source == "usda_fdc" and (", raw" in name or name.endswith(" raw")):
+        return 0
+    if _is_branded_food(row):
+        return 2
+    return 1
+
+
+def search_foods_resolved(
+    query: str,
+    *,
+    limit: int = 10,
+    fetch_remote: bool = True,
+    paths: DataPaths | None = None,
+    http_get: Callable[..., httpx.Response] | None = None,
+) -> list[dict[str, Any]]:
+    """Local search; thin custom / all-branded hits still try USDA when key present."""
+    candidates = search_foods(query, limit=limit, paths=paths)
+    only_thin_custom = bool(candidates) and all(is_thin_custom_food(c) for c in candidates)
+    only_branded = bool(candidates) and all(_is_branded_food(c) for c in candidates)
+    if fetch_remote and str(query or "").strip() and (
+        not candidates or only_thin_custom or only_branded
+    ):
+        hit = fetch_usda_search(str(query), http_get=http_get)
+        if hit:
+            inserted = insert_food(
+                name=hit["name"],
+                source=hit["source"],
+                external_id=hit.get("external_id"),
+                brand=hit.get("brand"),
+                nutrients_per_100g=hit.get("nutrients_per_100g"),
+                paths=paths,
+            )
+            usda = {
+                "ref_id": inserted["food_ref_id"],
+                "name": inserted["name"],
+                "source": inserted["source"],
+                "brand": hit.get("brand"),
+                "score": 1.0,
+                "nutrients": hit.get("nutrients_per_100g") or {},
+                "data_type": hit.get("data_type"),
+            }
+            kept = [c for c in candidates if not is_thin_custom_food(c)]
+            candidates = [usda] + kept
+    candidates.sort(
+        key=lambda c: (
+            1 if is_thin_custom_food(c) else 0,
+            _ice_cream_demote(c),
+            _foundation_boost(c),
+            -float(c.get("score") or 0),
+            str(c.get("name") or ""),
+        )
+    )
+    return candidates[:limit]
 
 
 def delete_food(ref_id: str, *, paths: DataPaths | None = None) -> dict[str, Any]:
@@ -340,47 +447,6 @@ def forget_foods(
         "query": query,
         "source": "custom",
     }
-
-
-def search_foods_resolved(
-    query: str,
-    *,
-    limit: int = 10,
-    fetch_remote: bool = True,
-    paths: DataPaths | None = None,
-    http_get: Callable[..., httpx.Response] | None = None,
-) -> list[dict[str, Any]]:
-    """Local search; thin custom-only hits count as a miss for USDA when key present."""
-    candidates = search_foods(query, limit=limit, paths=paths)
-    only_thin_custom = bool(candidates) and all(is_thin_custom_food(c) for c in candidates)
-    if fetch_remote and str(query or "").strip() and (not candidates or only_thin_custom):
-        hit = fetch_usda_search(str(query), http_get=http_get)
-        if hit:
-            inserted = insert_food(
-                name=hit["name"],
-                source=hit["source"],
-                external_id=hit.get("external_id"),
-                brand=hit.get("brand"),
-                nutrients_per_100g=hit.get("nutrients_per_100g"),
-                paths=paths,
-            )
-            usda = {
-                "ref_id": inserted["food_ref_id"],
-                "name": inserted["name"],
-                "source": inserted["source"],
-                "score": 1.0,
-                "nutrients": hit.get("nutrients_per_100g") or {},
-            }
-            kept = [c for c in candidates if not is_thin_custom_food(c)]
-            candidates = [usda] + kept
-    candidates.sort(
-        key=lambda c: (
-            1 if is_thin_custom_food(c) else 0,
-            -float(c.get("score") or 0),
-            str(c.get("name") or ""),
-        )
-    )
-    return candidates[:limit]
 
 
 def build_snapshot_from_food(row: dict[str, Any], *, provider: str) -> dict[str, Any]:
