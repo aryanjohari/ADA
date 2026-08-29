@@ -10,6 +10,7 @@ from typing import Any, Callable
 import httpx
 
 from ada.body.vitals import utc_now_iso
+from ada.harness.resolve_gate import has_viable_local_candidate
 from ada.io.paths import DataPaths
 from ada.logs.connection import open_food_db
 from ada.secrets.usda import load_usda_fdc_api_key
@@ -296,6 +297,12 @@ def _nutrients_of(row: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def is_null_core_food(row: dict[str, Any]) -> bool:
+    """True when all macro slots are null — unusable for bind without detail refresh."""
+    nutrients = _nutrients_of(row)
+    return all(nutrients.get(k) is None for k in _MACRO_IDS)
+
+
 def is_thin_custom_food(row: dict[str, Any]) -> bool:
     """True when source=custom and CORE slots are missing (macros-only stubs)."""
     if str(row.get("source") or "") != "custom":
@@ -345,8 +352,16 @@ def search_foods_resolved(
     candidates = search_foods(query, limit=limit, paths=paths)
     only_thin_custom = bool(candidates) and all(is_thin_custom_food(c) for c in candidates)
     only_branded = bool(candidates) and all(_is_branded_food(c) for c in candidates)
+    only_null_core = bool(candidates) and all(is_null_core_food(c) for c in candidates)
+    no_viable_local = bool(candidates) and not has_viable_local_candidate(
+        str(query), candidates
+    )
     if fetch_remote and str(query or "").strip() and (
-        not candidates or only_thin_custom or only_branded
+        not candidates
+        or only_thin_custom
+        or only_branded
+        or only_null_core
+        or no_viable_local
     ):
         hit = fetch_usda_search(str(query), http_get=http_get)
         if hit:
@@ -367,11 +382,16 @@ def search_foods_resolved(
                 "nutrients": hit.get("nutrients_per_100g") or {},
                 "data_type": hit.get("data_type"),
             }
-            kept = [c for c in candidates if not is_thin_custom_food(c)]
+            kept = [
+                c
+                for c in candidates
+                if not is_thin_custom_food(c) and not is_null_core_food(c)
+            ]
             candidates = [usda] + kept
     candidates.sort(
         key=lambda c: (
             1 if is_thin_custom_food(c) else 0,
+            1 if is_null_core_food(c) else 0,
             _ice_cream_demote(c),
             _foundation_boost(c),
             -float(c.get("score") or 0),
@@ -503,20 +523,32 @@ def fetch_off_barcode(
     }
 
 
+def _fdc_nutrient_entry_id(entry: dict[str, Any]) -> int | None:
+    """Resolve FDC nutrient id from search (flat) or detail (nested) foodNutrient rows."""
+    raw = entry.get("nutrientId") or entry.get("nutrientNumber")
+    if raw is None:
+        nutrient = entry.get("nutrient")
+        if isinstance(nutrient, dict):
+            raw = nutrient.get("id") or nutrient.get("number")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_fdc_food_nutrients(item: dict[str, Any]) -> dict[str, float | None]:
     nutrients: dict[str, float | None] = {k: None for k in TRACKED_NUTRIENT_IDS}
     for n in item.get("foodNutrients") or []:
-        nid = n.get("nutrientId") or n.get("nutrientNumber")
+        nid = _fdc_nutrient_entry_id(n)
         if nid is None:
             continue
-        try:
-            slot = FDC_NUTRIENT_MAP.get(int(nid))
-        except (TypeError, ValueError):
-            continue
+        slot = FDC_NUTRIENT_MAP.get(nid)
         if not slot:
             continue
         try:
-            nutrients[slot] = float(n.get("value") or n.get("amount") or 0)
+            nutrients[slot] = float(n.get("value") if n.get("value") is not None else n.get("amount") or 0)
         except (TypeError, ValueError):
             pass
     return nutrients

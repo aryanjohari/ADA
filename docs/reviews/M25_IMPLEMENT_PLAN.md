@@ -1,9 +1,9 @@
 # M25 Resolve recover — Implement Plan
 
-**Status:** METAL — slices 1–3 shipped 2026-08-27  
-**Date:** 2026-08-27  
+**Status:** METAL — slices 1–6 shipped 2026-08-28  
+**Date:** 2026-08-27 (slices 1–3) · 2026-08-28 (slices 4–6 phone METAL close)  
 **Authority:** [`docs/modules/M25_RESOLVE_RECOVER.md`](../modules/M25_RESOLVE_RECOVER.md) v1.0 (design lock — do not reopen)  
-**Also read:** [`M24_MULTI_INTENT_CAPTURE.md`](../modules/M24_MULTI_INTENT_CAPTURE.md) · [`M20_V1_PRODUCT.md`](../modules/M20_V1_PRODUCT.md) · [`M19a_P0_LIFE_CAPTURE.md`](../modules/M19a_P0_LIFE_CAPTURE.md) · [`M23_FRIEND_MOUTH.md`](../modules/M23_FRIEND_MOUTH.md) · phone METAL `runs/2026-08-27/2be4966eb8e3414aa1f24bc0b1f28a72.jsonl` · M24 ship [`M24_IMPLEMENT_PLAN.md`](./M24_IMPLEMENT_PLAN.md)
+**Also read:** [`M24_MULTI_INTENT_CAPTURE.md`](../modules/M24_MULTI_INTENT_CAPTURE.md) · [`M20_V1_PRODUCT.md`](../modules/M20_V1_PRODUCT.md) · [`M19a_P0_LIFE_CAPTURE.md`](../modules/M19a_P0_LIFE_CAPTURE.md) · [`M23_FRIEND_MOUTH.md`](../modules/M23_FRIEND_MOUTH.md) · phone METAL `runs/2026-08-27/2be4966eb8e3414aa1f24bc0b1f28a72.jsonl` · `runs/2026-08-27/dcce95819f504591a679e1f3e5005635.jsonl` · M24 ship [`M24_IMPLEMENT_PLAN.md`](./M24_IMPLEMENT_PLAN.md)
 
 **Naming:** `docs/reviews/M25_IMPLEMENT_PLAN.md` matches M22/M23/M24 implement-plan pattern — gap map + ordered slices; design lock stays under `docs/modules/`.
 
@@ -27,6 +27,10 @@ Wire a **bounded recover loop** after meal fast-spine `empty_macros` / search mi
 | **Detail cache write** | **METAL** | `food.update_food_nutrients` on honest FDC detail (OPEN #4) |
 | **Fast-path ask** | **METAL** | `loop._fast_path_meal` surfaces `ask` after recover cap |
 | **M24 multi-slot hold** | **METAL** | coffee+eggs hold intact when eggs recover fails |
+| **Null-CORE local = miss** | **METAL** | `food.is_null_core_food` — all-null local hits still `fetch_remote`; deprioritized in rank (Gap A) |
+| **Fast-path detail refresh** | **METAL** | `build_meal_log_args` refreshes null-CORE FDC before bind/recover (Gap C) |
+| **Freestyle meal_log enrich/refuse** | **METAL** | `life_tools._enrich_meal_line_from_ref` + `meals.meal_log` belt — no silent 0-write (Gap B / F-M25-7) |
+| **Alt-query dedupe** | **METAL** | `build_alt_queries` — no double modifier / no `rices` (Gap D) |
 
 ## Gap map (historical — pre-ship)
 
@@ -72,6 +76,18 @@ Wire a **bounded recover loop** after meal fast-spine `empty_macros` / search mi
 **Scope:** S · caps; fail mouth line; tests; Agent phone  
 **Acceptance:** Cap hit → human ask not silent forever; no unbounded loop; M24 coffee+eggs still honest (F-M25-4…8).
 
+### Slice 4 — Null-CORE = miss + fast-path detail refresh  
+**Scope:** M · `food.search_foods_resolved` · `build_meal_log_args` first-pass `_refresh_fdc_detail`  
+**Acceptance:** “7 boiled eggs” / “300g boiled white rice” reach honest candidate or Confirm — not cap→ask with only null rows (Gap A, C).
+
+### Slice 5 — Refuse/enrich freestyle meal_log  
+**Scope:** M · `life_tools.run_life_meal_log` enrich from `get_food`; `meals.meal_log` refuse all-null  
+**Acceptance:** Gemini `ref_id`-only path → enrich or `empty_macros` — never silent 0 protein (Gap B / F-M25-7).
+
+### Slice 6 — Tests + phone checklist  
+**Scope:** S · extend `test_m25_resolve_recover.py`; gap map; phone METAL  
+**Acceptance:** null-CORE remote; freestyle refuse; M24 green; phone checklist below.
+
 **Do not start:** package, retrieval, P4 analysis, charts, food ML, M23 feel, cortex query assist, lift miss recover, second cortex.
 
 ---
@@ -86,12 +102,15 @@ Wire a **bounded recover loop** after meal fast-spine `empty_macros` / search mi
 
 ## Phone re-smoke (operator)
 
-**Shipped 2026-08-27 — re-verify on phone after `sudo systemctl restart ada-hud.service`:**
+**Shipped 2026-08-28 — re-verify on phone after `sudo systemctl restart ada-hud.service`:**
 
-1. Agent: `Log 7 boiled eggs for breakfast` → honest macros Confirm/log **or** clear ask after retries — **not** forever “nutrients came back empty” with zero retry.  
-2. Agent: `Log a cup of coffee and 7 boiled eggs for breakfast` → M24 hold/Confirm intact; eggs not silent empty write.  
-3. Chat `Yes` alone does not bind. Mouth kcal matches receipt (no invent).
+1. Agent: `Log 7 boiled eggs for breakfast` → honest macros Confirm/log **or** clear ask after retries — **not** 0 protein / silent empty write.  
+2. Agent: `Log 300 grams boiled white rice for lunch` → same — honest macros or clear ask.  
+3. Agent: `Log a cup of coffee and 7 boiled eggs for breakfast` → M24 hold/Confirm intact; eggs not silent empty write.  
+4. Chat `Yes` alone does not bind. Mouth kcal ⊆ receipt (no invent).
 
 ---
 
-*End M25 implement plan — METAL 2026-08-27; design lock remains M25 module card.*
+*End M25 implement plan — METAL 2026-08-28 (slices 4–6); design lock remains M25 module card.*
+
+**2026-08-29 METAL:** FDC detail `foodNutrients` parse fixed (nested `nutrient.id` + `amount`); recover/detail-refresh now writes honest CORE into local cache. **`harness/__init__.py`** no longer eager-imports `loop` — fixes HUD crash (`gateway → life_tools → resolve_gate` import cycle). **brand_fight recover** + implausible-branded filter + targeted Mars EGGS cache purge for poisoned candy rows.

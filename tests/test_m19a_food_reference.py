@@ -21,6 +21,14 @@ from ada.tools.gateway import Gateway
 from ada.tools.toolspec import SPECS_BY_NAME
 
 
+def _nested_fdc_nutrients(*pairs: tuple[int, float]) -> list[dict]:
+    """Realistic USDA FDC detail foodNutrients (nested nutrient.id + amount)."""
+    return [
+        {"nutrient": {"id": nid, "name": "n", "unitName": "G"}, "amount": val}
+        for nid, val in pairs
+    ]
+
+
 def test_local_cache_hit(data_root: Path) -> None:
     insert_food(
         name="Oats rolled",
@@ -213,13 +221,13 @@ def test_usda_detail_populates_calcium_iron(data_root: Path) -> None:
             resp.json.return_value = {
                 "fdcId": 173944,
                 "description": "Bananas, raw",
-                "foodNutrients": [
-                    {"nutrientId": 1008, "value": 89},
-                    {"nutrientId": 1003, "value": 1.1},
-                    {"nutrientId": 1087, "value": 5.0},
-                    {"nutrientId": 1089, "value": 0.26},
-                    {"nutrientId": 1162, "value": 8.7},
-                ],
+                "foodNutrients": _nested_fdc_nutrients(
+                    (1008, 89),
+                    (1003, 1.1),
+                    (1087, 5.0),
+                    (1089, 0.26),
+                    (1162, 8.7),
+                ),
             }
         return resp
 
@@ -234,6 +242,33 @@ def test_usda_detail_populates_calcium_iron(data_root: Path) -> None:
     detail = fetch_usda_detail(173944, api_key="test-key", http_get=fake_get)
     assert detail is not None
     assert detail["nutrients_per_100g"]["calcium_mg"] == 5.0
+
+
+def test_fdc_detail_nested_nutrient_shape(data_root: Path) -> None:
+    """Live FDC detail uses nutrient.id + amount — not flat nutrientId/value."""
+
+    def fake_get(url, **kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "fdcId": 2707154,
+            "description": "Egg, whole, cooked, hard-boiled",
+            "foodNutrients": _nested_fdc_nutrients(
+                (1008, 155),
+                (1003, 12.58),
+                (1004, 10.61),
+                (1005, 1.12),
+            ),
+        }
+        return resp
+
+    detail = fetch_usda_detail(2707154, api_key="test-key", http_get=fake_get)
+    assert detail is not None
+    nutrients = detail["nutrients_per_100g"]
+    assert nutrients["energy_kcal"] == 155.0
+    assert nutrients["protein_g"] == 12.58
+    assert nutrients["fat_g"] == 10.61
+    assert nutrients["carb_g"] == 1.12
 
 
 def test_meal_snapshot_unchanged_after_cache_update(data_root: Path) -> None:

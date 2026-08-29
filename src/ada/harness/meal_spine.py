@@ -9,7 +9,13 @@ from typing import Any, Callable
 
 import httpx
 
-from ada.harness.resolve_gate import decide_food_bind, macros_all_null, normalize_query
+from ada.harness.resolve_gate import (
+    brand_vs_query_fight,
+    decide_food_bind,
+    implausible_branded_junk,
+    macros_all_null,
+    normalize_query,
+)
 from ada.logs import favorites as favorites_mod
 from ada.logs import food as food_mod
 
@@ -231,23 +237,28 @@ def build_alt_queries(original_piece: str, parsed_query: str) -> list[str]:
             seen.add(key)
             alts.append(q)
 
+    base_tokens = set(parsed_lower.split())
+
     for mod in _extract_stripped_modifiers(original_piece):
+        if mod in base_tokens or parsed_lower.startswith(f"{mod} "):
+            continue
         add(f"{mod} {base}")
         if base.endswith("s") and len(base) > 1:
             add(f"{mod} {base[:-1]}")
-        elif base and not base.endswith("s"):
-            add(f"{mod} {base}s")
 
     if base.endswith("s") and len(base) > 1:
         add(base[:-1])
-    elif base and not base.endswith("s"):
+    elif base and not base.endswith("s") and not base.endswith("e"):
         add(f"{base}s")
 
     if "egg" in parsed_lower:
+        add("boiled egg")
+        add("boiled eggs")
         add("egg, whole, cooked")
         add("egg, whole, raw")
         add("large egg")
         add("eggs, whole, cooked")
+        add("egg, whole, cooked, hard-boiled")
 
     return alts
 
@@ -321,6 +332,31 @@ def _stem_token(token: str) -> str:
     return t
 
 
+def _filter_candidates(query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop implausible branded junk before bind; keep null-CORE for detail refresh."""
+    return [
+        c
+        for c in candidates
+        if not implausible_branded_junk(query, c)
+    ]
+
+
+def _has_plausible_generic_candidate(
+    query: str, candidates: list[dict[str, Any]]
+) -> bool:
+    for cand in candidates:
+        row = _candidate_as_row(cand)
+        if macros_all_null(row):
+            continue
+        if brand_vs_query_fight(query, row):
+            continue
+        if implausible_branded_junk(query, row):
+            continue
+        if candidate_matches_query(query, row):
+            return True
+    return False
+
+
 def candidate_matches_query(query: str, candidate: dict[str, Any]) -> bool:
     """True when candidate name shares food stems with the original slot query.
 
@@ -354,6 +390,8 @@ def _merge_candidate(
     row = _candidate_as_row(cand)
     ref_id = str(row.get("ref_id") or row.get("food_ref_id") or "").strip()
     if not ref_id or ref_id in seen or macros_all_null(row):
+        return
+    if implausible_branded_junk(query, row):
         return
     if not candidate_matches_query(query, row):
         return
@@ -434,7 +472,7 @@ def recover_food_slot(
     Alt queries → search → detail refresh → drop null-CORE → decide_food_bind.
     Caps: 3 rounds · 5 searches · ~8s wall → human ask.
     """
-    if miss_reason not in ("empty_macros", "food_search_miss"):
+    if miss_reason not in ("empty_macros", "food_search_miss", "brand_fight"):
         return {"ok": False, "reason": "not_recoverable"}
 
     start = time.monotonic()
@@ -471,6 +509,9 @@ def recover_food_slot(
                 _merge_candidate(pool, refreshed, seen_refs, query=query)
 
             if pool:
+                pool = _filter_candidates(query, pool)
+                if not pool:
+                    continue
                 decision = decide_food_bind(
                     query=query, candidates=pool, favorite=favorite
                 )
@@ -534,7 +575,11 @@ def build_meal_log_args(
             query, limit=5, fetch_remote=fetch_remote, paths=paths, http_get=http_get
         )
         searches.append({"query": query, "count": len(candidates)})
-        candidates = [_candidate_as_row(c) for c in candidates]
+        candidates = [
+            _refresh_fdc_detail(_candidate_as_row(c), paths=paths, http_get=http_get)
+            for c in candidates
+        ]
+        candidates = _filter_candidates(query, candidates)
 
         # Favorite ref not in search hit list — still offer it as a candidate.
         if favorite and favorite.get("ref_id"):
@@ -701,9 +746,44 @@ def build_meal_log_args(
                 meal_ask = str(recover["ask"])
             continue
 
+        decision_reasons = list(decision.get("reasons") or [])
+        if (
+            decision.get("needs_confirm")
+            and "brand_fight" in decision_reasons
+            and not _has_plausible_generic_candidate(query, candidates)
+        ):
+            recover = recover_food_slot(
+                query=query,
+                original_piece=part,
+                qty=qty,
+                unit=unit,
+                serving_grams=serving_grams,
+                miss_reason="brand_fight",
+                initial_candidates=candidates,
+                favorite=favorite,
+                fetch_remote=fetch_remote,
+                paths=paths,
+                http_get=http_get,
+            )
+            searches.extend(recover.get("searches") or [])
+            if recover.get("ok") and recover.get("line"):
+                decision = recover.get("decision") or {}
+                line = recover["line"]
+                if decision.get("needs_confirm"):
+                    needs_confirm = True
+                    if "brand_fight" not in reasons:
+                        reasons.append("brand_fight")
+                    for r in decision.get("reasons") or []:
+                        if r not in reasons:
+                            reasons.append(r)
+                    resolve_rows.append(decision)
+                    confirm_candidates.extend(list(decision.get("candidates") or []))
+                lines.append(line)
+                continue
+
         if decision.get("needs_confirm") and not recorded_resolve:
             needs_confirm = True
-            for r in decision.get("reasons") or []:
+            for r in decision_reasons:
                 if r not in reasons:
                     reasons.append(r)
             resolve_rows.append(decision)

@@ -14,6 +14,13 @@ from ada.logs.tz_util import utc_to_local_day
 from ada.memory.facts import get_fact
 
 
+_MACRO_IDS = ("energy_kcal", "protein_g", "fat_g", "carb_g")
+
+
+def _macros_all_null(nutrients: dict[str, Any]) -> bool:
+    return all(nutrients.get(k) is None for k in _MACRO_IDS)
+
+
 def _empty_snapshot(nutrients: dict[str, Any] | None = None, provider: str = "manual") -> str:
     payload = {
         "schema_version": 1,
@@ -214,6 +221,13 @@ def meal_log(
                 snap = _empty_snapshot(nutrients, provider=prov)
             snap_obj = json.loads(snap)
             nutrients = snap_obj.get("nutrients") or {}
+            if _macros_all_null(nutrients):
+                return {
+                    "ok": False,
+                    "reason": "empty_macros",
+                    "error": "empty_macros",
+                    "receipt_id": receipt_id,
+                }
             kcal += float(nutrients.get("energy_kcal") or 0)
             protein += float(nutrients.get("protein_g") or 0)
             carb += float(nutrients.get("carb_g") or 0)

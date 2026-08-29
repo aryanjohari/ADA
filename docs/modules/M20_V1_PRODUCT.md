@@ -1,7 +1,7 @@
 # M20 — v1 product (sequence · fence)
 
-**Status:** sequence fence — **phase 3a first-open METAL**; **phase 3b phone-face METAL** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md)); **phase 3c Mac+display METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)) — 3d panels pattern-only; **life-write honesty** ([`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md)) then **life teach-in-flow** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)) then **friend mouth / feel** ([`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md)) then **multi-intent capture** ([`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md)) then **resolve recover** ([`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md)) after polish, before package; package not this card  
-**Date:** 2026-08-27 (v1.12)  
+**Status:** sequence fence — **phase 3a first-open METAL**; **phase 3b phone-face METAL** ([`M20b_PHONE_FACE.md`](./M20b_PHONE_FACE.md)); **phase 3c Mac+display METAL** ([`M20c_MAC_DISPLAY_FACE.md`](./M20c_MAC_DISPLAY_FACE.md)) — 3d panels pattern-only; **life-write honesty** ([`M21_RESOLVE_CLARIFY.md`](./M21_RESOLVE_CLARIFY.md)) then **life teach-in-flow** ([`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md)) then **friend mouth / feel** ([`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md)) then **multi-intent capture** ([`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md)) then **resolve recover** ([`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md)) after polish, before package; **domain-knowledge foundation** ([`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md)) parallel — feeds per-domain cited memory docs, does not reorder 1→5; package not this card  
+**Date:** 2026-08-28 (v1.13)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone / later display via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** product fence + ordered next work — **not** a new organ, **not** a taste rewrite, **not** a voice-vendor thesis  
@@ -15,6 +15,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.13** | 2026-08-28 | Pointer only → [`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md). **Domain-agnostic “knowing” lock** (organ vs reference vs reject) feeds per-domain cited memory docs — **parallel foundation**, not a sequence insert. Does **not** reorder 1→5. Food Phase 2 reference doc after M25 recover lands. |
 | **v1.12** | 2026-08-27 | Pointer only → [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md). **Pack-fenced resolve recover** (bounded alt queries + detail refresh + Confirm after `empty_macros` / miss) sits **after M24, still before phase-4 package**. Does **not** reorder 1→5. Not package. Not freestyle ReAct. Not analysis. |
 | **v1.11** | 2026-08-27 | Pointer only → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md). **Multi-intent life capture** (one utterance → N honest slot fills; deterministic spine + Confirm gate) sits **after M23, still before phase-4 package**. Does **not** reorder 1→5. Not package. Not retrieval. Not feel. |
 | **v1.10** | 2026-08-26 | Pointer only → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md). **Friend mouth / life-ack feel** (one register across cortex + mouth; Confirm/error speech human; roast = capacity not duty) sits **after M22, still before phase-4 package**. Does **not** reorder 1→5. Not package. Not a soul. |

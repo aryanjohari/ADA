@@ -1,6 +1,8 @@
-"""Chat harness — ReAct loop, session, stream hooks."""
+"""Chat harness — ReAct loop, session, stream hooks.
 
-from ada.harness.loop import LoopResult, run_turn
-from ada.harness.session import ChatSession, Mode
+Import submodules directly (``ada.harness.loop``, ``ada.harness.session``).
+Do not eager-import loop here — ``gateway → life_tools → resolve_gate`` must
+not pull ``loop → gemini → tools → gateway`` during startup.
+"""
 
 __all__ = ["ChatSession", "Mode", "LoopResult", "run_turn"]

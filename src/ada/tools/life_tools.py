@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from ada.harness.resolve_gate import macros_all_null
 from ada.logs import food as food_mod
 from ada.logs import gym as gym_mod
 from ada.logs import habits as habits_mod
@@ -17,6 +19,97 @@ def _write(tool: str, receipt_id: str, outcome: dict[str, Any]) -> dict[str, Any
     if receipt_id and outcome.get("ok"):
         write_life_crumb(receipt_id=receipt_id, tool=tool, outcome=outcome)
     return outcome
+
+
+def _scale_line_nutrients(
+    per_100g: dict[str, Any], grams: float | None
+) -> dict[str, float | None]:
+    nutrients: dict[str, float | None] = {}
+    factor = (grams / 100.0) if grams not in (None, 0) else 1.0
+    for key, value in per_100g.items():
+        if value is None:
+            nutrients[key] = None
+            continue
+        try:
+            nutrients[key] = round(float(value) * factor, 3)
+        except (TypeError, ValueError):
+            nutrients[key] = None
+    return nutrients
+
+
+def _line_macros_present(line: dict[str, Any]) -> bool:
+    nutrients = line.get("nutrients")
+    if isinstance(nutrients, dict) and not macros_all_null({"nutrients": nutrients}):
+        return True
+    snap = line.get("snapshot_json")
+    if isinstance(snap, dict):
+        sn = snap.get("nutrients") if isinstance(snap.get("nutrients"), dict) else {}
+        if sn and not macros_all_null({"nutrients": sn}):
+            return True
+    return False
+
+
+def _enrich_meal_line_from_ref(line: dict[str, Any]) -> dict[str, Any]:
+    """Fill nutrients/snapshot from food cache when cortex passes ref_id only (F-M25-7)."""
+    if _line_macros_present(line):
+        return line
+    ref_id = str(line.get("ref_id") or "").strip()
+    if not ref_id:
+        return line
+    row = food_mod.get_food(ref_id)
+    if not row:
+        return line
+    per_100g = json.loads(row.get("nutrients_per_100g_json") or "{}")
+    if macros_all_null({"nutrients": per_100g}):
+        return line
+    serving_grams = line.get("serving_grams")
+    if serving_grams is None:
+        qty = float(line.get("serving_qty") or 1.0)
+        unit = str(line.get("serving_unit") or "serving").lower()
+        if unit in {"g", "gram", "grams", "ml"}:
+            serving_grams = qty
+    nutrients = _scale_line_nutrients(per_100g, serving_grams)
+    provider = str(row.get("source") or "manual")
+    enriched = dict(line)
+    enriched.setdefault("display_name", row.get("name"))
+    enriched["nutrients"] = nutrients
+    enriched["snapshot_json"] = {
+        "schema_version": 1,
+        "nutrients": nutrients,
+        "source": {
+            "provider": provider,
+            "external_id": row.get("external_id"),
+            "fetched_at": row.get("imported_at"),
+        },
+    }
+    enriched.setdefault("provenance", "api" if provider == "usda_fdc" else provider)
+    return enriched
+
+
+def _refuse_empty_macros(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """F-M24-2 / F-M25-7: refuse durable write when macros are all null or missing."""
+    for line in lines:
+        if _line_macros_present(line):
+            continue
+        has_ref = bool(str(line.get("ref_id") or "").strip())
+        nutrients = line.get("nutrients")
+        snap = line.get("snapshot_json")
+        explicit_empty = (
+            isinstance(nutrients, dict) and macros_all_null({"nutrients": nutrients})
+        ) or (
+            isinstance(snap, dict)
+            and isinstance(snap.get("nutrients"), dict)
+            and macros_all_null({"nutrients": snap["nutrients"]})
+        )
+        if has_ref or explicit_empty:
+            return {
+                "ok": False,
+                "outcome": "error",
+                "reason": "empty_macros",
+                "error": "empty_macros",
+                "lines": lines,
+            }
+    return None
 
 
 def run_life_food_search(args: dict[str, Any]) -> dict[str, Any]:
@@ -67,32 +160,12 @@ def run_life_meal_log(args: dict[str, Any]) -> dict[str, Any]:
     for line in lines:
         if not isinstance(line, dict):
             continue
-        clean = {k: v for k, v in line.items() if not str(k).startswith("_")}
-        # F-M24-2: refuse empty-macro durable write even after Confirm Yes.
-        nutrients = clean.get("nutrients")
-        if isinstance(nutrients, dict):
-            macros = ("energy_kcal", "protein_g", "fat_g", "carb_g")
-            if all(nutrients.get(k) is None for k in macros):
-                return {
-                    "ok": False,
-                    "outcome": "error",
-                    "reason": "empty_macros",
-                    "error": "empty_macros",
-                    "lines": lines,
-                }
-        snap = clean.get("snapshot_json")
-        if isinstance(snap, dict):
-            sn = snap.get("nutrients") if isinstance(snap.get("nutrients"), dict) else {}
-            macros = ("energy_kcal", "protein_g", "fat_g", "carb_g")
-            if sn and all(sn.get(k) is None for k in macros):
-                return {
-                    "ok": False,
-                    "outcome": "error",
-                    "reason": "empty_macros",
-                    "error": "empty_macros",
-                    "lines": lines,
-                }
+        enriched = _enrich_meal_line_from_ref(line)
+        clean = {k: v for k, v in enriched.items() if not str(k).startswith("_")}
         clean_lines.append(clean)
+    refused = _refuse_empty_macros(clean_lines)
+    if refused:
+        return refused
     outcome = meals_mod.meal_log(
         receipt_id=receipt_id,
         note=args.get("note"),

@@ -59,6 +59,65 @@ def macros_all_null(candidate: dict[str, Any]) -> bool:
     return all(n.get(k) is None for k in _MACRO_IDS)
 
 
+def _macro_float(nutrients: dict[str, Any], key: str) -> float | None:
+    val = nutrients.get(key)
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def implausible_branded_junk(query: str, candidate: dict[str, Any]) -> bool:
+    """Branded row with candy-like macros for a generic whole-food query (Mars EGGS)."""
+    if not str(candidate.get("brand") or "").strip():
+        return False
+    q = normalize_query(query)
+    nutrients = _candidate_macros(candidate)
+    carb = _macro_float(nutrients, "carb_g")
+    protein = _macro_float(nutrients, "protein_g")
+    kcal = _macro_float(nutrients, "energy_kcal")
+    if "egg" in q:
+        if carb is not None and carb > 30:
+            return True
+        if kcal is not None and kcal > 400:
+            return True
+        if (
+            protein is not None
+            and protein < 5
+            and carb is not None
+            and carb > 15
+        ):
+            return True
+    return False
+
+
+def has_viable_local_candidate(query: str, candidates: list[dict[str, Any]]) -> bool:
+    """True when pool has a non-null, non-junk candidate matching the slot query."""
+    for cand in candidates:
+        if macros_all_null(cand):
+            continue
+        if brand_vs_query_fight(query, cand):
+            continue
+        if implausible_branded_junk(query, cand):
+            continue
+        name = str(cand.get("name") or cand.get("label") or "")
+        q_stems = {
+            t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t
+            for t in _tokens(query)
+            if len(t) > 1
+        }
+        name_stems = {
+            t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t
+            for t in _tokens(name)
+        }
+        if q_stems and not q_stems <= name_stems:
+            continue
+        return True
+    return False
+
+
 def candidate_preview(candidate: dict[str, Any], *, query: str | None = None) -> dict[str, Any]:
     """Gateway-visible candidate row (label, brand, kcal, ref_id, fight)."""
     nutrients = _candidate_macros(candidate)

@@ -23,6 +23,14 @@ from ada.logs.favorites import set_favorite
 from ada.logs.food import get_food, insert_food, update_food_nutrients
 
 
+def _nested_fdc_nutrients(*pairs: tuple[int, float]) -> list[dict]:
+    """Realistic USDA FDC detail foodNutrients (nested nutrient.id + amount)."""
+    return [
+        {"nutrient": {"id": nid, "name": "n", "unitName": "G"}, "amount": val}
+        for nid, val in pairs
+    ]
+
+
 class _ShouldNotRunAdapter:
     model = "fake"
 
@@ -161,12 +169,12 @@ def test_recover_detail_refresh_finds_honest_egg(data_root: Path) -> None:
         resp.json.return_value = {
             "fdcId": 999001,
             "description": "Egg, whole, cooked, hard-boiled",
-            "foodNutrients": [
-                {"nutrientId": 1008, "value": 155},
-                {"nutrientId": 1003, "value": 12.6},
-                {"nutrientId": 1004, "value": 10.6},
-                {"nutrientId": 1005, "value": 1.1},
-            ],
+            "foodNutrients": _nested_fdc_nutrients(
+                (1008, 155),
+                (1003, 12.6),
+                (1004, 10.6),
+                (1005, 1.1),
+            ),
         }
         return resp
 
@@ -201,10 +209,12 @@ def test_recover_detail_refresh_finds_honest_egg(data_root: Path) -> None:
     line = recover.get("line") or {}
     nutrients = line.get("nutrients") or {}
     assert nutrients.get("energy_kcal") is not None
+    assert nutrients.get("protein_g") is not None
     row = get_food(candy["food_ref_id"], paths=paths)
     assert row is not None
     cached = json.loads(row.get("nutrients_per_100g_json") or "{}")
     assert cached.get("energy_kcal") == 155.0
+    assert cached.get("protein_g") == 12.6
 
 
 def test_recover_ambiguous_needs_confirm(data_root: Path) -> None:
@@ -393,6 +403,10 @@ def test_recover_cap_hit_human_ask(
     assert built.get("ask")
     assert len(built.get("searches") or []) >= 2
 
+    import ada.logs.food as food_mod
+
+    monkeypatch.setattr(food_mod, "fetch_usda_search", lambda *a, **k: None)
+
     session = ChatSession(mode="agent")
     result = run_turn(
         session,
@@ -440,6 +454,267 @@ def test_decide_food_bind_never_sole_picks_null_core() -> None:
         favorite=None,
     )
     assert decision.get("proposed_ref_id") == "good1"
+
+
+def test_alt_queries_no_double_modifier_or_bad_plural() -> None:
+    alts = build_alt_queries("7 boiled eggs", "eggs")
+    lowered = [a.lower() for a in alts]
+    assert "boiled boiled" not in " ".join(lowered)
+    assert "rices" not in lowered
+    assert "boiled eggs" in lowered or "boiled egg" in lowered
+
+
+def test_search_null_core_local_triggers_remote(
+    data_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All-null-CORE local cache must not block USDA fetch (Gap A)."""
+    paths = get_paths()
+    insert_food(
+        name="EGGS",
+        source="usda_fdc",
+        external_id="junk001",
+        brand="Mars Chocolate",
+        nutrients_per_100g={
+            "energy_kcal": None,
+            "protein_g": None,
+            "fat_g": None,
+            "carb_g": None,
+        },
+        paths=paths,
+    )
+    remote_called: list[str] = []
+
+    def fake_fetch(query, **kwargs):
+        remote_called.append(query)
+        return {
+            "name": "Egg, whole, cooked, hard-boiled",
+            "source": "usda_fdc",
+            "external_id": "173424",
+            "brand": None,
+            "nutrients_per_100g": {
+                "energy_kcal": 155.0,
+                "protein_g": 12.6,
+                "fat_g": 10.6,
+                "carb_g": 1.1,
+            },
+            "data_type": "Foundation",
+        }
+
+    import ada.logs.food as food_mod
+
+    monkeypatch.setattr(food_mod, "fetch_usda_search", fake_fetch)
+    hits = food_mod.search_foods_resolved("eggs", limit=5, paths=paths)
+    assert remote_called == ["eggs"]
+    assert hits
+    assert hits[0].get("nutrients", {}).get("energy_kcal") == 155.0
+
+
+def test_freestyle_meal_log_ref_id_only_enriches(data_root: Path) -> None:
+    """Gemini ref_id-only line → enrich from cache, honest macros (Gap B)."""
+    from ada.tools.life_tools import run_life_meal_log
+
+    paths = get_paths()
+    egg = insert_food(
+        name="Egg, whole, cooked, hard-boiled",
+        source="custom",
+        nutrients_per_100g={
+            "energy_kcal": 155,
+            "protein_g": 12.6,
+            "fat_g": 10.6,
+            "carb_g": 1.1,
+        },
+        paths=paths,
+    )
+    out = run_life_meal_log(
+        {
+            "receipt_id": "r1",
+            "lines": [
+                {
+                    "ref_id": egg["food_ref_id"],
+                    "serving_qty": 7,
+                    "serving_unit": "serving",
+                    "serving_grams": 350.0,
+                }
+            ],
+        }
+    )
+    assert out.get("ok") is True
+    assert out.get("kcal") and float(out["kcal"]) > 0
+    assert out.get("protein_g") and float(out["protein_g"]) > 0
+
+
+def test_freestyle_meal_log_ref_id_only_refuses_null_core(data_root: Path) -> None:
+    """ref_id with null-CORE cache → refuse empty_macros, never silent 0 write."""
+    from ada.tools.life_tools import run_life_meal_log
+
+    paths = get_paths()
+    junk = insert_food(
+        name="eggs",
+        source="custom",
+        nutrients_per_100g={
+            "energy_kcal": None,
+            "protein_g": None,
+            "fat_g": None,
+            "carb_g": None,
+        },
+        paths=paths,
+    )
+    out = run_life_meal_log(
+        {
+            "receipt_id": "r2",
+            "lines": [{"ref_id": junk["food_ref_id"], "serving_qty": 7}],
+        }
+    )
+    assert out.get("ok") is False
+    assert out.get("reason") == "empty_macros"
+    with open_life_db(paths=paths) as conn:
+        n = conn.execute("SELECT COUNT(*) AS n FROM meals").fetchone()["n"]
+    assert int(n) == 0
+
+
+def test_fast_spine_detail_refresh_before_recover(data_root: Path) -> None:
+    """Null-CORE FDC on fast spine → detail refresh → honest bind without recover cap."""
+    paths = get_paths()
+    candy = insert_food(
+        name="EGGS",
+        source="usda_fdc",
+        external_id="999002",
+        brand="Mars Chocolate",
+        nutrients_per_100g={
+            "energy_kcal": None,
+            "protein_g": None,
+            "fat_g": None,
+            "carb_g": None,
+        },
+        paths=paths,
+    )
+
+    def fake_get(url, **kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "fdcId": 999002,
+            "description": "Egg, whole, cooked, hard-boiled",
+            "foodNutrients": _nested_fdc_nutrients(
+                (1008, 155),
+                (1003, 12.6),
+                (1004, 10.6),
+                (1005, 1.1),
+            ),
+        }
+        return resp
+
+    built = build_meal_log_args(
+        "7 boiled eggs",
+        meal_slot="breakfast",
+        fetch_remote=False,
+        paths=paths,
+        http_get=fake_get,
+    )
+    assert built.get("ok") is True
+    line = (built.get("lines") or [{}])[0]
+    nutrients = line.get("nutrients") or {}
+    assert nutrients.get("energy_kcal") is not None
+    assert nutrients.get("protein_g") is not None
+    assert line.get("ref_id") == candy["food_ref_id"]
+    row = get_food(candy["food_ref_id"], paths=paths)
+    cached = json.loads(row.get("nutrients_per_100g_json") or "{}")
+    assert cached.get("energy_kcal") == 155.0
+    assert cached.get("protein_g") == 12.6
+
+
+def test_seven_eggs_not_mars_candy(data_root: Path) -> None:
+    """Poisoned Mars EGGS candy macros must not sole-bind; recover → real egg (F-M25-2)."""
+    paths = get_paths()
+    candy = insert_food(
+        name="EGGS",
+        source="usda_fdc",
+        external_id="mars001",
+        brand="Mars Chocolate North America LLC",
+        nutrients_per_100g={
+            "energy_kcal": 571.0,
+            "protein_g": 3.57,
+            "fat_g": 30.0,
+            "carb_g": 57.14,
+        },
+        paths=paths,
+    )
+    egg = insert_food(
+        name="Egg, whole, cooked, hard-boiled",
+        source="custom",
+        nutrients_per_100g={
+            "energy_kcal": 155.0,
+            "protein_g": 12.6,
+            "fat_g": 10.6,
+            "carb_g": 1.1,
+        },
+        paths=paths,
+    )
+
+    import ada.logs.food as food_mod
+
+    def fake_search(query, **kwargs):
+        ql = query.lower()
+        if "boiled" in ql or "cooked" in ql or "whole" in ql:
+            return [
+                {
+                    "ref_id": egg["food_ref_id"],
+                    "name": "Egg, whole, cooked, hard-boiled",
+                    "score": 0.95,
+                    "nutrients": {
+                        "energy_kcal": 155.0,
+                        "protein_g": 12.6,
+                        "fat_g": 10.6,
+                        "carb_g": 1.1,
+                    },
+                }
+            ]
+        if ql.strip() in {"eggs", "egg"}:
+            return [
+                {
+                    "ref_id": candy["food_ref_id"],
+                    "name": "EGGS",
+                    "brand": "Mars Chocolate North America LLC",
+                    "source": "usda_fdc",
+                    "external_id": "mars001",
+                    "score": 1.0,
+                    "nutrients": {
+                        "energy_kcal": 571.0,
+                        "protein_g": 3.57,
+                        "fat_g": 30.0,
+                        "carb_g": 57.14,
+                    },
+                }
+            ]
+        return []
+
+    original = food_mod.search_foods_resolved
+    food_mod.search_foods_resolved = fake_search
+    try:
+        built = build_meal_log_args(
+            "7 eggs",
+            meal_slot="breakfast",
+            fetch_remote=False,
+            paths=paths,
+        )
+    finally:
+        food_mod.search_foods_resolved = original
+
+    assert built.get("ok") is True
+    line = (built.get("lines") or [{}])[0]
+    nutrients = line.get("nutrients") or {}
+    protein = float(nutrients.get("protein_g") or 0)
+    assert protein >= 40.0
+    assert "mars" not in str(line.get("display_name") or "").lower()
+    assert line.get("ref_id") != candy["food_ref_id"]
+    if built.get("needs_confirm"):
+        labels = [
+            str(c.get("label") or "")
+            for c in (built.get("resolve") or {}).get("candidates") or []
+        ]
+        assert any(
+            "egg" in lbl.lower() and "mars" not in lbl.lower() for lbl in labels
+        )
 
 
 def test_update_food_nutrients_writes_cache(data_root: Path) -> None:
