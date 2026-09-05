@@ -23,6 +23,182 @@ AdapterFactory = Callable[[], CortexAdapter]
 _PLAN_AGENT = frozenset({"plan", "agent"})
 
 
+def _resolve_row_key(row: dict[str, Any]) -> str:
+    return str(row.get("query_norm") or row.get("query") or "").strip()
+
+
+def _meal_line_key(line: dict[str, Any]) -> str:
+    return str(line.get("_query_norm") or line.get("_query") or "").strip()
+
+
+def _meal_candidate_pool(
+    resolve: dict[str, Any], row: dict[str, Any]
+) -> list[dict[str, Any]]:
+    pool: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for cand in list(row.get("candidates") or []) + list(resolve.get("candidates") or []):
+        if not isinstance(cand, dict):
+            continue
+        ref = str(cand.get("ref_id") or "").strip()
+        if ref and ref not in seen:
+            seen.add(ref)
+            pool.append(cand)
+    return pool
+
+
+def _meal_candidate_by_ref(
+    pool: list[dict[str, Any]], ref_id: str
+) -> dict[str, Any] | None:
+    for cand in pool:
+        if str(cand.get("ref_id") or "") == ref_id:
+            return cand
+    return None
+
+
+def _preview_per_100g(cand: dict[str, Any]) -> dict[str, Any] | None:
+    """Per-100g CORE from Confirm picker preview (nutrients or kcal_per_100g)."""
+    nutrients = cand.get("nutrients")
+    if isinstance(nutrients, dict) and any(v is not None for v in nutrients.values()):
+        return dict(nutrients)
+    raw = cand.get("nutrients_per_100g")
+    if isinstance(raw, dict) and any(v is not None for v in raw.values()):
+        return dict(raw)
+    kcal = cand.get("kcal_per_100g")
+    if kcal is not None:
+        return {
+            "energy_kcal": kcal,
+            "protein_g": None,
+            "fat_g": None,
+            "carb_g": None,
+        }
+    return None
+
+
+def _scale_preview_nutrients(
+    per_100g: dict[str, Any], grams: float | None
+) -> dict[str, float | None]:
+    nutrients: dict[str, float | None] = {}
+    factor = (grams / 100.0) if grams not in (None, 0) else 1.0
+    for key, value in per_100g.items():
+        if value is None:
+            nutrients[key] = None
+            continue
+        try:
+            nutrients[key] = round(float(value) * factor, 3)
+        except (TypeError, ValueError):
+            nutrients[key] = None
+    return nutrients
+
+
+def _scale_preview_to_line(
+    line: dict[str, Any], per_100g: dict[str, Any]
+) -> dict[str, Any]:
+    """Scale preview per-100g macros onto a meal line (serving_grams aware)."""
+    serving_grams = line.get("serving_grams")
+    if serving_grams is None:
+        qty = float(line.get("serving_qty") or 1.0)
+        unit = str(line.get("serving_unit") or "serving").lower()
+        if unit in {"g", "gram", "grams", "ml"}:
+            serving_grams = qty
+    nutrients = _scale_preview_nutrients(per_100g, serving_grams)
+    out = dict(line)
+    out["nutrients"] = nutrients
+    snap = (
+        dict(out.get("snapshot_json") or {})
+        if isinstance(out.get("snapshot_json"), dict)
+        else {}
+    )
+    snap.setdefault("schema_version", 1)
+    snap["nutrients"] = nutrients
+    src = (
+        dict(snap.get("source") or {})
+        if isinstance(snap.get("source"), dict)
+        else {}
+    )
+    src.setdefault("provider", "confirm_preview")
+    snap["source"] = src
+    out["snapshot_json"] = snap
+    return out
+
+
+def _patch_meal_confirm_selection(
+    args: dict[str, Any],
+    selected_ref_ids: dict[str, str] | None,
+) -> dict[str, Any]:
+    """Apply operator food picks to stashed meal_log args (Consent Integrity).
+
+    Copies preview macros into the line when present so Confirm Yes does not
+    rely solely on a later DB rehydrate (null-CORE cache miss → empty_macros).
+    """
+    resolve = args.get("resolve")
+    if not isinstance(resolve, dict):
+        return args
+
+    rows = list(resolve.get("rows") or [])
+    if not rows:
+        return args
+
+    merged = dict(args)
+    lines = [
+        dict(ln) if isinstance(ln, dict) else ln for ln in list(merged.get("lines") or [])
+    ]
+    resolve_copy = dict(resolve)
+    resolve_rows = [dict(r) if isinstance(r, dict) else r for r in rows]
+
+    if len(resolve_rows) == 1 and not resolve_copy.get("candidates"):
+        only = resolve_rows[0]
+        if isinstance(only, dict) and only.get("candidates"):
+            resolve_copy["candidates"] = list(only.get("candidates") or [])
+
+    for row in resolve_rows:
+        if not isinstance(row, dict):
+            continue
+        key = _resolve_row_key(row)
+        pool = _meal_candidate_pool(resolve_copy, row)
+        proposed = str(row.get("proposed_ref_id") or "").strip()
+        ref_id = proposed
+        if selected_ref_ids:
+            picked = None
+            if key:
+                picked = selected_ref_ids.get(key)
+            if picked is None:
+                picked = selected_ref_ids.get(str(row.get("query") or ""))
+            if picked is not None:
+                ref_id = str(picked).strip()
+                if not ref_id or not _meal_candidate_by_ref(pool, ref_id):
+                    raise ValueError(f"invalid meal selection for {key!r}")
+
+        if not ref_id:
+            continue
+
+        row["proposed_ref_id"] = ref_id
+        cand = _meal_candidate_by_ref(pool, ref_id) or {}
+        label = str(cand.get("label") or cand.get("name") or "").strip()
+        preview_macros = _preview_per_100g(cand)
+
+        for i, line in enumerate(lines):
+            if not isinstance(line, dict):
+                continue
+            lk = _meal_line_key(line)
+            if lk == key or (not lk and len(resolve_rows) == 1):
+                line["ref_id"] = ref_id
+                if label:
+                    line["display_name"] = label
+                if preview_macros is not None:
+                    line = _scale_preview_to_line(line, preview_macros)
+                else:
+                    # No preview macros — clear so DB enrich is the sole source.
+                    line.pop("nutrients", None)
+                    line.pop("snapshot_json", None)
+                lines[i] = line
+                break
+
+    merged["lines"] = lines
+    resolve_copy["rows"] = resolve_rows
+    merged["resolve"] = resolve_copy
+    return merged
+
+
 class ChatService:
     """One interactive writer assumption (v1): do not also run `ada chat` on same JSONL."""
 
@@ -249,11 +425,13 @@ class ChatService:
         args: dict[str, Any],
         *,
         pending_id: str | None = None,
+        selected_ref_ids: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Operator confirm — gateway execute with confirmed=true (no model)."""
         from ada.tools.gateway import Gateway
 
         with self._lock:
+            stashed = False
             if pending_id:
                 pending = self.pending_confirms.get(pending_id)
                 if pending is None:
@@ -264,11 +442,18 @@ class ChatService:
                     )
                 # Bind to stashed args (Consent Integrity) — ignore client rewrite.
                 args = dict(pending.get("args") or {})
+                stashed = True
 
             self._ensure_session("agent")
             assert self.session is not None
             self.session.ensure_started()
             merged = dict(args or {})
+            if (
+                stashed
+                and tool == "life_meal_log"
+                and isinstance(merged.get("resolve"), dict)
+            ):
+                merged = _patch_meal_confirm_selection(merged, selected_ref_ids)
             merged["confirmed"] = True
             gateway = Gateway(mode="agent", turn_user_text="[hud confirm]")
             result = gateway.execute(tool, merged)

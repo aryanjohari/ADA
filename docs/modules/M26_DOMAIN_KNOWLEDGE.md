@@ -1,13 +1,13 @@
 # M26 — Domain knowledge (what “knowing” a life-admin domain means)
 
 **Status:** design lock — **not code**  
-**Date:** 2026-08-28 (v1.0)  
+**Date:** 2026-09-03 (v1.5)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **domain-agnostic foundation** — organ vs reference vs reject; capture grammar; phased template for per-domain cited memory docs. Not a pack implement. Not package. Not analysis.  
 **Depends on:** [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8 · trust rings · structured logs > RAG-brain · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) (Confirm Integrity; truth > charm; no consciousness) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill; skills = packs) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) · [`M20_V1_PRODUCT.md`](./M20_V1_PRODUCT.md) (sequence 1→5 — **this card does not reorder**) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library/cites organ — sibling, not duplicate)
 
-**Feeds:** per-domain **Phase 2 cited memory docs** (food first after M25 recover lands; then gym · time · habits · people · dues). Phase 3 implement wraps per domain. Phase 4 phone METAL.
+**Feeds:** per-domain **Phase 2 cited memory docs** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) **food organ closed**; then gym · time · habits · people · dues — copy domain close checklist). Phase 3 implement wraps per domain. Phase 4 phone METAL.
 
 **Name stays `M26_DOMAIN_KNOWLEDGE.md`:** this is the **agnostic “knowing” lock** before vertical memory essays. Rejected: `M19c` (catalog child, not foundation); `M10b` (M10 owns fetch→library; this owns life-domain *purpose* + organ/reference split); stuffing into M25 (recover ≠ ontology).
 
@@ -17,6 +17,12 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.6** | 2026-09-06 | Food Confirm→write: preview macros must survive handoff (M26_FOOD v1.10); propose-pool never defaults null-CORE (M27 v1.4). |
+| **v1.5** | 2026-09-03 | Food meal capture = spine-first (`is_meal_log_utterance` before cortex); cortex parse/mouth only on meal turns; Confirm for all non-favorite binds (M26 v1.9). |
+| **v1.4** | 2026-09-02 | Catalog **ranking policy deferred to M27** ([`M27_CATALOG_RANKING.md`](./M27_CATALOG_RANKING.md)); no new food-specific rank patches until Step 2. |
+| **v1.3** | 2026-09-02 | Food organ **fully closed** (capture + deterministic reflection). Domain close checklist adds step 7 **Reflection** — SQL/rules on logs; Dream/LLM not required for numeric life domains. **Read path:** pack must pass **date/window args** — substring alias alone is insufficient. |
+| **v1.2** | 2026-08-29 | First vertical **closed** = organ path locked ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.4) — not essay complete. Gym/time/habits copy domain close checklist. |
+| **v1.1** | 2026-08-29 | Phase 2 food doc shipped. |
 | **v1.0** | 2026-08-28 | Phase 0 audit (reuse/gap/supersede) + Phase 1 domain-agnostic design lock: three kinds of “know”, capture grammar, phased template, falsifiers. No per-domain implement plans. |
 
 ---
@@ -230,11 +236,13 @@ utterance
 |-------|-------------|-------|
 | **0 — Audit** | Reuse/gap on existing packs, tools, METAL runs | Research card |
 | **1 — Domain-agnostic card** | **This doc (M26)** | Done v1.0 |
-| **2 — Cited memory doc** | `memory/domain/<domain>.md` — purpose, signals, cite discipline, links to organ tables | One card per domain |
+| **2 — Cited memory doc** | Git-tracked `M26_<DOMAIN>_DOMAIN.md` (food: [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md)); optional `memory/domain/` slice **after** boot/brief can load it | One card per domain |
 | **3 — Implement wrap** | Stores (if any), capture types, NL patterns, parse, track — **analyse last** | Implement chat |
 | **4 — Phone METAL** | Operator smoke on live HUD; falsifiers | Review doc |
 
-**Food order lock:** Phase 2 food reference doc **after** M25 recover patch lands on phone — recover is organ know; reference doc must not pretend to fix null-CORE.
+**Domain close checklist (copy per vertical):** pack door → resolve gate → Confirm sticky → mouth = receipt → smokes → **reflection (deterministic SQL on logs)** → doc. **Read path:** pack router must pass **`date` / `days` args** for nutrition reads — alias substring match alone is insufficient. **Meal writes:** cortex parse only; `life_meal_log` commit requires spine resolve (`bind_authority=meal_spine`, M26 v1.8). **Confirm handoff (M26 v1.10):** picker preview macros must reach the write line — never propose null-CORE as default when a macro-complete candidate exists.
+
+**Food order lock:** Phase 2 food reference doc **after** M25 recover patch lands on phone — recover is organ know; reference doc must not pretend to fix null-CORE. **Shipped:** [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) (2026-08-29).
 
 **Won’t-chase per-domain Phase 3:** food ML; gym pose video; calendar rebuild; people OSINT; habit shame UX.
 
@@ -327,6 +335,6 @@ M21–M25 falsifiers still bind.
 
 ---
 
-**Next slice:** food **Phase 2 cited memory doc** after M25 recover patch lands on phone.
+**Next slice:** gym Phase 2 cited memory doc (copy [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) skeleton) · food reflection **shipped** (v1.5).
 
-*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; per-domain reference docs follow.*
+*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; food organ closed 2026-09-02.*

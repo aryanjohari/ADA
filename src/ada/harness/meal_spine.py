@@ -9,10 +9,12 @@ from typing import Any, Callable
 
 import httpx
 
+from ada.harness.catalog_rank import catalog_form_mismatch, macro_implausible, rank_catalog_candidates
 from ada.harness.resolve_gate import (
     brand_vs_query_fight,
+    candidate_matches_query,
+    candidate_preview,
     decide_food_bind,
-    implausible_branded_junk,
     macros_all_null,
     normalize_query,
 )
@@ -20,40 +22,9 @@ from ada.logs import favorites as favorites_mod
 from ada.logs import food as food_mod
 
 _SPLIT = re.compile(r"\s+(?:and|\+)\s+|,\s*")
-_TOKEN = re.compile(r"[a-z0-9]+")
 _MEAL_SLOT_TAIL = re.compile(
-    r"\s+(?:to|for)\s+(breakfast|lunch|dinner|snack)\b.*$",
+    r"\s+(?:to|for)\s+(breakfast|lunch|dinner|snacks?)\b.*$",
     re.IGNORECASE,
-)
-# Ignore cook/size words when checking candidate ↔ original query relevance.
-_MATCH_STOP = frozenset(
-    {
-        "a",
-        "an",
-        "the",
-        "and",
-        "or",
-        "of",
-        "for",
-        "with",
-        "to",
-        "cup",
-        "cups",
-        "whole",
-        "cooked",
-        "raw",
-        "boiled",
-        "poached",
-        "large",
-        "small",
-        "medium",
-        "hard",
-        "soft",
-        "fresh",
-        "frozen",
-        "fried",
-        "scrambled",
-    }
 )
 _STOPWORDS = {
     "a",
@@ -90,44 +61,63 @@ _RECOVER_ASK = (
     "Couldn't pin down nutrition for that after a few tries — "
     "try a clearer name like egg, whole, cooked."
 )
+# Phone NL often glues qty+unit: 250g, 300ml (no space).
+_GLUED_QTY_UNIT = re.compile(
+    r"^(\d+(?:\.\d+)?)\s*(g|grams?|kg|oz|ml)\b\s*(.*)$",
+    re.IGNORECASE,
+)
 
 
 def _parse_piece(part: str) -> tuple[str, float, str, float | None]:
     text = (part or "").strip()
     if not text:
         return "", 1.0, "serving", None
-    words = text.split()
     qty = 1.0
     unit = "serving"
+    words: list[str]
     i = 0
-    if words:
-        first = words[0].lower()
-        if first in _NUMBER_WORDS:
-            qty = _NUMBER_WORDS[first]
-            i = 1
+    glued = _GLUED_QTY_UNIT.match(text)
+    if glued:
+        qty = float(glued.group(1))
+        unit_raw = glued.group(2).lower()
+        if unit_raw in {"g", "gram", "grams", "kg", "oz"}:
+            unit = "g"
+            if unit_raw == "kg":
+                qty = qty * 1000.0
+            elif unit_raw == "oz":
+                qty = qty * 28.3495
         else:
-            try:
-                qty = float(first)
+            unit = "ml"
+        rest = (glued.group(3) or "").strip()
+        words = rest.split() if rest else []
+    else:
+        words = text.split()
+        if words:
+            first = words[0].lower()
+            if first in _NUMBER_WORDS:
+                qty = _NUMBER_WORDS[first]
                 i = 1
-            except ValueError:
-                pass
-    if i < len(words) and words[i].lower() in {"g", "gram", "grams", "ml"}:
-        unit = "g" if words[i].lower().startswith("g") else "ml"
-        i += 1
-    elif i < len(words) and words[i].lower() in {"piece", "pieces", "banana", "bananas"}:
-        unit = "piece"
-        if words[i].lower() in {"banana", "bananas"}:
-            i -= 0
-        else:
+            else:
+                try:
+                    qty = float(first)
+                    i = 1
+                except ValueError:
+                    pass
+        if i < len(words) and words[i].lower() in {"g", "gram", "grams", "ml"}:
+            unit = "g" if words[i].lower().startswith("g") else "ml"
             i += 1
+        elif i < len(words) and words[i].lower() in {"piece", "pieces", "banana", "bananas"}:
+            unit = "piece"
+            if words[i].lower() not in {"banana", "bananas"}:
+                i += 1
     while i < len(words) and words[i].lower() in _STRIPPED_MODIFIERS:
+        i += 1
+    while i < len(words) and words[i].lower() == "of":
         i += 1
     query_tokens = [w for w in words[i:] if w.lower() not in _STOPWORDS]
     query = " ".join(query_tokens).strip()
     serving_grams = None
-    if unit == "g":
-        serving_grams = qty
-    elif unit == "ml":
+    if unit in {"g", "ml"}:
         serving_grams = qty
     else:
         for key, grams in _DEFAULT_SERVING_G.items():
@@ -260,6 +250,19 @@ def build_alt_queries(original_piece: str, parsed_query: str) -> list[str]:
         add("eggs, whole, cooked")
         add("egg, whole, cooked, hard-boiled")
 
+    if "chicken" in parsed_lower and "breast" in parsed_lower:
+        add("Chicken, broilers or fryers, breast, meat only, cooked, roasted")
+        add("chicken breast roasted meat only")
+        add("chicken breast meat only cooked roasted")
+    if "salmon" in parsed_lower:
+        add("salmon atlantic cooked")
+        add("fish, salmon, atlantic, farmed, cooked")
+        add("Fish, salmon, Atlantic, farmed, cooked, dry heat")
+    if "rice" in parsed_lower and "white" in parsed_lower:
+        add("rice, white, long-grain, regular, cooked")
+        add("Rice, white, long-grain, regular, enriched, cooked")
+        add("white rice cooked long grain")
+
     return alts
 
 
@@ -325,19 +328,12 @@ def _refresh_fdc_detail(
     return refreshed
 
 
-def _stem_token(token: str) -> str:
-    t = (token or "").lower()
-    if len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
-        return t[:-1]
-    return t
-
-
 def _filter_candidates(query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Drop implausible branded junk before bind; keep null-CORE for detail refresh."""
     return [
         c
         for c in candidates
-        if not implausible_branded_junk(query, c)
+        if not macro_implausible(query, c)
     ]
 
 
@@ -350,34 +346,13 @@ def _has_plausible_generic_candidate(
             continue
         if brand_vs_query_fight(query, row):
             continue
-        if implausible_branded_junk(query, row):
+        if macro_implausible(query, row):
+            continue
+        if catalog_form_mismatch(query, row, domain="food"):
             continue
         if candidate_matches_query(query, row):
             return True
     return False
-
-
-def candidate_matches_query(query: str, candidate: dict[str, Any]) -> bool:
-    """True when candidate name shares food stems with the original slot query.
-
-    Blocks off-query recover binds (Banana, raw for eggs via shared 'raw').
-    """
-    q_stems = {
-        _stem_token(t)
-        for t in _TOKEN.findall((query or "").lower())
-        if t not in _MATCH_STOP and len(t) > 1
-    }
-    if not q_stems:
-        return True
-    name = str(
-        candidate.get("name")
-        or candidate.get("label")
-        or candidate.get("display_name")
-        or ""
-    )
-    name_stems = {_stem_token(t) for t in _TOKEN.findall(name.lower())}
-    # Every food stem from the slot query must appear in the candidate name.
-    return q_stems <= name_stems
 
 
 def _merge_candidate(
@@ -391,12 +366,225 @@ def _merge_candidate(
     ref_id = str(row.get("ref_id") or row.get("food_ref_id") or "").strip()
     if not ref_id or ref_id in seen or macros_all_null(row):
         return
-    if implausible_branded_junk(query, row):
+    if macro_implausible(query, row):
+        return
+    if catalog_form_mismatch(query, row, domain="food"):
         return
     if not candidate_matches_query(query, row):
         return
     seen.add(ref_id)
     pool.append(row)
+
+
+def _row_candidate_previews(
+    query: str,
+    decision: dict[str, Any],
+    *,
+    ranked_pool: list[dict[str, Any]] | None = None,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Up to *limit* ranked previews for HUD picker — from pool, not post-filter only."""
+    previews: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    pool = ranked_pool if ranked_pool is not None else []
+    if pool:
+        ranked = rank_catalog_candidates(query, pool, domain="food")
+        for cand in ranked:
+            if not candidate_matches_query(query, cand):
+                continue
+            if macros_all_null(cand):
+                continue
+            ref = str(cand.get("ref_id") or cand.get("food_ref_id") or "")
+            if ref and ref in seen:
+                continue
+            if ref:
+                seen.add(ref)
+            previews.append(candidate_preview(cand, query=query))
+            if len(previews) >= limit:
+                break
+    if previews:
+        return previews
+    for cand in decision.get("candidates") or []:
+        if not isinstance(cand, dict):
+            continue
+        ref = str(cand.get("ref_id") or "")
+        if ref and ref in seen:
+            continue
+        if ref:
+            seen.add(ref)
+        previews.append(cand)
+        if len(previews) >= limit:
+            break
+    return previews
+
+
+def _soft_confirm_decision(
+    query: str,
+    candidates: list[dict[str, Any]],
+    favorite: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """When bind would miss but ranked pool has viable hits → Confirm with top 5."""
+    ranked = rank_catalog_candidates(query, candidates, domain="food", favorite=favorite)
+    viable = [
+        c
+        for c in ranked
+        if not macros_all_null(c)
+        and candidate_matches_query(query, c)
+        and not brand_vs_query_fight(query, c)
+        and not macro_implausible(query, c)
+        and not catalog_form_mismatch(query, c, domain="food")
+    ]
+    if not viable:
+        return None
+    top = viable[0]
+    previews = _row_candidate_previews(query, {}, ranked_pool=candidates)
+    top_ref = str(top.get("ref_id") or top.get("food_ref_id") or "")
+    return {
+        "ok": False,
+        "needs_confirm": True,
+        "reason": "ambiguous",
+        "reasons": ["ambiguous"],
+        "query": query,
+        "query_norm": normalize_query(query),
+        "candidates": previews,
+        "bind": top,
+        "bind_preview": candidate_preview(top, query=query),
+        "favorite": favorite,
+        "proposed_ref_id": top_ref,
+    }
+
+
+def _decision_resolve_row(
+    decision: dict[str, Any],
+    *,
+    query: str,
+    ranked_pool: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    reasons = list(decision.get("reasons") or [])
+    if decision.get("reason") == "favorite_unique" and "favorite_unique" not in reasons:
+        reasons = ["favorite_unique", *reasons]
+    return {
+        "query": decision.get("query"),
+        "query_norm": decision.get("query_norm"),
+        "reasons": reasons,
+        "candidates": _row_candidate_previews(
+            query, decision, ranked_pool=ranked_pool
+        ),
+        "proposed_ref_id": decision.get("proposed_ref_id")
+        or (
+            (decision.get("bind_preview") or {}).get("ref_id")
+            if isinstance(decision.get("bind_preview"), dict)
+            else None
+        ),
+    }
+
+
+def _record_line_decision(
+    decision: dict[str, Any],
+    *,
+    query: str,
+    ranked_pool: list[dict[str, Any]] | None,
+    resolve_rows: list[dict[str, Any]],
+    confirm_candidates: list[dict[str, Any]],
+    reasons: list[str],
+) -> bool:
+    """Track spine resolve row for every successful bind (Confirm or silent). Returns needs_confirm."""
+    resolve_rows.append(
+        _decision_resolve_row(decision, query=query, ranked_pool=ranked_pool)
+    )
+    confirm_candidates.extend(list(decision.get("candidates") or []))
+    for r in decision.get("reasons") or []:
+        if r not in reasons:
+            reasons.append(r)
+    if decision.get("reason") == "favorite_unique" and "favorite_unique" not in reasons:
+        reasons.append("favorite_unique")
+    return bool(decision.get("needs_confirm"))
+
+
+def _commit_soft_confirm_if_viable(
+    *,
+    query: str,
+    candidates: list[dict[str, Any]],
+    favorite: dict[str, Any] | None,
+    qty: float,
+    unit: str,
+    serving_grams: float | None,
+    paths,
+    lines: list[dict[str, Any]],
+    resolve_rows: list[dict[str, Any]],
+    confirm_candidates: list[dict[str, Any]],
+    reasons: list[str],
+    needs_confirm: bool,
+) -> bool:
+    """Soft miss → Confirm when ranked pool has viable candidates. Returns True if committed."""
+    soft = _soft_confirm_decision(query, candidates, favorite)
+    if not soft:
+        return False
+    bind = soft.get("bind")
+    if not bind:
+        return False
+    ref_id = str(
+        soft.get("proposed_ref_id")
+        or bind.get("ref_id")
+        or bind.get("food_ref_id")
+        or ""
+    )
+    if not ref_id:
+        return False
+    line = _line_from_ref(
+        query=query,
+        ref_id=ref_id,
+        qty=qty,
+        unit=unit,
+        serving_grams=serving_grams,
+        display_name=(soft.get("bind_preview") or {}).get("label"),
+        paths=paths,
+    )
+    if not line or macros_all_null({"nutrients": line.get("nutrients") or {}}):
+        return False
+    _commit_spine_line(
+        lines=lines,
+        line=line,
+        decision=soft,
+        query=query,
+        ranked_pool=candidates,
+        resolve_rows=resolve_rows,
+        confirm_candidates=confirm_candidates,
+        reasons=reasons,
+        needs_confirm=True,
+    )
+    return True
+
+
+def _commit_spine_line(
+    *,
+    lines: list[dict[str, Any]],
+    line: dict[str, Any],
+    decision: dict[str, Any],
+    query: str,
+    ranked_pool: list[dict[str, Any]] | None,
+    resolve_rows: list[dict[str, Any]],
+    confirm_candidates: list[dict[str, Any]],
+    reasons: list[str],
+    needs_confirm: bool,
+) -> bool:
+    if not decision.get("query"):
+        decision = {
+            **decision,
+            "query": query,
+            "query_norm": normalize_query(query),
+        }
+    if _record_line_decision(
+        decision,
+        query=query,
+        ranked_pool=ranked_pool,
+        resolve_rows=resolve_rows,
+        confirm_candidates=confirm_candidates,
+        reasons=reasons,
+    ):
+        needs_confirm = True
+    lines.append(line)
+    return needs_confirm
 
 
 def _slot_from_decision(
@@ -434,6 +622,8 @@ def _slot_from_decision(
         slot_needs_confirm = True
         recorded_resolve = True
         ref_id = str(viable[0].get("ref_id") or ref_id)
+        # Align Confirm proposed bind with the macro-complete line.
+        decision["proposed_ref_id"] = ref_id
 
     line = _line_from_ref(
         query=query,
@@ -581,7 +771,7 @@ def build_meal_log_args(
         ]
         candidates = _filter_candidates(query, candidates)
 
-        # Favorite ref not in search hit list — still offer it as a candidate.
+        # Favorite ref not in search hit list — inject only when name matches query.
         if favorite and favorite.get("ref_id"):
             fav_id = str(favorite["ref_id"])
             if not any(
@@ -590,17 +780,18 @@ def build_meal_log_args(
             ):
                 fav_row = food_mod.get_food(fav_id, paths=paths)
                 if fav_row:
-                    nutrients = json.loads(fav_row.get("nutrients_per_100g_json") or "{}")
-                    candidates = [
-                        {
-                            "ref_id": fav_row.get("food_ref_id"),
-                            "name": fav_row.get("name") or favorite.get("label") or query,
-                            "brand": favorite.get("brand") or fav_row.get("brand"),
-                            "source": fav_row.get("source"),
-                            "score": 1.0,
-                            "nutrients": nutrients,
-                        }
-                    ] + candidates
+                    fav_cand = {
+                        "ref_id": fav_row.get("food_ref_id"),
+                        "name": fav_row.get("name") or favorite.get("label") or query,
+                        "brand": favorite.get("brand") or fav_row.get("brand"),
+                        "source": fav_row.get("source"),
+                        "score": 1.0,
+                        "nutrients": json.loads(
+                            fav_row.get("nutrients_per_100g_json") or "{}"
+                        ),
+                    }
+                    if candidate_matches_query(query, fav_cand):
+                        candidates = [fav_cand] + candidates
 
         if not candidates:
             recover = recover_food_slot(
@@ -619,25 +810,148 @@ def build_meal_log_args(
             if recover.get("ok") and recover.get("line"):
                 decision = recover.get("decision") or {}
                 line = recover["line"]
-                if decision.get("needs_confirm"):
-                    needs_confirm = True
-                    for r in decision.get("reasons") or []:
-                        if r not in reasons:
-                            reasons.append(r)
-                    resolve_rows.append(decision)
-                    confirm_candidates.extend(list(decision.get("candidates") or []))
-                lines.append(line)
+                needs_confirm = _commit_spine_line(
+                    lines=lines,
+                    line=line,
+                    decision=decision,
+                    query=query,
+                    ranked_pool=candidates,
+                    resolve_rows=resolve_rows,
+                    confirm_candidates=confirm_candidates,
+                    reasons=reasons,
+                    needs_confirm=needs_confirm,
+                )
                 continue
             misses.append({"query": query, "reason": "food_search_miss"})
             if recover.get("ask"):
                 meal_ask = str(recover["ask"])
             continue
 
+        # Processed-only name matches (nuggets / breaded) — recover for plain/generic.
+        name_ok = [
+            c
+            for c in candidates
+            if candidate_matches_query(query, c)
+            and not macros_all_null({"nutrients": c.get("nutrients") or {}})
+        ]
+        plain_ok = [
+            c
+            for c in name_ok
+            if not catalog_form_mismatch(query, c, domain="food")
+        ]
+        fav_hit = bool(favorite and favorite.get("ref_id"))
+        if name_ok and not plain_ok and not fav_hit:
+            recover = recover_food_slot(
+                query=query,
+                original_piece=part,
+                qty=qty,
+                unit=unit,
+                serving_grams=serving_grams,
+                miss_reason="food_search_miss",
+                initial_candidates=candidates,
+                favorite=favorite,
+                fetch_remote=fetch_remote,
+                paths=paths,
+                http_get=http_get,
+            )
+            searches.extend(recover.get("searches") or [])
+            if recover.get("ok") and recover.get("line"):
+                decision = recover.get("decision") or {}
+                line = recover["line"]
+                # Prefer recover only when it found a non-processed name match.
+                recovered_name = str(line.get("display_name") or "")
+                recovered_cand = {
+                    "name": recovered_name,
+                    "label": recovered_name,
+                    "nutrients": line.get("nutrients") or {},
+                }
+                if not catalog_form_mismatch(query, recovered_cand, domain="food"):
+                    needs_confirm = _commit_spine_line(
+                        lines=lines,
+                        line=line,
+                        decision=decision,
+                        query=query,
+                        ranked_pool=candidates,
+                        resolve_rows=resolve_rows,
+                        confirm_candidates=confirm_candidates,
+                        reasons=reasons,
+                        needs_confirm=needs_confirm,
+                    )
+                    continue
+            # Fall through to decide on processed pool (Confirm) if recover found nothing better.
+
         decision = decide_food_bind(
             query=query, candidates=candidates, favorite=favorite
         )
+        if decision.get("reason") == "no_name_match":
+            recover = recover_food_slot(
+                query=query,
+                original_piece=part,
+                qty=qty,
+                unit=unit,
+                serving_grams=serving_grams,
+                miss_reason="food_search_miss",
+                initial_candidates=candidates,
+                favorite=favorite,
+                fetch_remote=fetch_remote,
+                paths=paths,
+                http_get=http_get,
+            )
+            searches.extend(recover.get("searches") or [])
+            if recover.get("ok") and recover.get("line"):
+                decision = recover.get("decision") or {}
+                line = recover["line"]
+                needs_confirm = _commit_spine_line(
+                    lines=lines,
+                    line=line,
+                    decision=decision,
+                    query=query,
+                    ranked_pool=candidates,
+                    resolve_rows=resolve_rows,
+                    confirm_candidates=confirm_candidates,
+                    reasons=reasons,
+                    needs_confirm=needs_confirm,
+                )
+                continue
+            if _commit_soft_confirm_if_viable(
+                query=query,
+                candidates=candidates,
+                favorite=favorite,
+                qty=qty,
+                unit=unit,
+                serving_grams=serving_grams,
+                paths=paths,
+                lines=lines,
+                resolve_rows=resolve_rows,
+                confirm_candidates=confirm_candidates,
+                reasons=reasons,
+                needs_confirm=needs_confirm,
+            ):
+                needs_confirm = True
+                continue
+            misses.append({"query": query, "reason": "food_search_miss"})
+            if recover.get("ask"):
+                meal_ask = str(recover["ask"])
+            continue
+
         bind = decision.get("bind")
         if not bind:
+            if _commit_soft_confirm_if_viable(
+                query=query,
+                candidates=candidates,
+                favorite=favorite,
+                qty=qty,
+                unit=unit,
+                serving_grams=serving_grams,
+                paths=paths,
+                lines=lines,
+                resolve_rows=resolve_rows,
+                confirm_candidates=confirm_candidates,
+                reasons=reasons,
+                needs_confirm=needs_confirm,
+            ):
+                needs_confirm = True
+                continue
             misses.append({"query": query, "reason": "no_bind"})
             continue
 
@@ -677,16 +991,19 @@ def build_meal_log_args(
                 if recover.get("ok") and recover.get("line"):
                     decision = recover.get("decision") or {}
                     line = recover["line"]
-                    if decision.get("needs_confirm"):
-                        needs_confirm = True
-                        if "empty_macros" not in reasons:
-                            reasons.append("empty_macros")
-                        for r in decision.get("reasons") or []:
-                            if r not in reasons:
-                                reasons.append(r)
-                        resolve_rows.append(decision)
-                        confirm_candidates.extend(list(decision.get("candidates") or []))
-                    lines.append(line)
+                    if "empty_macros" not in reasons:
+                        reasons.append("empty_macros")
+                    needs_confirm = _commit_spine_line(
+                        lines=lines,
+                        line=line,
+                        decision=decision,
+                        query=query,
+                        ranked_pool=candidates,
+                        resolve_rows=resolve_rows,
+                        confirm_candidates=confirm_candidates,
+                        reasons=reasons,
+                        needs_confirm=needs_confirm,
+                    )
                     continue
                 misses.append({"query": query, "reason": "empty_macros"})
                 if recover.get("ask"):
@@ -695,10 +1012,11 @@ def build_meal_log_args(
             needs_confirm = True
             if "empty_macros" not in reasons:
                 reasons.append("empty_macros")
-            resolve_rows.append(decision)
-            confirm_candidates.extend(list(decision.get("candidates") or []))
             recorded_resolve = True
             ref_id = str(viable[0].get("ref_id") or ref_id)
+            # Keep Confirm proposed_ref_id aligned with the macro-complete line
+            # (never hand off null-CORE as default when viable exists).
+            decision["proposed_ref_id"] = ref_id
 
         line = _line_from_ref(
             query=query,
@@ -730,16 +1048,19 @@ def build_meal_log_args(
             if recover.get("ok") and recover.get("line"):
                 decision = recover.get("decision") or {}
                 line = recover["line"]
-                if decision.get("needs_confirm"):
-                    needs_confirm = True
-                    if "empty_macros" not in reasons:
-                        reasons.append("empty_macros")
-                    for r in decision.get("reasons") or []:
-                        if r not in reasons:
-                            reasons.append(r)
-                    resolve_rows.append(decision)
-                    confirm_candidates.extend(list(decision.get("candidates") or []))
-                lines.append(line)
+                if "empty_macros" not in reasons:
+                    reasons.append("empty_macros")
+                needs_confirm = _commit_spine_line(
+                    lines=lines,
+                    line=line,
+                    decision=decision,
+                    query=query,
+                    ranked_pool=candidates,
+                    resolve_rows=resolve_rows,
+                    confirm_candidates=confirm_candidates,
+                    reasons=reasons,
+                    needs_confirm=needs_confirm,
+                )
                 continue
             misses.append({"query": query, "reason": "empty_macros"})
             if recover.get("ask"):
@@ -769,16 +1090,19 @@ def build_meal_log_args(
             if recover.get("ok") and recover.get("line"):
                 decision = recover.get("decision") or {}
                 line = recover["line"]
-                if decision.get("needs_confirm"):
-                    needs_confirm = True
-                    if "brand_fight" not in reasons:
-                        reasons.append("brand_fight")
-                    for r in decision.get("reasons") or []:
-                        if r not in reasons:
-                            reasons.append(r)
-                    resolve_rows.append(decision)
-                    confirm_candidates.extend(list(decision.get("candidates") or []))
-                lines.append(line)
+                if "brand_fight" not in reasons:
+                    reasons.append("brand_fight")
+                needs_confirm = _commit_spine_line(
+                    lines=lines,
+                    line=line,
+                    decision=decision,
+                    query=query,
+                    ranked_pool=candidates,
+                    resolve_rows=resolve_rows,
+                    confirm_candidates=confirm_candidates,
+                    reasons=reasons,
+                    needs_confirm=needs_confirm,
+                )
                 continue
 
         if decision.get("needs_confirm") and not recorded_resolve:
@@ -786,10 +1110,18 @@ def build_meal_log_args(
             for r in decision_reasons:
                 if r not in reasons:
                     reasons.append(r)
-            resolve_rows.append(decision)
-            confirm_candidates.extend(list(decision.get("candidates") or []))
 
-        lines.append(line)
+        needs_confirm = _commit_spine_line(
+            lines=lines,
+            line=line,
+            decision=decision,
+            query=query,
+            ranked_pool=candidates,
+            resolve_rows=resolve_rows,
+            confirm_candidates=confirm_candidates,
+            reasons=reasons,
+            needs_confirm=needs_confirm,
+        )
 
     # OPEN #4: any miss → fail closed whole meal (no partial silent / Confirm-half).
     if misses:
@@ -809,24 +1141,12 @@ def build_meal_log_args(
 
     # Hold whole meal if any line needs Confirm (OPEN #1).
     resolve_blob = None
-    if needs_confirm and lines:
+    if lines:
         resolve_blob = {
-            "reasons": reasons or ["ambiguous"],
-            "rows": [
-                {
-                    "query": r.get("query"),
-                    "query_norm": r.get("query_norm"),
-                    "reasons": r.get("reasons"),
-                    "candidates": r.get("candidates"),
-                    "proposed_ref_id": r.get("proposed_ref_id")
-                    or (
-                        (r.get("bind_preview") or {}).get("ref_id")
-                        if isinstance(r.get("bind_preview"), dict)
-                        else None
-                    ),
-                }
-                for r in resolve_rows
-            ],
+            "bind_authority": "meal_spine",
+            "needs_confirm": bool(needs_confirm),
+            "reasons": reasons or (["ambiguous"] if needs_confirm else []),
+            "rows": resolve_rows,
             "candidates": confirm_candidates,
         }
 

@@ -86,12 +86,141 @@ def _enrich_meal_line_from_ref(line: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
+def _resolve_candidate_for_line(
+    line: dict[str, Any], resolve: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Find resolve-row candidate matching line ref_id (Confirm preview handoff)."""
+    if not resolve:
+        return None
+    ref_id = str(line.get("ref_id") or "").strip()
+    if not ref_id:
+        return None
+    pools: list[dict[str, Any]] = []
+    for row in resolve.get("rows") or []:
+        if isinstance(row, dict):
+            pools.extend(c for c in (row.get("candidates") or []) if isinstance(c, dict))
+    pools.extend(c for c in (resolve.get("candidates") or []) if isinstance(c, dict))
+    for cand in pools:
+        if str(cand.get("ref_id") or "") == ref_id:
+            return cand
+    return None
+
+
+def _preview_per_100g_from_cand(cand: dict[str, Any]) -> dict[str, Any] | None:
+    nutrients = cand.get("nutrients")
+    if isinstance(nutrients, dict) and not macros_all_null({"nutrients": nutrients}):
+        return dict(nutrients)
+    raw = cand.get("nutrients_per_100g")
+    if isinstance(raw, dict) and not macros_all_null({"nutrients": raw}):
+        return dict(raw)
+    kcal = cand.get("kcal_per_100g")
+    if kcal is not None:
+        try:
+            return {
+                "energy_kcal": float(kcal),
+                "protein_g": None,
+                "fat_g": None,
+                "carb_g": None,
+            }
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _enrich_meal_line_from_resolve_preview(
+    line: dict[str, Any], resolve: dict[str, Any] | None
+) -> dict[str, Any]:
+    """If DB enrich missed but Confirm picker had kcal → scale preview into line."""
+    if _line_macros_present(line):
+        return line
+    cand = _resolve_candidate_for_line(line, resolve)
+    if not cand:
+        return line
+    per_100g = _preview_per_100g_from_cand(cand)
+    if not per_100g:
+        return line
+    # Accept kcal-only preview (energy set, other CORE null) — still honest partial.
+    if macros_all_null({"nutrients": per_100g}) and per_100g.get("energy_kcal") is None:
+        return line
+    serving_grams = line.get("serving_grams")
+    if serving_grams is None:
+        qty = float(line.get("serving_qty") or 1.0)
+        unit = str(line.get("serving_unit") or "serving").lower()
+        if unit in {"g", "gram", "grams", "ml"}:
+            serving_grams = qty
+    nutrients = _scale_line_nutrients(per_100g, serving_grams)
+    if nutrients.get("energy_kcal") is None and macros_all_null({"nutrients": nutrients}):
+        return line
+    enriched = dict(line)
+    enriched["nutrients"] = nutrients
+    snap = (
+        dict(enriched.get("snapshot_json") or {})
+        if isinstance(enriched.get("snapshot_json"), dict)
+        else {}
+    )
+    snap.setdefault("schema_version", 1)
+    snap["nutrients"] = nutrients
+    src = (
+        dict(snap.get("source") or {})
+        if isinstance(snap.get("source"), dict)
+        else {}
+    )
+    src.setdefault("provider", "confirm_preview")
+    snap["source"] = src
+    enriched["snapshot_json"] = snap
+    if cand.get("label") or cand.get("name"):
+        enriched.setdefault("display_name", cand.get("label") or cand.get("name"))
+    return enriched
+
+
+def _require_spine_resolve(args: dict[str, Any], *, confirmed: bool) -> dict[str, Any] | None:
+    """Refuse cortex freestyle meal_log — bind authority is meal_spine only (M26 v1.8)."""
+    if confirmed:
+        return None
+    resolve = args.get("resolve") if isinstance(args.get("resolve"), dict) else None
+    if not resolve:
+        return {
+            "ok": False,
+            "outcome": "error",
+            "reason": "spine_required",
+            "error": "spine_required",
+            "lines": args.get("lines") or [],
+        }
+    if resolve.get("bind_authority") != "meal_spine":
+        return {
+            "ok": False,
+            "outcome": "error",
+            "reason": "spine_required",
+            "error": "spine_required",
+            "lines": args.get("lines") or [],
+        }
+    return None
+
+
+def _resolve_needs_confirm_hold(resolve: dict[str, Any]) -> bool:
+    """True when spine resolve must hold write until operator Confirm."""
+    if resolve.get("needs_confirm") is False:
+        return False
+    reasons: list[str] = list(resolve.get("reasons") or [])
+    for row in resolve.get("rows") or []:
+        if isinstance(row, dict):
+            reasons.extend(row.get("reasons") or [])
+    silent_ok = not reasons or set(reasons) <= {"favorite_unique"}
+    return not silent_ok
+
+
 def _refuse_empty_macros(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """F-M24-2 / F-M25-7: refuse durable write when macros are all null or missing."""
+    """F-M24-2 / F-M25-7 / M26: refuse write when macros missing or line unbound.
+
+    Sibling guard: ``_require_spine_resolve`` blocks cortex ref_id commits without
+    meal_spine ``resolve.bind_authority``. Freestyle name-only lines (no ref_id/
+    preset_id, no honest nutrients) must not touch SQLite — fail closed before insert.
+    """
     for line in lines:
         if _line_macros_present(line):
             continue
         has_ref = bool(str(line.get("ref_id") or "").strip())
+        has_preset = bool(str(line.get("preset_id") or "").strip())
         nutrients = line.get("nutrients")
         snap = line.get("snapshot_json")
         explicit_empty = (
@@ -101,6 +230,15 @@ def _refuse_empty_macros(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
             and isinstance(snap.get("nutrients"), dict)
             and macros_all_null({"nutrients": snap["nutrients"]})
         )
+        # Unbound display_name-only → empty_macros (no invent, no orphan meal row).
+        if not has_ref and not has_preset:
+            return {
+                "ok": False,
+                "outcome": "error",
+                "reason": "empty_macros",
+                "error": "empty_macros",
+                "lines": lines,
+            }
         if has_ref or explicit_empty:
             return {
                 "ok": False,
@@ -138,8 +276,11 @@ def run_life_meal_log(args: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("lines required")
     resolve = args.get("resolve") if isinstance(args.get("resolve"), dict) else None
     confirmed = bool(args.get("confirmed", False))
+    refused = _require_spine_resolve(args, confirmed=confirmed)
+    if refused:
+        return refused
     # M21: ambiguous bind held at gateway — no write until confirmed=true.
-    if resolve and not confirmed:
+    if resolve and not confirmed and _resolve_needs_confirm_hold(resolve):
         return {
             "ok": False,
             "needs_confirm": True,
@@ -161,6 +302,10 @@ def run_life_meal_log(args: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(line, dict):
             continue
         enriched = _enrich_meal_line_from_ref(line)
+        # Confirm path: if DB thin/null but picker preview had kcal, scale that in
+        # before empty_macros refuse (M26 v1.10 — run 55378c77…).
+        if confirmed and not _line_macros_present(enriched):
+            enriched = _enrich_meal_line_from_resolve_preview(enriched, resolve)
         clean = {k: v for k, v in enriched.items() if not str(k).startswith("_")}
         clean_lines.append(clean)
     refused = _refuse_empty_macros(clean_lines)
@@ -173,12 +318,8 @@ def run_life_meal_log(args: dict[str, Any]) -> dict[str, Any]:
         lines=clean_lines,
     )
     written = _write("life_meal_log", receipt_id, outcome)
-    if (
-        written.get("ok")
-        and confirmed
-        and bool(args.get("save_favorite", False))
-        and resolve
-    ):
+    if written.get("ok") and confirmed and bool(args.get("save_favorite", True)):
+        resolve = resolve or {}
         from ada.logs import favorites as favorites_mod
 
         for row in resolve.get("rows") or []:
@@ -270,6 +411,19 @@ def run_life_meal_fix(args: dict[str, Any]) -> dict[str, Any]:
 
 def run_life_nutrition_day(args: dict[str, Any]) -> dict[str, Any]:
     return meals_mod.nutrition_day(date=args.get("date"))
+
+
+def run_life_nutrition_week(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs.food_reflection import nutrition_window, write_food_reflection_scratch
+
+    days = args.get("days", 7)
+    try:
+        days_n = int(days)
+    except (TypeError, ValueError):
+        days_n = 7
+    result = nutrition_window(days=days_n)
+    write_food_reflection_scratch(result)
+    return result
 
 
 def run_life_gym_start(args: dict[str, Any]) -> dict[str, Any]:
@@ -694,6 +848,7 @@ DISPATCH = {
     "life_meal_log": run_life_meal_log,
     "life_meal_fix": run_life_meal_fix,
     "life_nutrition_day": run_life_nutrition_day,
+    "life_nutrition_week": run_life_nutrition_week,
     "life_gym_start": run_life_gym_start,
     "life_lift_log": run_life_lift_log,
     "life_gym_end": run_life_gym_end,

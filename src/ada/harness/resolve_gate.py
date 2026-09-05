@@ -1,6 +1,9 @@
-"""Shared life-write resolve gate (M21/M22/M24) — candidates in, bind / needs_confirm out.
+"""Shared life-write resolve gate (M21/M22/M24/M27) — candidates in, bind / needs_confirm out.
 
 Code owns id bind. Cortex may parse slots; never silently pick candidates[0].
+
+M27 Step 2: food ranking policy lives in catalog_rank.py; this module keeps
+backward-compatible wrappers and shared stem / brand / macro helpers.
 """
 
 from __future__ import annotations
@@ -9,9 +12,71 @@ import re
 from typing import Any
 
 _TOKEN = re.compile(r"[a-z0-9]+")
+_MACRO_IDS = ("energy_kcal", "protein_g", "fat_g", "carb_g")
 _SCORE_HIGH = 0.85
 _SCORE_MANY = 0.5
-_MACRO_IDS = ("energy_kcal", "protein_g", "fat_g", "carb_g")
+# Prep/cook/size words — not primary food nouns for name-match gate.
+_MATCH_STOP = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "for",
+        "with",
+        "to",
+        "cup",
+        "cups",
+        "whole",
+        "cooked",
+        "raw",
+        "boiled",
+        "poached",
+        "large",
+        "small",
+        "medium",
+        "hard",
+        "soft",
+        "fresh",
+        "frozen",
+        "fried",
+        "scrambled",
+    }
+)
+# Color/cut modifiers — never sole-bind without the head noun (white rice, salmon fillet).
+_FOOD_MODIFIER_STOP = frozenset(
+    {
+        "white",
+        "brown",
+        "black",
+        "red",
+        "yellow",
+        "fillet",
+        "fillets",
+        "boneless",
+        "skinless",
+        "lean",
+        "extra",
+        "light",
+        "dark",
+        "sweet",
+        "hot",
+        "cold",
+    }
+)
+# Protected bigrams — color/cut modifiers stay in stem set (black gram, brown rice).
+_COMPOUND_HEADS = frozenset(
+    {
+        ("black", "gram"),
+        ("brown", "rice"),
+        ("white", "rice"),
+        ("red", "lentil"),
+        ("kidney", "bean"),
+        ("black", "bean"),
+    }
+)
 
 
 def normalize_query(query: str) -> str:
@@ -21,6 +86,68 @@ def normalize_query(query: str) -> str:
 
 def _tokens(text: str) -> set[str]:
     return set(_TOKEN.findall((text or "").lower()))
+
+
+def _stem_token(token: str) -> str:
+    t = (token or "").lower()
+    if len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
+        return t[:-1]
+    return t
+
+
+def extract_food_stems(query: str) -> set[str]:
+    """Head-noun stems from slot query — modifiers stripped, not qty/meal-slot."""
+    tokens = _TOKEN.findall((query or "").lower())
+    stems: set[str] = set()
+    i = 0
+    while i < len(tokens):
+        if i + 1 < len(tokens) and (tokens[i], tokens[i + 1]) in _COMPOUND_HEADS:
+            stems.add(f"{tokens[i]}_{tokens[i + 1]}")
+            stems.add(_stem_token(tokens[i]))
+            stems.add(_stem_token(tokens[i + 1]))
+            i += 2
+            continue
+        t = tokens[i]
+        if len(t) <= 1 or t in _MATCH_STOP or t in _FOOD_MODIFIER_STOP:
+            i += 1
+            continue
+        stems.add(_stem_token(t))
+        i += 1
+    return stems
+
+
+def _stems_satisfied(q_stems: set[str], name_stems: set[str]) -> bool:
+    for stem in q_stems:
+        if stem in name_stems:
+            continue
+        if "_" in stem:
+            left, right = stem.split("_", 1)
+            if left in name_stems and right in name_stems:
+                continue
+        return False
+    return True
+
+
+def candidate_matches_query(query: str, candidate: dict[str, Any]) -> bool:
+    """True when every non-modifier food stem from the query appears in candidate name."""
+    q_stems = extract_food_stems(query)
+    if not q_stems:
+        return True
+    name = str(
+        candidate.get("name")
+        or candidate.get("label")
+        or candidate.get("display_name")
+        or ""
+    )
+    name_tokens = _TOKEN.findall(name.lower())
+    name_stems = {_stem_token(t) for t in name_tokens}
+    for j in range(len(name_tokens) - 1):
+        pair = (name_tokens[j], name_tokens[j + 1])
+        if pair in _COMPOUND_HEADS:
+            name_stems.add(f"{pair[0]}_{pair[1]}")
+            name_stems.add(_stem_token(pair[0]))
+            name_stems.add(_stem_token(pair[1]))
+    return _stems_satisfied(q_stems, name_stems)
 
 
 def brand_vs_query_fight(query: str, candidate: dict[str, Any]) -> bool:
@@ -59,67 +186,33 @@ def macros_all_null(candidate: dict[str, Any]) -> bool:
     return all(n.get(k) is None for k in _MACRO_IDS)
 
 
-def _macro_float(nutrients: dict[str, Any], key: str) -> float | None:
-    val = nutrients.get(key)
-    if val is None:
-        return None
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return None
+def processed_food_mismatch(query: str, candidate: dict[str, Any]) -> bool:
+    """True when candidate form diverges from query-implied plain intent (M27 wrapper)."""
+    from ada.harness.catalog_rank import catalog_form_mismatch
+
+    return catalog_form_mismatch(query, candidate, domain="food")
 
 
 def implausible_branded_junk(query: str, candidate: dict[str, Any]) -> bool:
-    """Branded row with candy-like macros for a generic whole-food query (Mars EGGS)."""
-    if not str(candidate.get("brand") or "").strip():
-        return False
-    q = normalize_query(query)
-    nutrients = _candidate_macros(candidate)
-    carb = _macro_float(nutrients, "carb_g")
-    protein = _macro_float(nutrients, "protein_g")
-    kcal = _macro_float(nutrients, "energy_kcal")
-    if "egg" in q:
-        if carb is not None and carb > 30:
-            return True
-        if kcal is not None and kcal > 400:
-            return True
-        if (
-            protein is not None
-            and protein < 5
-            and carb is not None
-            and carb > 15
-        ):
-            return True
-    return False
+    """Branded row with candy-like macros for a generic whole-food query (M27 wrapper)."""
+    from ada.harness.catalog_rank import macro_implausible
+
+    return macro_implausible(query, candidate)
 
 
 def has_viable_local_candidate(query: str, candidates: list[dict[str, Any]]) -> bool:
-    """True when pool has a non-null, non-junk candidate matching the slot query."""
-    for cand in candidates:
-        if macros_all_null(cand):
-            continue
-        if brand_vs_query_fight(query, cand):
-            continue
-        if implausible_branded_junk(query, cand):
-            continue
-        name = str(cand.get("name") or cand.get("label") or "")
-        q_stems = {
-            t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t
-            for t in _tokens(query)
-            if len(t) > 1
-        }
-        name_stems = {
-            t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t
-            for t in _tokens(name)
-        }
-        if q_stems and not q_stems <= name_stems:
-            continue
-        return True
-    return False
+    """True when pool has a non-null, non-junk, non-form-mismatch match."""
+    from ada.harness.catalog_rank import has_viable_local_candidate as _has_viable
+
+    return _has_viable(query, candidates, domain="food")
 
 
 def candidate_preview(candidate: dict[str, Any], *, query: str | None = None) -> dict[str, Any]:
-    """Gateway-visible candidate row (label, brand, kcal, ref_id, fight)."""
+    """Gateway-visible candidate row (label, brand, kcal, ref_id, fight).
+
+    Includes per-100g ``nutrients`` when present so Confirm→write can rehydrate
+    the meal line if ``food_reference.db`` is thin/null for the same ref.
+    """
     nutrients = _candidate_macros(candidate)
     kcal = nutrients.get("energy_kcal")
     ref_id = str(
@@ -144,6 +237,9 @@ def candidate_preview(candidate: dict[str, Any], *, query: str | None = None) ->
         "source": candidate.get("source"),
         "macros_empty": macros_all_null(candidate),
     }
+    if nutrients:
+        # Per-100g CORE — Confirm scales by serving_grams at write time.
+        row["nutrients"] = {k: nutrients.get(k) for k in _MACRO_IDS}
     if query is not None:
         row["brand_fight"] = brand_vs_query_fight(query, candidate)
     return row
@@ -157,123 +253,17 @@ def decide_food_bind(
     score_high: float = _SCORE_HIGH,
     score_many: float = _SCORE_MANY,
 ) -> dict[str, Any]:
-    """Decide silent bind vs needs_confirm for one food resolve.
+    """Decide silent bind vs needs_confirm for one food resolve (M27 wrapper)."""
+    from ada.harness.catalog_rank import rank_catalog_bind
 
-    Silent OK only when unique favorite hit + no brand fight + macros present.
-    Never sole-pick candidates[0] on brand_fight / many / empty macros.
-    """
-    q_norm = normalize_query(query)
-    previews = [candidate_preview(c, query=query) for c in candidates]
-    reasons: list[str] = []
-
-    if not candidates:
-        return {
-            "ok": False,
-            "needs_confirm": False,
-            "reason": "no_candidates",
-            "reasons": ["no_candidates"],
-            "query": query,
-            "query_norm": q_norm,
-            "candidates": [],
-            "bind": None,
-            "proposed_ref_id": None,
-        }
-
-    scored = sorted(
-        enumerate(candidates),
-        key=lambda ic: (
-            1 if macros_all_null(ic[1]) else 0,
-            -float(ic[1].get("score") or 0),
-            ic[0],  # preserve search rank (Foundation/raw preference)
-        ),
+    return rank_catalog_bind(
+        query,
+        candidates,
+        domain="food",
+        favorite=favorite,
+        score_high=score_high,
+        score_many=score_many,
     )
-    scored = [c for _, c in scored]
-
-    fav_ref = str((favorite or {}).get("ref_id") or "").strip() if favorite else ""
-    if fav_ref:
-        for c in scored:
-            rid = str(c.get("ref_id") or c.get("food_ref_id") or "")
-            if rid == fav_ref:
-                scored = [c] + [x for x in scored if x is not c]
-                break
-
-    viable = [c for c in scored if not macros_all_null(c)]
-    propose_pool = viable if viable else scored
-    top = propose_pool[0]
-    if macros_all_null(scored[0]) and viable:
-        reasons.append("empty_macros_skipped")
-        top = viable[0]
-
-    top_score = float(top.get("score") or 0)
-    above = [c for c in scored if float(c.get("score") or 0) >= score_many]
-    if len(above) > 1:
-        reasons.append("many")
-
-    if brand_vs_query_fight(query, top):
-        reasons.append("brand_fight")
-
-    second = propose_pool[1] if len(propose_pool) > 1 else None
-    second_score = float(second.get("score") or 0) if second else None
-    if top_score < score_high:
-        reasons.append("low_score")
-    elif (
-        second is not None
-        and second_score is not None
-        and abs(top_score - second_score) < 0.05
-        and second_score >= score_many
-    ):
-        if "many" not in reasons:
-            reasons.append("tied_score")
-
-    top_ref = str(top.get("ref_id") or top.get("food_ref_id") or "")
-    favorite_hit = bool(fav_ref) and fav_ref == top_ref
-    if not fav_ref:
-        reasons.append("no_favorite")
-    elif not favorite_hit:
-        reasons.append("favorite_miss")
-
-    if macros_all_null(top):
-        reasons.append("empty_macros")
-
-    silent_ok = (
-        favorite_hit
-        and "brand_fight" not in reasons
-        and "favorite_miss" not in reasons
-        and "empty_macros" not in reasons
-    )
-
-    bind_preview = candidate_preview(top, query=query)
-    if silent_ok:
-        return {
-            "ok": True,
-            "needs_confirm": False,
-            "reason": "favorite_unique",
-            "reasons": [],
-            "query": query,
-            "query_norm": q_norm,
-            "candidates": previews,
-            "bind": top,
-            "bind_preview": bind_preview,
-            "favorite": favorite,
-            "proposed_ref_id": top_ref,
-        }
-
-    if not reasons:
-        reasons.append("ambiguous")
-
-    return {
-        "ok": False,
-        "needs_confirm": True,
-        "reason": reasons[0],
-        "reasons": reasons,
-        "query": query,
-        "query_norm": q_norm,
-        "candidates": previews,
-        "bind": top,
-        "bind_preview": bind_preview,
-        "favorite": favorite,
-        "proposed_ref_id": top_ref,
-    }
 
 
 def _habit_candidate(habit: dict[str, Any]) -> dict[str, Any]:
