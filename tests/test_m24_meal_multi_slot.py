@@ -307,9 +307,12 @@ def test_chat_yes_does_not_bind_meal(data_root: Path) -> None:
         r for r in result.tool_receipts if str(r.get("tool") or "") == "life_meal_log"
     ]
     assert meal_receipts
-    assert meal_receipts[0].get("needs_confirm") or (
-        meal_receipts[0].get("data") or {}
-    ).get("needs_confirm")
+    data = meal_receipts[0].get("data") or {}
+    assert (
+        meal_receipts[0].get("needs_confirm")
+        or data.get("needs_confirm")
+        or data.get("reason") == "spine_required"
+    )
     with open_life_db(paths=get_paths()) as conn:
         n = conn.execute("SELECT COUNT(*) AS n FROM meals").fetchone()["n"]
     assert int(n) == 0

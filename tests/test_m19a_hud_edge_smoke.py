@@ -415,7 +415,7 @@ def test_hud_smoke_memory_facts_blocked_on_life_pack(
         "args": {"utterance": "one banana"},
     }
     assert _model_tool_blocked(session, "memory_facts_append") is not None
-    assert _model_tool_blocked(session, "life_meal_log") is None
+    assert _model_tool_blocked(session, "life_meal_log") is not None
 
     # Skip fast-path so the model step runs (loop deny still applies).
     monkeypatch.setattr(

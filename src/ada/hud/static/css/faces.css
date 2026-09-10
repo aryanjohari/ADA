@@ -352,6 +352,11 @@ html[data-face="mac"] .confirm-card .card-title {
   color: var(--deny);
 }
 
+html[data-face="mac"] .confirm-candidate-row {
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-2);
+}
+
 html[data-face="mac"] .tool-card,
 html[data-face="mac"] .plan-card {
   border-color: var(--line-soft);
@@ -598,6 +603,10 @@ html[data-face="phone"] .confirm-card {
 
 html[data-face="phone"] .confirm-card .card-title {
   color: var(--deny);
+}
+
+html[data-face="phone"] .confirm-candidate-refid {
+  display: none;
 }
 
 /* Composer stays one line: override shared flex-wrap + min-content flex base (M20b §7). */

@@ -199,6 +199,29 @@ def meal_log(
     provenance_mix: list[str] = []
     kcal = protein = carb = fat = 0.0
     partial_micros = False
+    # Pre-validate macros so empty_macros never leaves an orphan meals row.
+    prepared: list[tuple[dict[str, Any], str, dict[str, Any], str]] = []
+    for line in lines:
+        snap_raw = line.get("snapshot_json")
+        if isinstance(snap_raw, dict):
+            snap = json.dumps(snap_raw, separators=(",", ":"))
+        elif snap_raw:
+            snap = str(snap_raw)
+        else:
+            nutrients = line.get("nutrients") or {}
+            prov = str(line.get("provenance") or "manual")
+            snap = _empty_snapshot(nutrients, provider=prov)
+        snap_obj = json.loads(snap)
+        nutrients = snap_obj.get("nutrients") or {}
+        if _macros_all_null(nutrients):
+            return {
+                "ok": False,
+                "reason": "empty_macros",
+                "error": "empty_macros",
+                "receipt_id": receipt_id,
+            }
+        prepared.append((line, snap, nutrients, str(line.get("provenance") or "manual")))
+
     with open_life_db(paths=paths) as conn:
         conn.execute(
             """
@@ -209,32 +232,13 @@ def meal_log(
             """,
             (meal_id, local_day, now, meal_slot, note, receipt_id, now),
         )
-        for idx, line in enumerate(lines):
-            snap_raw = line.get("snapshot_json")
-            if isinstance(snap_raw, dict):
-                snap = json.dumps(snap_raw, separators=(",", ":"))
-            elif snap_raw:
-                snap = str(snap_raw)
-            else:
-                nutrients = line.get("nutrients") or {}
-                prov = str(line.get("provenance") or "manual")
-                snap = _empty_snapshot(nutrients, provider=prov)
-            snap_obj = json.loads(snap)
-            nutrients = snap_obj.get("nutrients") or {}
-            if _macros_all_null(nutrients):
-                return {
-                    "ok": False,
-                    "reason": "empty_macros",
-                    "error": "empty_macros",
-                    "receipt_id": receipt_id,
-                }
+        for idx, (line, snap, nutrients, prov) in enumerate(prepared):
             kcal += float(nutrients.get("energy_kcal") or 0)
             protein += float(nutrients.get("protein_g") or 0)
             carb += float(nutrients.get("carb_g") or 0)
             fat += float(nutrients.get("fat_g") or 0)
             if core_nutrients_partial(nutrients):
                 partial_micros = True
-            prov = str(line.get("provenance") or "manual")
             provenance_mix.append(prov)
             conn.execute(
                 """
@@ -291,6 +295,16 @@ def nutrition_day(
             totals = json.loads(rollup["totals_json"])
             honest_partial = bool(rollup["honest_partial"])
         meals = _meal_rows(conn, local_day)
+        mix_rows = conn.execute(
+            """
+            SELECT DISTINCT mf.provenance
+            FROM meal_foods mf
+            JOIN meals m ON m.meal_id = mf.meal_id
+            WHERE m.local_day = ?
+            """,
+            (local_day,),
+        ).fetchall()
+    provenance_mix = [str(r["provenance"]) for r in mix_rows if r["provenance"]]
     targets_doc = get_fact("nutrition_targets", paths=paths)
     targets: dict[str, Any] = {}
     if targets_doc.get("found"):
@@ -310,5 +324,7 @@ def nutrition_day(
         "meals": meals,
         "targets": targets,
         "gaps": gaps,
-        "honest_partial": honest_partial,
+        "honest_partial": honest_partial or ("estimate" in provenance_mix),
+        "provenance_mix": provenance_mix,
+        "has_estimate": "estimate" in provenance_mix,
     }

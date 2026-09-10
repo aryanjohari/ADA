@@ -22,7 +22,13 @@ from ada.harness.mouth import (
     CONFIRM_SPLIT,
     apply_register_pass,
 )
-from ada.harness.pack_router import ADMIN_WRITE_VERBS, CONFIRM_BOUND_VERBS, READ_PACK_VERBS
+from ada.harness.pack_router import (
+    ADMIN_WRITE_VERBS,
+    CONFIRM_BOUND_VERBS,
+    READ_PACK_VERBS,
+    is_meal_log_utterance,
+    meal_log_fast_path_args,
+)
 from ada.harness.plan_artifact import parse_plan_from_assistant
 from ada.harness.session import ChatSession
 from ada.harness.stream_events import CallbackSink, NullSink, StreamSink
@@ -40,6 +46,13 @@ _FACT_TOOLS_BLOCKED_ON_LIFE_PACK = frozenset(
 # Honest ack when Gemini returns no text and no tools (not a retry, not a mouth).
 EMPTY_CORTEX_ACK = "No reply that turn. Try once more."
 LIFE_SAVE_FAIL_ACK = "That didn't save — try once more."
+MEAL_EMPTY_MACROS_ACK = (
+    "Couldn't log that — nutrients came back empty. Try another food name."
+)
+_MEAL_LOGGED_CLAIM = re.compile(
+    r"\b(?:logged|entries?\s+are\s+on\s+the\s+board|saved\s+(?:that|the)\s+meal)\b",
+    re.IGNORECASE,
+)
 
 
 def detect_chill_cue(user_text: str) -> bool:
@@ -91,6 +104,14 @@ def _pack_life_tool(hint: dict[str, Any] | None) -> str:
 
 
 def _model_tool_blocked(session: ChatSession, tool_name: str) -> str | None:
+    if session.mode == "agent":
+        if tool_name == "life_meal_log":
+            return "meal writes use meal_spine — operator Confirm on card"
+        gateway = session.gateway
+        turn_text = str(getattr(gateway, "turn_user_text", None) or "")
+        if tool_name == "life_food_search" and is_meal_log_utterance(turn_text):
+            return "meal_spine owns food search on log turns"
+
     hint = session.pack_hint or {}
     verb = str(hint.get("verb") or "")
     pack_tool = _pack_life_tool(hint)
@@ -202,7 +223,7 @@ def _fast_path_meal(
         if any(str(m.get("reason") or "") == "empty_macros" for m in misses):
             return (
                 "missing_life_receipt",
-                "Couldn't log that — nutrients came back empty. Try another food name.",
+                MEAL_EMPTY_MACROS_ACK,
             )
         return "missing_life_receipt", None
     log_args: dict[str, Any] = {
@@ -211,6 +232,7 @@ def _fast_path_meal(
     }
     if meal_args.get("resolve"):
         log_args["resolve"] = meal_args["resolve"]
+    if meal_args.get("needs_confirm"):
         log_args["confirmed"] = False
         log_args["save_favorite"] = bool(meal_args.get("save_favorite", True))
     _execute_tool(
@@ -225,6 +247,13 @@ def _fast_path_meal(
     meal_data = _receipt_data(receipts, "life_meal_log")
     if meal_data.get("needs_confirm"):
         return "pack_fast_path", CONFIRM_LINE
+    if meal_data.get("ok") is False or str(meal_data.get("reason") or "") == "empty_macros":
+        reason = str(meal_data.get("reason") or meal_data.get("error") or "")
+        if reason == "empty_macros":
+            return "missing_life_receipt", MEAL_EMPTY_MACROS_ACK
+        if reason == "spine_required":
+            return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+        return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
     _execute_tool(
         session,
         sink,
@@ -364,6 +393,48 @@ def _receipt_data(receipts: list[dict[str, Any]], tool: str) -> dict[str, Any]:
     return {}
 
 
+def _meal_receipt_outcome(receipts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Latest life_meal_log data blob, or None if no meal tool ran."""
+    for row in reversed(receipts):
+        if str(row.get("tool") or "") != "life_meal_log":
+            continue
+        data = row.get("data")
+        if isinstance(data, dict):
+            return data
+        # Gateway sometimes surfaces needs_confirm on the observation itself.
+        if row.get("needs_confirm") or row.get("ok") is False:
+            return {
+                "ok": bool(row.get("ok")),
+                "needs_confirm": bool(row.get("needs_confirm")),
+                "reason": row.get("reason") or row.get("denied_reason"),
+            }
+    return None
+
+
+def _honest_meal_mouth(
+    text: str | None, receipts: list[dict[str, Any]]
+) -> str | None:
+    """M23/M26: refuse lying 'Logged…' when meal tool failed or needs Confirm."""
+    meal = _meal_receipt_outcome(receipts)
+    if meal is None or not text:
+        return text
+    failed = (
+        meal.get("ok") is False
+        or meal.get("needs_confirm")
+        or str(meal.get("reason") or "") in {"empty_macros", "needs_confirm", "spine_required"}
+        or str(meal.get("error") or "") in {"empty_macros", "spine_required"}
+    )
+    if not failed:
+        return text
+    if not _MEAL_LOGGED_CLAIM.search(text):
+        return text
+    if meal.get("needs_confirm"):
+        return CONFIRM_LINE
+    if str(meal.get("reason") or meal.get("error") or "") == "empty_macros":
+        return MEAL_EMPTY_MACROS_ACK
+    return LIFE_SAVE_FAIL_ACK
+
+
 def _speak_gym_end(data: dict[str, Any]) -> str:
     n = int(data.get("set_count") or 0)
     if n == 0:
@@ -426,8 +497,381 @@ def _speak_nutrition_day(data: dict[str, Any]) -> str:
         if protein is not None:
             bits.append(f"{protein}g protein")
         text = " ".join(bits)
+    mix = data.get("provenance_mix") or []
+    if "estimate" in mix or data.get("has_estimate"):
+        text += " Includes estimate lines — not lab-exact."
     if data.get("honest_partial"):
         text += " Partial micronutrients only — not inventing Ca/Fe/C/D."
+    return text
+
+
+def _fast_path_meal_draft_start(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_meal_draft_start",
+        args={"session_id": session.session_id},
+        call_id="meal-draft-start",
+    )
+    data = _receipt_data(receipts, "life_meal_draft_start")
+    ask = str((data or {}).get("ask") or "Type a food or paste a barcode.")
+    return "pack_fast_path", ask
+
+
+def _fast_path_meal_draft_add(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    utterance: str,
+) -> tuple[str | None, str | None]:
+    from ada.harness.meal_draft_spine import build_draft_add_from_utterance
+
+    built = build_draft_add_from_utterance(
+        utterance, session_id=session.session_id
+    )
+    for search in built.get("searches") or []:
+        _execute_tool(
+            session,
+            sink,
+            history,
+            receipts,
+            tool="life_food_search",
+            args={"query": search.get("query"), "limit": 5},
+            call_id=f"draft-search-{search.get('query')}",
+        )
+    if not built.get("ok"):
+        return "missing_life_receipt", str(built.get("ask") or LIFE_SAVE_FAIL_ACK)
+    add_args: dict[str, Any] = {
+        "session_id": session.session_id,
+        "lines": built["lines"],
+        "save_favorite": True,
+    }
+    if built.get("resolve"):
+        add_args["resolve"] = built["resolve"]
+    if built.get("needs_confirm"):
+        add_args["confirmed"] = False
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_meal_draft_add",
+        args=add_args,
+        call_id="meal-draft-add",
+    )
+    data = _receipt_data(receipts, "life_meal_draft_add")
+    if data.get("needs_confirm"):
+        return "pack_fast_path", CONFIRM_LINE
+    if data.get("ok") is False:
+        return "missing_life_receipt", str(data.get("ask") or LIFE_SAVE_FAIL_ACK)
+    ask = str(data.get("ask") or "Add another, or say done / save this meal?")
+    n = int(data.get("line_count") or 0)
+    name = ""
+    if data.get("lines"):
+        name = str((data["lines"][-1] or {}).get("display_name") or "")
+    prefix = f"Added {name}. " if name else ""
+    return "pack_fast_path", f"{prefix}{ask} ({n} line(s))"
+
+
+def _fast_path_meal_draft_save(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    args: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    save_args = {
+        "session_id": session.session_id,
+        "name": args.get("name"),
+        "confirmed": False,
+    }
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_meal_draft_save",
+        args=save_args,
+        call_id="meal-draft-save",
+    )
+    data = _receipt_data(receipts, "life_meal_draft_save")
+    if data.get("needs_confirm"):
+        return "pack_fast_path", CONFIRM_LINE
+    if data.get("needs_name") or data.get("reason") == "name_required":
+        return "pack_fast_path", str(data.get("ask") or "What should I call this meal?")
+    if data.get("ok") is False:
+        return "missing_life_receipt", str(data.get("ask") or LIFE_SAVE_FAIL_ACK)
+    return "pack_fast_path", str(data.get("ask") or "Saved that meal preset.")
+
+
+def _fast_path_meal_draft_cancel(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_meal_draft_cancel",
+        args={"session_id": session.session_id},
+        call_id="meal-draft-cancel",
+    )
+    data = _receipt_data(receipts, "life_meal_draft_cancel")
+    return "pack_fast_path", str((data or {}).get("ask") or "Cancelled.")
+
+
+def _fast_path_meal_preset_log(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    args: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    name = str(args.get("name") or "").strip()
+    if not name:
+        return "missing_life_receipt", "Which preset should I log?"
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_meal_preset_log",
+        args={
+            "name": name,
+            "meal_slot": args.get("meal_slot"),
+            "confirmed": False,
+        },
+        call_id="meal-preset-log",
+    )
+    data = _receipt_data(receipts, "life_meal_preset_log") or _receipt_data(
+        receipts, "life_meal_log"
+    )
+    if data.get("needs_confirm"):
+        return "pack_fast_path", CONFIRM_LINE
+    if data.get("ok") is False:
+        return "missing_life_receipt", str(
+            data.get("ask") or data.get("reason") or LIFE_SAVE_FAIL_ACK
+        )
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_nutrition_day",
+        args={},
+        call_id="preset-meal-rollup",
+    )
+    return "pack_fast_path", f"Logged preset {name}."
+
+
+def _fast_path_barcode(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    args: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    from ada.logs import meal_draft as draft_mod
+
+    barcode = str(args.get("barcode") or args.get("gtin") or "").strip()
+    if not barcode:
+        return "missing_life_receipt", "Paste a GTIN after barcode:"
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_barcode_lookup",
+        args={"barcode": barcode},
+        call_id="barcode-lookup",
+    )
+    hit = _receipt_data(receipts, "life_barcode_lookup")
+    if not hit.get("ok"):
+        return "missing_life_receipt", "Barcode miss — try another GTIN or type the name."
+    # Build a one-line draft add or one-shot meal from ref.
+    display = str(hit.get("name") or barcode)
+    ref_id = str(hit.get("ref_id") or "")
+    line = {
+        "display_name": display,
+        "ref_id": ref_id,
+        "serving_qty": 1,
+        "serving_unit": "serving",
+        "provenance": hit.get("provenance") or "barcode",
+        "nutrients": hit.get("nutrients_preview") or {},
+    }
+    open_draft = draft_mod.load_draft(session.session_id)
+    if open_draft:
+        resolve = {
+            "bind_authority": "meal_spine",
+            "needs_confirm": True,
+            "reasons": ["barcode"],
+            "rows": [
+                {
+                    "query": display,
+                    "query_norm": barcode,
+                    "reasons": ["barcode"],
+                    "proposed_ref_id": ref_id,
+                    "candidates": [
+                        {
+                            "ref_id": ref_id,
+                            "label": display,
+                            "nutrients": hit.get("nutrients_preview") or {},
+                        }
+                    ],
+                }
+            ],
+        }
+        _execute_tool(
+            session,
+            sink,
+            history,
+            receipts,
+            tool="life_meal_draft_add",
+            args={
+                "session_id": session.session_id,
+                "lines": [line],
+                "resolve": resolve,
+                "confirmed": False,
+                "save_favorite": True,
+            },
+            call_id="barcode-draft-add",
+        )
+        data = _receipt_data(receipts, "life_meal_draft_add")
+        if data.get("needs_confirm"):
+            return "pack_fast_path", CONFIRM_LINE
+        return "pack_fast_path", str(data.get("ask") or "Added barcode line to draft.")
+    # One-shot meal line
+    resolve = {
+        "bind_authority": "meal_spine",
+        "needs_confirm": True,
+        "reasons": ["barcode"],
+        "rows": [
+            {
+                "query": display,
+                "query_norm": barcode,
+                "reasons": ["barcode"],
+                "proposed_ref_id": ref_id,
+                "candidates": [
+                    {
+                        "ref_id": ref_id,
+                        "label": display,
+                        "nutrients": hit.get("nutrients_preview") or {},
+                    }
+                ],
+            }
+        ],
+    }
+    _execute_tool(
+        session,
+        sink,
+        history,
+        receipts,
+        tool="life_meal_log",
+        args={
+            "lines": [line],
+            "resolve": resolve,
+            "confirmed": False,
+            "save_favorite": True,
+        },
+        call_id="barcode-meal-log",
+    )
+    data = _receipt_data(receipts, "life_meal_log")
+    if data.get("needs_confirm"):
+        return "pack_fast_path", CONFIRM_LINE
+    if data.get("ok"):
+        return "pack_fast_path", f"Logged {display}."
+    return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+
+
+def _maybe_open_draft_divert(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    user_text: str,
+) -> tuple[str | None, str | None]:
+    """When a meal draft is open, route food/barcode/done/save/cancel into draft ops."""
+    from ada.logs import meal_draft as draft_mod
+    from ada.harness import meal_draft_spine as draft_spine
+
+    if not draft_mod.load_draft(session.session_id):
+        return None, None
+    text = (user_text or "").strip()
+    if draft_spine.is_meal_draft_cancel(text):
+        return _fast_path_meal_draft_cancel(session, sink, history, receipts)
+    if draft_spine.is_draft_done(text):
+        return _fast_path_meal_draft_save(session, sink, history, receipts, {})
+    save_name = draft_spine.parse_save_as_name(text)
+    if save_name:
+        return _fast_path_meal_draft_save(
+            session, sink, history, receipts, {"name": save_name}
+        )
+    gtin = draft_spine.parse_barcode_gtin(text)
+    if gtin:
+        return _fast_path_barcode(
+            session, sink, history, receipts, {"barcode": gtin}
+        )
+    # Only divert food-shaped turns — leave reads / other packs alone.
+    lower = text.lower()
+    foodish = bool(
+        is_meal_log_utterance(text)
+        or re.match(r"^(?:log|add)\b", lower)
+        or re.search(r"\b\d+(?:\.\d+)?\s*(?:g|grams?)\b", lower)
+        or re.search(
+            r"\b(?:egg|eggs|rice|chicken|salmon|coffee|oat|bread|milk)\b",
+            lower,
+        )
+    )
+    if not foodish:
+        return None, None
+    cleaned = re.sub(
+        r"^(?:ada[, ]+)?(?:log|add)\s+(?:meal\s+)?",
+        "",
+        text,
+        flags=re.I,
+    ).strip() or text
+    return _fast_path_meal_draft_add(
+        session, sink, history, receipts, cleaned
+    )
+
+
+def _speak_nutrition_week(data: dict[str, Any]) -> str:
+    if not data.get("days_logged"):
+        return str(data.get("message") or "No meals logged in this window.")
+    window = int(data.get("window_days") or 7)
+    logged = int(data.get("days_logged") or 0)
+    ag = data.get("aggregates") or {}
+    bits = [f"Last {window} days: {logged} day(s) logged."]
+    avg_p = ag.get("avg_protein_g")
+    if avg_p is not None:
+        bits.append(f"Avg {avg_p}g protein")
+    avg_k = ag.get("avg_energy_kcal")
+    if avg_k is not None:
+        bits.append(f"avg {avg_k} kcal")
+    days = data.get("days") if isinstance(data.get("days"), list) else []
+    cites = [
+        str(d.get("cite"))
+        for d in days
+        if isinstance(d, dict) and d.get("meal_count", 0) > 0 and d.get("cite")
+    ]
+    if cites:
+        bits.append(f"Logged: {', '.join(cites[:2])}")
+    for pat in data.get("patterns") or []:
+        bits.append(pat)
+    text = ". ".join(bits)
+    if not text.endswith("."):
+        text += "."
     return text
 
 
@@ -537,6 +981,8 @@ def _fast_path_read(
     data = last.get("data") if isinstance(last.get("data"), dict) else {}
     if verb == "nutrition_day" or tool == "life_nutrition_day":
         speech = _speak_nutrition_day(data)
+    elif verb == "nutrition_week" or tool == "life_nutrition_week":
+        speech = _speak_nutrition_week(data)
     elif verb == "time_status" or tool == "life_time_status":
         speech = _speak_time_status(data)
     elif verb == "due_list" or tool == "memory_open_loops_list":
@@ -936,6 +1382,17 @@ def _maybe_pack_fast_path(
     if not tool.startswith("life_") or not isinstance(args, dict):
         return None, None
 
+    if verb == "meal_draft_start" or tool == "life_meal_draft_start":
+        return _fast_path_meal_draft_start(session, sink, history, receipts)
+    if verb == "meal_draft_save" or tool == "life_meal_draft_save":
+        return _fast_path_meal_draft_save(session, sink, history, receipts, args)
+    if verb == "meal_draft_cancel" or tool == "life_meal_draft_cancel":
+        return _fast_path_meal_draft_cancel(session, sink, history, receipts)
+    if verb == "meal_preset_log" or tool == "life_meal_preset_log":
+        return _fast_path_meal_preset_log(session, sink, history, receipts, args)
+    if verb == "barcode_lookup" or tool == "life_barcode_lookup":
+        return _fast_path_barcode(session, sink, history, receipts, args)
+
     if tool == "life_meal_log":
         return _fast_path_meal(session, sink, history, receipts, args)
     if tool == "life_time_start":
@@ -1023,6 +1480,66 @@ def run_turn(
     gateway = session.gateway
     assert gateway is not None
     gateway.turn_user_text = user_text
+
+    if session.mode == "agent":
+        divert_stop, divert_text = _maybe_open_draft_divert(
+            session, sink, history, receipts, user_text
+        )
+        if divert_stop:
+            stop_reason = divert_stop
+            last_text = divert_text
+            if divert_stop == "missing_life_receipt" and not last_text:
+                last_text = LIFE_SAVE_FAIL_ACK
+            if divert_stop == "pack_fast_path" and divert_text:
+                last_text = apply_register_pass(
+                    adapter,
+                    receipts=receipts,
+                    template=divert_text,
+                )
+            if last_text:
+                sink.emit("token_delta", {"text": last_text})
+            if end_session:
+                session.end(stop_reason=stop_reason, steps=steps)
+            return LoopResult(
+                text=last_text,
+                stop_reason=stop_reason,
+                steps=steps,
+                tool_receipts=receipts,
+                usage_rounds=usage_rounds,
+                run_path=str(session.run_path),
+                plan=None,
+            )
+
+    if session.mode == "agent" and is_meal_log_utterance(user_text):
+        meal_args = meal_log_fast_path_args(user_text)
+        if meal_args:
+            fast_stop, fast_text = _fast_path_meal(
+                session, sink, history, receipts, meal_args
+            )
+            if fast_stop:
+                stop_reason = fast_stop
+                last_text = fast_text
+                if fast_stop == "missing_life_receipt" and not last_text:
+                    last_text = LIFE_SAVE_FAIL_ACK
+                if fast_stop == "pack_fast_path" and fast_text:
+                    last_text = apply_register_pass(
+                        adapter,
+                        receipts=receipts,
+                        template=fast_text,
+                    )
+                if last_text:
+                    sink.emit("token_delta", {"text": last_text})
+                if end_session:
+                    session.end(stop_reason=stop_reason, steps=steps)
+                return LoopResult(
+                    text=last_text,
+                    stop_reason=stop_reason,
+                    steps=steps,
+                    tool_receipts=receipts,
+                    usage_rounds=usage_rounds,
+                    run_path=str(session.run_path),
+                    plan=None,
+                )
 
     fast_stop, fast_text = _maybe_pack_fast_path(session, sink, history, receipts)
     if fast_stop:
@@ -1188,6 +1705,13 @@ def run_turn(
         if plan is not None:
             session.writer.append("plan_artifact", plan)
             sink.emit("plan_artifact", plan)
+
+    honest = _honest_meal_mouth(last_text, receipts)
+    if honest != last_text and honest:
+        last_text = honest
+        sink.emit("token_delta", {"text": last_text})
+    else:
+        last_text = honest
 
     if end_session:
         session.end(stop_reason=stop_reason, steps=steps)

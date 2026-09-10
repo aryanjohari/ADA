@@ -450,10 +450,13 @@ class ChatService:
             merged = dict(args or {})
             if (
                 stashed
-                and tool == "life_meal_log"
+                and tool in {"life_meal_log", "life_meal_draft_add", "life_meal_preset_log"}
                 and isinstance(merged.get("resolve"), dict)
             ):
                 merged = _patch_meal_confirm_selection(merged, selected_ref_ids)
+            # Draft tools need the HUD session id if missing from stash.
+            if tool.startswith("life_meal_draft_") and not merged.get("session_id"):
+                merged["session_id"] = self.session.session_id
             merged["confirmed"] = True
             gateway = Gateway(mode="agent", turn_user_text="[hud confirm]")
             result = gateway.execute(tool, merged)

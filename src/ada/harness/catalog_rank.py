@@ -304,15 +304,26 @@ def rank_catalog_bind(
     # Propose-pool rule: honest null-CORE may stay in the ranked list for
     # visibility, but never become proposed_ref_id when any macro-complete
     # candidate exists (Confirm Yes must not hand off a null bind).
-    viable = [c for c in scored if not macros_all_null(c)]
-    propose_pool = viable if viable else scored
+    # Form rule (M26 v1.11 / 1c509c18…): never propose breaded/tenders/etc.
+    # when a form-matched plain candidate exists.
+    form_ok = [
+        c for c in scored if not catalog_form_mismatch(query, c, domain="food")
+    ]
+    if form_ok:
+        scored_for_propose = form_ok
+    else:
+        scored_for_propose = scored
+        reasons.append("form_mismatch")
+
+    viable = [c for c in scored_for_propose if not macros_all_null(c)]
+    propose_pool = viable if viable else scored_for_propose
     top = propose_pool[0]
-    if viable and (macros_all_null(top) or macros_all_null(scored[0])):
+    if viable and (macros_all_null(top) or macros_all_null(scored_for_propose[0])):
         reasons.append("empty_macros_skipped")
         top = viable[0]
 
     top_score = float(top.get("score") or 0)
-    above = [c for c in scored if float(c.get("score") or 0) >= score_many]
+    above = [c for c in scored_for_propose if float(c.get("score") or 0) >= score_many]
     if len(above) > 1:
         reasons.append("many")
 

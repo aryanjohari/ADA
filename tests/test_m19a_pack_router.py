@@ -112,6 +112,13 @@ def test_route_macros_alias() -> None:
     assert r["tool"] == "life_nutrition_day"
 
 
+def test_route_protein_this_week_alias() -> None:
+    r = route_utterance("protein this week")
+    assert r is not None
+    assert r["verb"] == "nutrition_week"
+    assert r["tool"] == "life_nutrition_week"
+
+
 def test_route_whats_due_alias() -> None:
     r = route_utterance("what's due")
     assert r is not None
@@ -227,6 +234,25 @@ def test_route_stt_long_meal_for_breakfast() -> None:
     assert r["tool"] == "life_meal_log"
     assert "banana" in r["args"]["utterance"].lower()
     assert r["args"]["meal_slot"] == "breakfast"
+
+
+def test_route_okay_log_prefix_meal() -> None:
+    r = route_utterance("Okay log 100 grams cooked brown rice for snacks")
+    assert r is not None
+    assert r["tool"] == "life_meal_log"
+    assert r["args"].get("meal_slot") == "snack"
+
+
+def test_route_slotless_single_meal() -> None:
+    r = route_utterance("Log 250 grams cooked paneer")
+    assert r is not None
+    assert r["tool"] == "life_meal_log"
+    assert r["args"].get("meal_slot") is None
+    assert "paneer" in str(r["args"].get("utterance") or "").lower()
+
+
+def test_route_prose_not_meal_log() -> None:
+    assert route_utterance("It's just paneer") is None
 
 
 def test_route_what_all_did_i_have_to_buy() -> None:

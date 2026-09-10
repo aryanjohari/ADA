@@ -13,8 +13,8 @@ from ada.cortex.gemini import user_content
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 # Friend-shaped Confirm stream lines — mouth skips rewrite when template contains these.
-CONFIRM_LINE = "Pick the right one — tap Confirm on the card."
-CONFIRM_FOOD = "Which food — tap Confirm on the card."
+CONFIRM_LINE = "Tap the right food, then Confirm."
+CONFIRM_FOOD = "Tap the right food, then Confirm."
 CONFIRM_SPLIT = "Gym's open — Confirm split on the card if you want me to remember it."
 CONFIRM_HABIT = "Which habit — tap Confirm on the card."
 CONFIRM_HABIT_CREATE = "Confirm save habit — tap Confirm on the card."

@@ -323,7 +323,8 @@ def run_life_meal_log(args: dict[str, Any]) -> dict[str, Any]:
         from ada.logs import favorites as favorites_mod
 
         for row in resolve.get("rows") or []:
-            q = str(row.get("query") or row.get("query_norm") or "").strip()
+            # Prefer stable query_norm so wipe/re-bind sticks to the same key.
+            q = str(row.get("query_norm") or row.get("query") or "").strip()
             ref = str(row.get("proposed_ref_id") or "").strip()
             if not q or not ref:
                 continue
@@ -498,16 +499,184 @@ def run_life_gym_status(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_life_food_preset_save(args: dict[str, Any]) -> dict[str, Any]:
-    from ada.memory import facts as facts_mod
+    from ada.logs import nutrition_presets as presets_mod
 
     name = args.get("name") or args.get("preset_id")
     if not name:
         raise ValueError("name required")
     components = args.get("components") or []
-    return facts_mod.append_fact(
-        f"nutrition_presets.presets",
-        {"id": name, "display_name": name, "components": components},
+    outcome = presets_mod.save_preset(
+        name=str(name),
+        components=list(components) if isinstance(components, list) else [],
+        provenance=args.get("provenance"),
         confirmed=bool(args.get("confirmed", False)),
+    )
+    if outcome.get("needs_confirm"):
+        outcome["ok"] = False
+    return outcome
+
+
+def run_life_meal_draft_start(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs import meal_draft as draft_mod
+
+    session_id = str(args.get("session_id") or "")
+    if not session_id:
+        return {"ok": False, "reason": "session_id_required"}
+    return draft_mod.start_draft(session_id)
+
+
+def run_life_meal_draft_add(args: dict[str, Any]) -> dict[str, Any]:
+    """Confirm-gated append of one resolved line into the open meal draft."""
+    from ada.logs import meal_draft as draft_mod
+    from ada.logs import favorites as favorites_mod
+
+    session_id = str(args.get("session_id") or "")
+    lines = args.get("lines") or []
+    if not session_id:
+        return {"ok": False, "reason": "session_id_required"}
+    if not lines:
+        return {"ok": False, "reason": "lines_required"}
+    resolve = args.get("resolve") if isinstance(args.get("resolve"), dict) else None
+    confirmed = bool(args.get("confirmed", False))
+    if resolve and not confirmed and _resolve_needs_confirm_hold(resolve):
+        return {
+            "ok": False,
+            "needs_confirm": True,
+            "outcome": "needs_confirm",
+            "reason": (resolve.get("reasons") or ["ambiguous"])[0]
+            if isinstance(resolve.get("reasons"), list)
+            else resolve.get("reason") or "ambiguous",
+            "reasons": list(resolve.get("reasons") or []),
+            "candidates": list(resolve.get("candidates") or []),
+            "resolve": resolve,
+            "lines": lines,
+            "session_id": session_id,
+            "save_favorite": bool(args.get("save_favorite", True)),
+            "draft_action": "add",
+        }
+    # Apply confirmed bind; sticky favorite on Yes (same as meal_log).
+    clean_lines = []
+    for line in lines:
+        if not isinstance(line, dict):
+            continue
+        enriched = _enrich_meal_line_from_ref(line)
+        if confirmed and not _line_macros_present(enriched):
+            enriched = _enrich_meal_line_from_resolve_preview(enriched, resolve)
+        clean = {k: v for k, v in enriched.items() if not str(k).startswith("_")}
+        clean_lines.append(clean)
+    refused = _refuse_empty_macros(clean_lines)
+    if refused:
+        return refused
+    last = None
+    for ln in clean_lines:
+        last = draft_mod.append_draft_line(session_id, ln)
+        if not last.get("ok"):
+            return last
+    if confirmed and bool(args.get("save_favorite", True)) and resolve:
+        for row in resolve.get("rows") or []:
+            q = str(row.get("query_norm") or row.get("query") or "").strip()
+            ref = str(row.get("proposed_ref_id") or "").strip()
+            if not q or not ref:
+                continue
+            preview = None
+            for cand in row.get("candidates") or []:
+                if str(cand.get("ref_id") or "") == ref:
+                    preview = cand
+                    break
+            favorites_mod.set_favorite(
+                query=q,
+                ref_id=ref,
+                label=(preview or {}).get("label"),
+                brand=(preview or {}).get("brand"),
+                confirmed=True,
+            )
+    return {
+        "ok": True,
+        **(last or {}),
+        "added": len(clean_lines),
+    }
+
+
+def run_life_meal_draft_save(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs import meal_draft as draft_mod
+    from ada.logs import nutrition_presets as presets_mod
+    from ada.harness.meal_draft_spine import build_draft_save_args
+
+    session_id = str(args.get("session_id") or "")
+    name = args.get("name")
+    built = build_draft_save_args(
+        session_id,
+        name=str(name) if name else None,
+        confirmed=bool(args.get("confirmed", False)),
+    )
+    if not built.get("ok"):
+        return built
+    outcome = presets_mod.save_preset(
+        name=str(built["name"]),
+        components=list(built["components"]),
+        provenance=built.get("provenance"),
+        confirmed=bool(args.get("confirmed", False)),
+    )
+    if outcome.get("needs_confirm"):
+        outcome["ok"] = False
+        outcome["session_id"] = session_id
+        return outcome
+    if outcome.get("ok"):
+        draft_mod.clear_draft(session_id)
+        outcome["draft_cleared"] = True
+        outcome["ask"] = "Saved. Log it now?"
+    return outcome
+
+
+def run_life_meal_draft_cancel(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs import meal_draft as draft_mod
+
+    session_id = str(args.get("session_id") or "")
+    if not session_id:
+        return {"ok": False, "reason": "session_id_required"}
+    out = draft_mod.clear_draft(session_id)
+    out["ask"] = "Cancelled — meal draft cleared."
+    return out
+
+
+def run_life_meal_preset_log(args: dict[str, Any]) -> dict[str, Any]:
+    """Expand named preset → life_meal_log (Confirm on first use)."""
+    from ada.harness.meal_draft_spine import expand_preset_log_args
+
+    name = str(args.get("name") or args.get("preset_id") or "").strip()
+    if not name:
+        return {"ok": False, "reason": "name_required", "ask": "Which preset should I log?"}
+    if args.get("lines") and args.get("resolve"):
+        # Confirm redrive — write meal.
+        log_args = {
+            "lines": args["lines"],
+            "resolve": args["resolve"],
+            "meal_slot": args.get("meal_slot"),
+            "confirmed": bool(args.get("confirmed", False)),
+            "save_favorite": bool(args.get("save_favorite", False)),
+            "receipt_id": args.get("receipt_id"),
+        }
+        # Ensure spine authority on resolve.
+        resolve = dict(log_args["resolve"])
+        resolve["bind_authority"] = "meal_spine"
+        log_args["resolve"] = resolve
+        return run_life_meal_log(log_args)
+
+    built = expand_preset_log_args(name, meal_slot=args.get("meal_slot"))
+    if not built.get("ok"):
+        return built
+    resolve = dict(built.get("resolve") or {})
+    resolve["bind_authority"] = "meal_spine"
+    resolve["needs_confirm"] = True
+    return run_life_meal_log(
+        {
+            "lines": built["lines"],
+            "resolve": resolve,
+            "meal_slot": built.get("meal_slot"),
+            "confirmed": bool(args.get("confirmed", False)),
+            "save_favorite": False,
+            "receipt_id": args.get("receipt_id"),
+        }
     )
 
 
@@ -858,6 +1027,11 @@ DISPATCH = {
     "life_gym_status": run_life_gym_status,
     "life_food_preset_save": run_life_food_preset_save,
     "life_food_favorite_set": run_life_food_favorite_set,
+    "life_meal_draft_start": run_life_meal_draft_start,
+    "life_meal_draft_add": run_life_meal_draft_add,
+    "life_meal_draft_save": run_life_meal_draft_save,
+    "life_meal_draft_cancel": run_life_meal_draft_cancel,
+    "life_meal_preset_log": run_life_meal_preset_log,
     "life_split_set": run_life_split_set,
     "life_habit_create": run_life_habit_create,
     "life_capture": run_life_capture,

@@ -42,7 +42,14 @@ def test_today_nutrition_from_rollup(data_root: Path) -> None:
                     "provenance": "manual",
                     "nutrients": {"energy_kcal": 200, "protein_g": 4},
                 }
-            ]
+            ],
+            "resolve": {
+                "bind_authority": "meal_spine",
+                "needs_confirm": False,
+                "reasons": [],
+                "rows": [],
+                "candidates": [],
+            },
         },
     )
     payload = build_today(paths=get_paths())

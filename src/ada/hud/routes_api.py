@@ -69,6 +69,7 @@ class ConfirmBody(BaseModel):
     tool: str = Field(min_length=1)
     args: dict[str, Any] = Field(default_factory=dict)
     pending_id: str | None = None
+    selected_ref_ids: dict[str, str] | None = None
 
 
 class PlanStepBody(BaseModel):
@@ -96,6 +97,10 @@ _CONFIRMABLE_TOOLS = frozenset(
         "life_alias_set",
         "life_person_update",
         "life_meal_log",
+        "life_meal_draft_add",
+        "life_meal_draft_save",
+        "life_meal_preset_log",
+        "life_food_preset_save",
         "life_food_favorite_set",
         "life_person_capture",
         "life_habit_do",
@@ -512,6 +517,7 @@ def api_confirm(request: Request, body: ConfirmBody) -> JSONResponse:
             tool,
             dict(body.args or {}),
             pending_id=body.pending_id,
+            selected_ref_ids=body.selected_ref_ids,
         )
     except ValueError as exc:
         return JSONResponse(

@@ -1,6 +1,7 @@
 /** Chat stream — turns, tools, plan accept, confirm cards, SSE. */
 
 import { openChatStream, postConfirm, postPlanAccept } from "./api.js";
+import { currentFace } from "./face.js";
 import { renderMarkdownSafe } from "./markdown.js";
 import { getSelectedMode, setSelectedMode } from "./mode.js";
 import { requireSessionForMode } from "./session.js";
@@ -29,6 +30,10 @@ const CONFIRMABLE = new Set([
   "life_alias_set",
   "life_person_update",
   "life_meal_log",
+  "life_meal_draft_add",
+  "life_meal_draft_save",
+  "life_meal_preset_log",
+  "life_food_preset_save",
   "life_food_favorite_set",
   "life_person_capture",
   "life_habit_do",
@@ -285,6 +290,117 @@ function makeToolCard(payload) {
   streamState.lastToolCardId = id;
 }
 
+function _resolveRowKey(row) {
+  return String(row.query_norm || row.query || "").trim();
+}
+
+function _mealRowCandidates(resolve, row) {
+  const fromRow = Array.isArray(row.candidates) ? row.candidates : [];
+  if (fromRow.length) return fromRow.slice(0, 5);
+  const global = Array.isArray(resolve.candidates) ? resolve.candidates : [];
+  return global.slice(0, 5);
+}
+
+function _buildMealConfirmPicker(args) {
+  const resolve = args.resolve || {};
+  const rows = Array.isArray(resolve.rows) ? resolve.rows : [];
+  if (!rows.length) return null;
+
+  const showRefId = currentFace() === "mac";
+  let html = '<div class="confirm-candidate-list">';
+  for (const row of rows) {
+    const key = _resolveRowKey(row);
+    const proposed = String(row.proposed_ref_id || "").trim();
+    const candidates = _mealRowCandidates(resolve, row);
+    if (!candidates.length) continue;
+    const groupId = "meal-ref-" + encodeURIComponent(key || "row");
+    html +=
+      '<div class="confirm-candidate-group" data-query-key="' +
+      esc(key) +
+      '">';
+    if (key) {
+      html +=
+        '<div class="confirm-candidate-query">' + esc(key) + "</div>";
+    }
+    for (const cand of candidates) {
+      const refId = String(cand.ref_id || "").trim();
+      const label = cand.label || cand.name || refId;
+      const brand = cand.brand ? String(cand.brand) : "";
+      const kcal =
+        cand.kcal_per_100g != null && cand.kcal_per_100g !== ""
+          ? String(cand.kcal_per_100g)
+          : "—";
+      const checked = refId && refId === proposed;
+      html +=
+        '<label class="confirm-candidate-row' +
+        (checked ? " selected" : "") +
+        '" data-ref-id="' +
+        esc(refId) +
+        '">';
+      html +=
+        '<input type="radio" name="' +
+        esc(groupId) +
+        '" value="' +
+        esc(refId) +
+        '"' +
+        (checked ? " checked" : "") +
+        " />";
+      html += '<span class="confirm-candidate-main">';
+      html +=
+        '<span class="confirm-candidate-label">' + esc(label) + "</span>";
+      if (brand) {
+        html +=
+          '<span class="confirm-candidate-brand">' + esc(brand) + "</span>";
+      }
+      html +=
+        '<span class="confirm-candidate-kcal">' +
+        esc(kcal) +
+        " kcal/100g</span>";
+      html += "</span>";
+      if (showRefId && refId) {
+        html +=
+          '<span class="confirm-candidate-refid">' + esc(refId) + "</span>";
+      }
+      html += "</label>";
+    }
+    html += "</div>";
+  }
+  html += "</div>";
+  return html;
+}
+
+function _collectMealSelections(card) {
+  const selections = {};
+  card.querySelectorAll(".confirm-candidate-group").forEach((group) => {
+    const key = group.dataset.queryKey || "";
+    const checked = group.querySelector('input[type="radio"]:checked');
+    if (key && checked && checked.value) {
+      selections[key] = checked.value;
+    }
+  });
+  return Object.keys(selections).length ? selections : null;
+}
+
+function _wireMealConfirmPicker(card) {
+  card.querySelectorAll(".confirm-candidate-row").forEach((row) => {
+    const input = row.querySelector('input[type="radio"]');
+    if (!input) return;
+    const sync = () => {
+      const group = row.closest(".confirm-candidate-group");
+      if (!group) return;
+      group.querySelectorAll(".confirm-candidate-row").forEach((el) => {
+        el.classList.toggle("selected", el.querySelector("input")?.checked);
+      });
+    };
+    input.addEventListener("change", sync);
+    row.addEventListener("click", (ev) => {
+      if (ev.target === input) return;
+      input.checked = true;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}
+
 function makeConfirmCard(payload) {
   const tool = payload.tool || "?";
   const args = payload.args || {};
@@ -294,15 +410,23 @@ function makeConfirmCard(payload) {
   const card = document.createElement("div");
   card.className = "confirm-card";
   const wired = CONFIRMABLE.has(tool);
+  const mealPicker =
+    (tool === "life_meal_log" ||
+      tool === "life_meal_draft_add" ||
+      tool === "life_meal_preset_log") &&
+    args.resolve
+      ? _buildMealConfirmPicker(args)
+      : null;
+  const bodyHtml = mealPicker
+    ? mealPicker
+    : '<pre class="confirm-args">' + esc(JSON.stringify(args, null, 2)) + "</pre>";
   card.innerHTML =
     '<div class="card-head"><span class="card-title">Confirm</span>' +
     '<span class="status-chip">needs confirm</span></div>' +
     '<div class="confirm-tool">' +
     esc(tool) +
     "</div>" +
-    '<pre class="confirm-args">' +
-    esc(JSON.stringify(args, null, 2)) +
-    "</pre>" +
+    bodyHtml +
     (wired
       ? ""
       : '<p class="confirm-note">Confirm path not wired for this tool — Deny only (no fake success).</p>') +
@@ -313,13 +437,23 @@ function makeConfirmCard(payload) {
     '<button type="button" class="danger" data-act="deny">Deny</button>' +
     "</div>";
 
+  if (mealPicker) {
+    _wireMealConfirmPicker(card);
+  }
+
   const actions = card.querySelector(".card-actions");
   const confirmBtn = card.querySelector('[data-act="confirm"]');
   if (confirmBtn) {
     confirmBtn.addEventListener("click", async () => {
       if (!requireSessionForMode("agent")) return;
       confirmBtn.disabled = true;
-      const { ok, data } = await postConfirm(tool, args, pendingId);
+      const selectedRefIds = mealPicker ? _collectMealSelections(card) : null;
+      const { ok, data } = await postConfirm(
+        tool,
+        args,
+        pendingId,
+        selectedRefIds
+      );
       if (!ok) {
         appendFault({
           message: data.message || "confirm failed",

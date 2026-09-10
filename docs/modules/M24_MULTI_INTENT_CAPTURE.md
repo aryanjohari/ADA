@@ -262,6 +262,8 @@ M20 / M21 / M22 / M23 falsifiers still bind.
 | After M23, before package; no 1→5 renumber | M20 |
 | One Gemini cortex | constitution · M20 |
 
+**Pointer (M26 v1.8):** gateway `spine_required` closes cortex sole-bind gap left from M24 slices — `life_meal_log` commits require meal_spine `resolve.bind_authority`.
+
 ---
 
 *End M24. Design lock 2026-08-27 — multi-intent capture / skill-spine capture half; hard-case recover → M25; implement without reopening feel, package, or freestyle ReAct.*

@@ -9,18 +9,24 @@ from typing import Any
 
 import yaml
 
+from ada.harness.nutrition_date import (
+    has_week_cue,
+    is_nutrition_read_shape,
+    local_today,
+    parse_nutrition_date,
+)
 from ada.harness.time_intent import map_time_intent
 
 _DEFAULT_PACK = "life_p0.yaml"
 _P1_PACK = "life_p1.yaml"
 _MEAL_SLOT = re.compile(
-    r"\b(?:to|for)\s+(?:an?\s+|the\s+)?(breakfast|lunch|dinner|snack)\b",
+    r"\b(?:to|for)\s+(?:an?\s+|the\s+)?(breakfast|lunch|dinner|snacks?)\b",
     re.IGNORECASE,
 )
 # STT often hears "Long meal" for "Log meal"; allow optional "meal" + article before slot.
 _ADD_MEAL = re.compile(
     r"^(?:add|log|long)\s+(?:meal\s+)?(.+?)\s+(?:to|for)\s+(?:an?\s+|the\s+)?"
-    r"(breakfast|lunch|dinner|snack)\b",
+    r"(breakfast|lunch|dinner|snacks?)\b",
     re.IGNORECASE,
 )
 _LIFT_LINE = re.compile(r"\b(?:\d+(?:\.\d+)?)\s*(?:kg|kgs|lb|lbs)\s*x\s*\d+\b", re.IGNORECASE)
@@ -30,10 +36,18 @@ _LIFT_LADDER = re.compile(
     r"(?:reps?\s+)?(?:\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\s*[x×]\s*\d+)",
     re.IGNORECASE,
 )
-# Multi-item meal cue when operator skips "log meal:" (still needs slot).
+# Multi-item meal: log/add + qty cue + and/+ — slot optional (M26 path integrity).
 _MEAL_MULTI = re.compile(
-    r"\b(?:log|add|long)\b.+\b(?:and|\+)\b.+\b(?:for|to)\s+(?:an?\s+|the\s+)?"
-    r"(?:breakfast|lunch|dinner|snack)\b",
+    r"\b(?:log|add|long)\b.+"
+    r"(?:\d+(?:\.\d+)?\s*(?:g|grams?|kg|oz|ml|cups?|cup|tbsp|tsp)?|"
+    r"(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+)"
+    r".+\b(?:and|\+)\b",
+    re.IGNORECASE,
+)
+# Bare grams + and/+ + meal slot (no log verb) — still pack fence.
+_MEAL_MULTI_BARE = re.compile(
+    r"\b\d+(?:\.\d+)?\s*(?:g|grams?|kg|oz)?\b.+\b(?:and|\+)\b.+"
+    r"\b(?:for|to)\s+(?:an?\s+|the\s+)?(?:breakfast|lunch|dinner|snacks?)\b",
     re.IGNORECASE,
 )
 # Phone NL: "Habit done skincare" (no colon) — still pack-route, not prose Confirm.
@@ -50,10 +64,17 @@ _BRIEF_PREF_NL = re.compile(
     r"|\bbrief\b.*\b(?:don'?t|do\s+not|exclude|remove|hide|omit|add|include|put|show)\b",
     re.IGNORECASE,
 )
+_LEADING_FILLER = re.compile(r"^(?:okay|ok|yeah|yep|sure|please)[,.\s]+", re.I)
+_MEAL_SINGLE = re.compile(
+    r"^(?:add|log|long)\s+(?:meal\s+)?"
+    r"(\d+(?:\.\d+)?\s*(?:g|grams?|kg|oz|ml|cups?)?\s*.+)$",
+    re.I,
+)
 
 READ_PACK_VERBS = frozenset(
     {
         "nutrition_day",
+        "nutrition_week",
         "time_status",
         "due_list",
         "gym_status",
@@ -75,6 +96,10 @@ MODEL_STRIP_CONFIRMED = frozenset(
         "life_habit_create",
         "life_split_set",
         "life_meal_log",
+        "life_meal_draft_add",
+        "life_meal_draft_save",
+        "life_meal_preset_log",
+        "life_food_preset_save",
         "life_food_favorite_set",
         "life_person_capture",
         "memory_facts_propose_edit",
@@ -157,7 +182,38 @@ def _route_from_pack(
         args["utterance"] = body
         slot = _MEAL_SLOT.search(body or raw)
         if slot:
-            args["meal_slot"] = slot.group(1).lower()
+            args["meal_slot"] = _normalize_meal_slot(slot.group(1))
+    elif tool == "life_meal_draft_start":
+        args["utterance"] = body or raw
+    elif tool == "life_meal_draft_save":
+        from ada.harness.meal_draft_spine import parse_save_as_name
+
+        args["utterance"] = body or raw
+        name = parse_save_as_name(raw) or parse_save_as_name(body or "")
+        if name:
+            args["name"] = name
+    elif tool == "life_meal_draft_cancel":
+        args["utterance"] = body or raw
+    elif tool == "life_meal_preset_log":
+        from ada.harness.meal_draft_spine import parse_log_preset_name
+
+        args["utterance"] = body or raw
+        name = parse_log_preset_name(raw) or (body or "").strip()
+        name = re.sub(r"^my\s+", "", name, flags=re.I).strip()
+        if name:
+            args["name"] = name
+        slot = _MEAL_SLOT.search(body or raw)
+        if slot:
+            args["meal_slot"] = _normalize_meal_slot(slot.group(1))
+    elif tool == "life_barcode_lookup":
+        from ada.harness.meal_draft_spine import parse_barcode_gtin
+
+        gtin = parse_barcode_gtin(raw) or parse_barcode_gtin(body or "")
+        if not gtin:
+            # "barcode: 123…" body after prefill strip
+            gtin = re.sub(r"\D", "", body or "")
+        if gtin:
+            args["barcode"] = gtin
     elif tool == "life_lift_log":
         args["utterance"] = body or raw
     elif tool == "memory_open_loops_upsert":
@@ -186,6 +242,15 @@ def _route_from_pack(
         args["utterance"] = body or raw
     elif tool == "life_person_update":
         args["utterance"] = body or raw
+    elif tool == "life_nutrition_week":
+        args.setdefault("days", 7)
+    elif tool == "life_nutrition_day":
+        if not has_week_cue(raw):
+            parsed = parse_nutrition_date(raw)
+            if parsed:
+                args["date"] = parsed
+            elif verb == "nutrition_day":
+                args.setdefault("date", local_today())
     return {
         "verb": verb,
         "tool": tool,
@@ -204,15 +269,40 @@ def resolve_chip(chip: str, *, config: dict[str, Any] | None = None) -> dict[str
     return resolve_pack(verb, config=cfg)
 
 
+def _route_nutrition_read(
+    raw: str,
+    *,
+    config: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Structural nutrition read: week window or explicit/relative day."""
+    if not is_nutrition_read_shape(raw):
+        return None
+    if has_week_cue(raw):
+        routed = _route_from_pack("nutrition_week", raw, raw, config=config)
+        if routed is not None:
+            routed["args"]["days"] = 7
+        return routed
+    parsed = parse_nutrition_date(raw)
+    if parsed is None:
+        return None
+    routed = _route_from_pack("nutrition_day", raw, raw, config=config)
+    if routed is not None:
+        routed["args"]["date"] = parsed
+    return routed
+
+
 def _route_aliases(
     raw: str,
     lower: str,
     *,
     config: dict[str, Any],
 ) -> dict[str, Any] | None:
-    for alias in config.get("aliases") or []:
-        if not isinstance(alias, dict):
-            continue
+    aliases = sorted(
+        (a for a in (config.get("aliases") or []) if isinstance(a, dict)),
+        key=lambda a: len(str(a.get("pattern") or "")),
+        reverse=True,
+    )
+    for alias in aliases:
         pattern = str(alias.get("pattern") or "").strip().lower()
         verb = str(alias.get("verb") or "").strip()
         if pattern and verb and pattern in lower:
@@ -220,9 +310,81 @@ def _route_aliases(
     return None
 
 
+def _normalize_meal_slot(raw_slot: str) -> str:
+    slot = (raw_slot or "").strip().lower()
+    if slot == "snacks":
+        return "snack"
+    return slot
+
+
+def is_meal_log_utterance(text: str) -> bool:
+    """Structural meal capture — independent of pack_hint match."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw:
+        return False
+    if _ADD_MEAL.match(raw):
+        return True
+    if _MEAL_SINGLE.match(raw):
+        return True
+    if _MEAL_MULTI.search(raw) or _MEAL_MULTI_BARE.search(raw):
+        return True
+    return False
+
+
+def meal_log_fast_path_args(text: str) -> dict[str, Any] | None:
+    """Return {utterance, meal_slot} for build_meal_log_args, or None."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw:
+        return None
+
+    meal = _ADD_MEAL.match(raw)
+    if meal:
+        return {
+            "utterance": meal.group(1).strip(),
+            "meal_slot": _normalize_meal_slot(meal.group(2)),
+        }
+
+    meal_single = _MEAL_SINGLE.match(raw)
+    if meal_single:
+        return {
+            "utterance": meal_single.group(1).strip(),
+            "meal_slot": None,
+        }
+
+    if _MEAL_MULTI.search(raw) or _MEAL_MULTI_BARE.search(raw):
+        slot_m = _MEAL_SLOT.search(raw)
+        slot = _normalize_meal_slot(slot_m.group(1)) if slot_m else None
+        body = _meal_body_from_raw(raw, slot=slot_m.group(1) if slot_m else None)
+        return {"utterance": body, "meal_slot": slot}
+
+    return None
+
+
+def _meal_body_from_raw(raw: str, *, slot: str | None = None) -> str:
+    """Strip log/add prefix and trailing meal-slot clause from meal NL."""
+    body = raw
+    for prefix in ("log meal:", "long meal:", "log meal", "long meal", "log ", "add ", "long "):
+        if body.lower().startswith(prefix):
+            body = body[len(prefix) :].strip()
+            break
+    if slot:
+        body = re.sub(
+            r"\s+(?:to|for)\s+(?:an?\s+|the\s+)?"
+            + re.escape(slot)
+            + r"s?\b.*$",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        ).strip()
+    return body
+
+
 def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Map utterance prefix, YAML alias, or structural parser to tool + args hint."""
     raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
     lower = raw.lower()
     cfg = config or load_pack_config()
     packs = cfg.get("packs") or {}
@@ -232,6 +394,10 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
         if prefill and lower.startswith(prefill):
             body = raw[len(prefill) :].strip()
             return _route_from_pack(verb, raw, body, config=cfg)
+
+    nutrition = _route_nutrition_read(raw, config=cfg)
+    if nutrition is not None:
+        return nutrition
 
     aliased = _route_aliases(raw, lower, config=cfg)
     if aliased is not None:
@@ -252,30 +418,26 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
     if meal:
         routed = _route_from_pack("meal_log", raw, meal.group(1).strip(), config=cfg)
         if routed is not None:
-            routed["args"]["meal_slot"] = meal.group(2).lower()
+            routed["args"]["meal_slot"] = _normalize_meal_slot(meal.group(2))
         return routed
 
-    # Multi-item meal NL without strict "add X to breakfast" shape (M24 pack fence).
-    if _MEAL_MULTI.search(raw):
-        slot = _MEAL_SLOT.search(raw)
-        if slot:
-            body = raw
-            for prefix in ("log meal:", "long meal:", "log meal", "long meal", "log ", "add "):
-                if body.lower().startswith(prefix):
-                    body = body[len(prefix) :].strip()
-                    break
-            body = re.sub(
-                r"\s+(?:to|for)\s+(?:an?\s+|the\s+)?"
-                + re.escape(slot.group(1))
-                + r"\b.*$",
-                "",
-                body,
-                flags=re.IGNORECASE,
-            ).strip()
-            routed = _route_from_pack("meal_log", raw, body, config=cfg)
-            if routed is not None:
-                routed["args"]["meal_slot"] = slot.group(1).lower()
-            return routed
+    meal_single = _MEAL_SINGLE.match(raw)
+    if meal_single:
+        body = meal_single.group(1).strip()
+        routed = _route_from_pack("meal_log", raw, body, config=cfg)
+        if routed is not None:
+            routed["args"]["meal_slot"] = None
+        return routed
+
+    # Multi-item meal NL → always meal spine (slot optional; M26 pack fence).
+    if _MEAL_MULTI.search(raw) or _MEAL_MULTI_BARE.search(raw):
+        slot_m = _MEAL_SLOT.search(raw)
+        slot = _normalize_meal_slot(slot_m.group(1)) if slot_m else None
+        body = _meal_body_from_raw(raw, slot=slot_m.group(1) if slot_m else None)
+        routed = _route_from_pack("meal_log", raw, body, config=cfg)
+        if routed is not None and slot:
+            routed["args"]["meal_slot"] = slot
+        return routed
 
     # Habit NL before bare due — require "habit" / tick cue (not "done: thesis").
     habit_done = _HABIT_DONE_NL.match(raw)

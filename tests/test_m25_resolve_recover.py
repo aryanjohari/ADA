@@ -12,10 +12,9 @@ from ada.harness.loop import run_turn
 from ada.harness.meal_spine import (
     build_alt_queries,
     build_meal_log_args,
-    candidate_matches_query,
     recover_food_slot,
 )
-from ada.harness.resolve_gate import decide_food_bind
+from ada.harness.resolve_gate import candidate_matches_query, decide_food_bind
 from ada.harness.session import ChatSession
 from ada.io.paths import get_paths
 from ada.logs.connection import open_life_db
@@ -510,7 +509,7 @@ def test_search_null_core_local_triggers_remote(
 
 
 def test_freestyle_meal_log_ref_id_only_enriches(data_root: Path) -> None:
-    """Gemini ref_id-only line → enrich from cache, honest macros (Gap B)."""
+    """Spine resolve + ref_id line → enrich from cache, honest macros (Gap B)."""
     from ada.tools.life_tools import run_life_meal_log
 
     paths = get_paths()
@@ -536,6 +535,19 @@ def test_freestyle_meal_log_ref_id_only_enriches(data_root: Path) -> None:
                     "serving_grams": 350.0,
                 }
             ],
+            "resolve": {
+                "bind_authority": "meal_spine",
+                "needs_confirm": False,
+                "reasons": ["favorite_unique"],
+                "rows": [
+                    {
+                        "query": "eggs",
+                        "proposed_ref_id": egg["food_ref_id"],
+                        "reasons": ["favorite_unique"],
+                    }
+                ],
+                "candidates": [],
+            },
         }
     )
     assert out.get("ok") is True
@@ -544,7 +556,7 @@ def test_freestyle_meal_log_ref_id_only_enriches(data_root: Path) -> None:
 
 
 def test_freestyle_meal_log_ref_id_only_refuses_null_core(data_root: Path) -> None:
-    """ref_id with null-CORE cache → refuse empty_macros, never silent 0 write."""
+    """ref_id without spine resolve → spine_required; null-CORE with resolve → empty_macros."""
     from ada.tools.life_tools import run_life_meal_log
 
     paths = get_paths()
@@ -559,10 +571,31 @@ def test_freestyle_meal_log_ref_id_only_refuses_null_core(data_root: Path) -> No
         },
         paths=paths,
     )
-    out = run_life_meal_log(
+    refused = run_life_meal_log(
         {
             "receipt_id": "r2",
             "lines": [{"ref_id": junk["food_ref_id"], "serving_qty": 7}],
+        }
+    )
+    assert refused.get("ok") is False
+    assert refused.get("reason") == "spine_required"
+    out = run_life_meal_log(
+        {
+            "receipt_id": "r2b",
+            "lines": [{"ref_id": junk["food_ref_id"], "serving_qty": 7}],
+            "resolve": {
+                "bind_authority": "meal_spine",
+                "needs_confirm": False,
+                "reasons": [],
+                "rows": [
+                    {
+                        "query": "eggs",
+                        "proposed_ref_id": junk["food_ref_id"],
+                        "reasons": [],
+                    }
+                ],
+                "candidates": [],
+            },
         }
     )
     assert out.get("ok") is False

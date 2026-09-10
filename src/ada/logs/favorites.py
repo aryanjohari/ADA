@@ -47,6 +47,28 @@ def get_favorite(query: str, *, paths: DataPaths | None = None) -> dict[str, Any
     return None
 
 
+def resolve_favorite_bind(
+    query: str, *, paths: DataPaths | None = None
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Return sticky favorite for bind, or None if missing/broken after cache wipe.
+
+    When FACTS points at a ref_id absent from food_reference.db, do **not** silent-
+    bind — caller must Confirm + re-bind (M26 library harden).
+    """
+    fav = get_favorite(query, paths=paths)
+    if not fav:
+        return None, []
+    rid = str(fav.get("ref_id") or "").strip()
+    if not rid:
+        return None, []
+    from ada.logs import food as food_mod
+
+    row = food_mod.get_food(rid, paths=paths)
+    if not row:
+        return None, ["favorite_ref_missing"]
+    return {**fav, "ref_id": rid}, []
+
+
 def set_favorite(
     *,
     query: str,

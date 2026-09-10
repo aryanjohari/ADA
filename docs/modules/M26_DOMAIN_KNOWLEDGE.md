@@ -1,13 +1,13 @@
 # M26 — Domain knowledge (what “knowing” a life-admin domain means)
 
-**Status:** design lock — **not code**  
-**Date:** 2026-09-03 (v1.5)  
+**Status:** design lock — **not code** · **life verticals FROZEN (2026-09-11)** except explicit unfreeze via [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 restart checklist  
+**Date:** 2026-09-11 (v1.7)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **domain-agnostic foundation** — organ vs reference vs reject; capture grammar; phased template for per-domain cited memory docs. Not a pack implement. Not package. Not analysis.  
 **Depends on:** [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8 · trust rings · structured logs > RAG-brain · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) (Confirm Integrity; truth > charm; no consciousness) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill; skills = packs) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) · [`M20_V1_PRODUCT.md`](./M20_V1_PRODUCT.md) (sequence 1→5 — **this card does not reorder**) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library/cites organ — sibling, not duplicate)
 
-**Feeds:** per-domain **Phase 2 cited memory docs** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) **food organ closed**; then gym · time · habits · people · dues — copy domain close checklist). Phase 3 implement wraps per domain. Phase 4 phone METAL.
+**Feeds:** per-domain **Phase 2 cited memory docs** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) **food FROZEN** — organ METAL, library phone incomplete; then gym · time · habits · people · dues — copy domain close checklist **after food restart**). Phase 3 implement wraps per domain. Phase 4 phone METAL.
 
 **Name stays `M26_DOMAIN_KNOWLEDGE.md`:** this is the **agnostic “knowing” lock** before vertical memory essays. Rejected: `M19c` (catalog child, not foundation); `M10b` (M10 owns fetch→library; this owns life-domain *purpose* + organ/reference split); stuffing into M25 (recover ≠ ontology).
 
@@ -17,6 +17,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.7** | 2026-09-11 | **Life verticals FROZEN.** Food first vertical paused — organ yes, library phone incomplete ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12). Next life work = finish food restart checklist, then gym. |
 | **v1.6** | 2026-09-06 | Food Confirm→write: preview macros must survive handoff (M26_FOOD v1.10); propose-pool never defaults null-CORE (M27 v1.4). |
 | **v1.5** | 2026-09-03 | Food meal capture = spine-first (`is_meal_log_utterance` before cortex); cortex parse/mouth only on meal turns; Confirm for all non-favorite binds (M26 v1.9). |
 | **v1.4** | 2026-09-02 | Catalog **ranking policy deferred to M27** ([`M27_CATALOG_RANKING.md`](./M27_CATALOG_RANKING.md)); no new food-specific rank patches until Step 2. |
@@ -335,6 +336,6 @@ M21–M25 falsifiers still bind.
 
 ---
 
-**Next slice:** gym Phase 2 cited memory doc (copy [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) skeleton) · food reflection **shipped** (v1.5).
+**Next slice:** finish food restart checklist ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12), then gym Phase 2 cited memory doc. Food = **partial** (organ yes; library phone incomplete).
 
-*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; food organ closed 2026-09-02.*
+*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; life verticals FROZEN 2026-09-11.*

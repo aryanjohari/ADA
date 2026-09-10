@@ -293,6 +293,11 @@ def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
             "NEVER use memory_facts_append / memory_facts_propose_edit for day totals. "
             "Speak honest_partial from the JSON; do not invent Ca/Fe/C/D."
         )
+        if verb in {"nutrition_day", "nutrition_week"}:
+            lines.append(
+                f"- HARD: pack routed `{verb}` — do not substitute "
+                "`life_nutrition_day` for week queries or `life_nutrition_week` for a single day."
+            )
         if verb in {"streak_show", "who_is", "people_remind"}:
             lines.append(
                 "- HARD: habit continuity requires life_habit_status; "
@@ -313,6 +318,10 @@ def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
             lines.append(
                 "- M24: multi-item meals stay on this pack spine — do not freestyle "
                 "ref_id / kcal; Confirm when resolve holds brand_fight."
+            )
+            lines.append(
+                "- M26 v1.8: life_meal_log requires meal_spine resolve "
+                "(bind_authority=meal_spine) — use pack meal_log utterance, not direct ref_id commits."
             )
         if tool == "life_lift_log":
             lines.append(

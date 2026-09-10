@@ -48,9 +48,12 @@ export async function postLogout() {
   await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
 }
 
-export async function postConfirm(tool, args, pendingId) {
+export async function postConfirm(tool, args, pendingId, selectedRefIds = null) {
   const body = { tool, args };
   if (pendingId) body.pending_id = pendingId;
+  if (selectedRefIds && typeof selectedRefIds === "object") {
+    body.selected_ref_ids = selectedRefIds;
+  }
   const r = await fetch("/api/confirm", {
     method: "POST",
     credentials: "same-origin",

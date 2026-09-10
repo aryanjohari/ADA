@@ -12,6 +12,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.0.1** | 2026-09-11 | Food/life capture **FREEZE** → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 (restart checklist). |
 | **v1.0** | 2026-08-17 | Pass 1 market/fiction/SOTA → Pass 2 operator reconcile → Pass 3 final catalog |
 
 ### One-liner
@@ -328,7 +329,7 @@ HA scenes, OSINT warehouses, vendor search, always-listen, Funnel, consciousness
 | `meal_fix` | correct last meal | patch → log | none | rev | Meal | MUST |
 | `targets_set` | gain/lose/maintain + macros/micros | goals → FACTS/prefs | soft | targets ver | sheet | SHOULD |
 | `nutrition_day` | day totals vs targets | → strip/brief | none | totals | Meal strip | MUST |
-| `nutrition_week` | trend vs goal; propose adjust | → artifact | none | path | sheet | LATER |
+| `nutrition_week` | trend vs goal; deterministic reflection | → scratch JSON | none | patterns | week read | **METAL** (`life_nutrition_week`) |
 | `food_search` | library/API food lookup | query → candidates | none | picks | chip | SHOULD |
 | `cronometer_sync` | optional API pull/push | API → log | soft enable | sync receipt | — | LATER |
 

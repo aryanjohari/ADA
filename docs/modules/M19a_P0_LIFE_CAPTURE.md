@@ -14,6 +14,8 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.12** | 2026-09-11 | Food/life capture **FREEZE** → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 (restart checklist). |
+| **v1.11** | 2026-09-06 | Pointer only → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.11 personal library: create-meal draft session, preset log-by-name, barcode GTIN HUD, favorites re-bind, estimate provenance. Doors in this card (`meal_log` / `barcode_lookup` / `food_preset_save`) stay; session/pack verbs live under M26. |
 | **v1.10** | 2026-08-27 | Pointer only → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md). Multi-item meal / multi-set lift = **skill-spine Phase 1** (decompose + Confirm), not a P0 mega-rewrite. Sequence: after M23, before package. No P0 METAL rewrite in this pointer. |
 | **v1.9** | 2026-08-26 | Pointer only → [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md). `gym_split` / targets / presets are **teach-in-flow stores** (ask-once → Confirm → same YAML). CLI import remains optional, not the primary personalization path. No P0 METAL rewrite. |
 | **v1.8** | 2026-08-19 | **METAL:** Gemini FunctionDeclaration arrays require `items` (400 INVALID_ARGUMENT otherwise). ADA schemas live in [`toolspec.py`](../../src/ada/tools/toolspec.py) — `life_meal_log`/`fix` `lines`, `life_lift_log` `sets`, `life_food_preset_save` `components`, `life_routine_run` `steps`. Adapter does not special-case this. |
@@ -94,7 +96,7 @@
 |------|------------|------------------|---------|---------------|-----|--------------------------------|
 | **`meal_log`** | resolve foods → normalize servings → snapshot nutrients → insert meal + lines → rollup day | utterance **or** barcode **or** preset id **or** explicit “add my coffee” | `none` | `{receipt_id, meal_id, day, kcal, protein_g, carb_g, fat_g, provenance_mix[], partial_micros: bool}` | Meal sheet; Today macro headline | `life_meal_log` |
 | **`meal_fix`** | load target meal → patch lines/servings → **new revision row** (append-only) → re-rollup | `meal_id` or “last meal” + patch | `none` | `{receipt_id, meal_id, revision, superseded_revision}` | Meal sheet edit | `life_meal_fix` |
-| **`nutrition_day`** | read day meals → sum snapshots → compare FACTS targets | `date` (default local today) | `none` | `{date, totals{}, targets{}, gaps{}, honest_partial: bool}` | Today strip headline | `life_nutrition_day` |
+| **`nutrition_day`** | read day meals → sum snapshots → compare FACTS targets | `date` (default local today; pack router sets relative NL via [`nutrition_date.py`](../../src/ada/harness/nutrition_date.py)) | `none` | `{date, totals{}, targets{}, gaps{}, honest_partial: bool}` | Today strip headline | `life_nutrition_day` |
 | **`food_preset_save`** | parse “save as my coffee” → validate components → write FACTS preset | name + components or last meal | `soft` if name clash | `{preset_id, path, version}` | chip confirm | `life_food_preset_save` |
 | **`food_search`** | query → ranked candidates (local cache → USDA) | query string | `none` | `{candidates[{ref_id, name, source, score}]}` | picker chip (optional) | `life_food_search` |
 | **`barcode_lookup`** | GTIN → OFF → USDA Branded fallback | barcode string | `none` | `{ref_id, name, source, nutrients_preview{}}` | scan result chip | `life_barcode_lookup` |

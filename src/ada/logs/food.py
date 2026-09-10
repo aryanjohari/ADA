@@ -10,6 +10,7 @@ from typing import Any, Callable
 import httpx
 
 from ada.body.vitals import utc_now_iso
+from ada.harness.catalog_rank import rank_catalog_candidates
 from ada.harness.resolve_gate import has_viable_local_candidate
 from ada.io.paths import DataPaths
 from ada.logs.connection import open_food_db
@@ -318,28 +319,6 @@ def _is_branded_food(row: dict[str, Any]) -> bool:
     return bool(str(row.get("brand") or "").strip())
 
 
-def _ice_cream_demote(row: dict[str, Any]) -> int:
-    """Rank key: demote ice-cream brands for generic queries (Gott COFFEE)."""
-    hay = f"{row.get('name') or ''} {row.get('brand') or ''}".lower()
-    if "ice cream" in hay or "icecream" in hay:
-        return 1
-    return 0
-
-
-def _foundation_boost(row: dict[str, Any]) -> int:
-    """Prefer Foundation / SR Legacy / raw-generic over branded."""
-    name = str(row.get("name") or "").lower()
-    source = str(row.get("source") or "").lower()
-    data_type = str(row.get("data_type") or "").lower()
-    if "foundation" in data_type or "sr legacy" in data_type:
-        return 0
-    if source == "usda_fdc" and (", raw" in name or name.endswith(" raw")):
-        return 0
-    if _is_branded_food(row):
-        return 2
-    return 1
-
-
 def search_foods_resolved(
     query: str,
     *,
@@ -348,7 +327,12 @@ def search_foods_resolved(
     paths: DataPaths | None = None,
     http_get: Callable[..., httpx.Response] | None = None,
 ) -> list[dict[str, Any]]:
-    """Local search; thin custom / all-branded hits still try USDA when key present."""
+    """Local search; thin custom / all-branded hits still try USDA when key present.
+
+    Remote discovery uses multi-hit USDA (not pageSize=1 sole top) so form-
+    mismatched first hits (breaded tenders) do not block plain Foundation rows
+    that appear later on the same page (M26 v1.11 / run 1c509c18…).
+    """
     candidates = search_foods(query, limit=limit, paths=paths)
     only_thin_custom = bool(candidates) and all(is_thin_custom_food(c) for c in candidates)
     only_branded = bool(candidates) and all(_is_branded_food(c) for c in candidates)
@@ -363,8 +347,17 @@ def search_foods_resolved(
         or only_null_core
         or no_viable_local
     ):
-        hit = fetch_usda_search(str(query), http_get=http_get)
-        if hit:
+        remote_hits = fetch_usda_search_hits(
+            str(query), page_size=8, http_get=http_get
+        )
+        seen_ext: set[str] = set()
+        usda_rows: list[dict[str, Any]] = []
+        for hit in remote_hits:
+            ext = str(hit.get("external_id") or "").strip()
+            if ext and ext in seen_ext:
+                continue
+            if ext:
+                seen_ext.add(ext)
             inserted = insert_food(
                 name=hit["name"],
                 source=hit["source"],
@@ -373,30 +366,29 @@ def search_foods_resolved(
                 nutrients_per_100g=hit.get("nutrients_per_100g"),
                 paths=paths,
             )
-            usda = {
-                "ref_id": inserted["food_ref_id"],
-                "name": inserted["name"],
-                "source": inserted["source"],
-                "brand": hit.get("brand"),
-                "score": 1.0,
-                "nutrients": hit.get("nutrients_per_100g") or {},
-                "data_type": hit.get("data_type"),
-            }
+            usda_rows.append(
+                {
+                    "ref_id": inserted["food_ref_id"],
+                    "name": inserted["name"],
+                    "source": inserted["source"],
+                    "brand": hit.get("brand"),
+                    "score": 1.0,
+                    "nutrients": hit.get("nutrients_per_100g") or {},
+                    "data_type": hit.get("data_type"),
+                }
+            )
+        if usda_rows:
             kept = [
                 c
                 for c in candidates
                 if not is_thin_custom_food(c) and not is_null_core_food(c)
             ]
-            candidates = [usda] + kept
-    candidates.sort(
-        key=lambda c: (
-            1 if is_thin_custom_food(c) else 0,
-            1 if is_null_core_food(c) else 0,
-            _ice_cream_demote(c),
-            _foundation_boost(c),
-            -float(c.get("score") or 0),
-            str(c.get("name") or ""),
-        )
+            candidates = usda_rows + kept
+    candidates = rank_catalog_candidates(
+        str(query),
+        candidates,
+        domain="food",
+        for_search=True,
     )
     return candidates[:limit]
 
@@ -590,30 +582,20 @@ def fetch_usda_detail(
     }
 
 
-def fetch_usda_search(
-    query: str,
+def _usda_item_to_hit(
+    item: dict[str, Any],
     *,
-    api_key: str | None = None,
-    http_get: Callable[..., httpx.Response] | None = None,
+    query: str,
+    api_key: str,
+    http_get: Callable[..., httpx.Response],
 ) -> dict[str, Any] | None:
-    """Search for discovery; prefer detail endpoint before cache insert."""
-    key = api_key or load_usda_fdc_api_key(required=False)
-    if not key:
-        return None
-    params = {"api_key": key, "query": query, "pageSize": 1}
-    get = http_get or httpx.get
-    resp = get(USDA_SEARCH_URL, params=params, timeout=15.0)
-    if resp.status_code != 200:
-        return None
-    data = resp.json()
-    foods = data.get("foods") or []
-    if not foods:
-        return None
-    item = foods[0]
+    """Detail-prefer one FDC search row; fall back to flat search nutrients."""
     fdc_id = item.get("fdcId")
     if fdc_id is not None:
-        detail = fetch_usda_detail(fdc_id, api_key=key, http_get=get)
+        detail = fetch_usda_detail(fdc_id, api_key=api_key, http_get=http_get)
         if detail:
+            detail = dict(detail)
+            detail.setdefault("data_type", item.get("dataType"))
             return detail
     nutrients = _parse_fdc_food_nutrients(item)
     return {
@@ -624,7 +606,60 @@ def fetch_usda_search(
         "barcode": None,
         "nutrients_per_100g": nutrients,
         "provenance": "api_search",
+        "data_type": item.get("dataType"),
     }
+
+
+def fetch_usda_search_hits(
+    query: str,
+    *,
+    page_size: int = 8,
+    api_key: str | None = None,
+    http_get: Callable[..., httpx.Response] | None = None,
+) -> list[dict[str, Any]]:
+    """Multi-hit USDA search — pageSize>1 so plain breast is not lost behind breaded."""
+    key = api_key or load_usda_fdc_api_key(required=False)
+    if not key:
+        return []
+    size = max(1, min(int(page_size or 8), 25))
+    params = {"api_key": key, "query": query, "pageSize": size}
+    get = http_get or httpx.get
+    resp = get(USDA_SEARCH_URL, params=params, timeout=15.0)
+    if resp.status_code != 200:
+        return []
+    foods = (resp.json() or {}).get("foods") or []
+    hits: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in foods:
+        if not isinstance(item, dict):
+            continue
+        hit = _usda_item_to_hit(item, query=query, api_key=key, http_get=get)
+        if not hit:
+            continue
+        ext = str(hit.get("external_id") or "").strip()
+        if ext and ext in seen:
+            continue
+        if ext:
+            seen.add(ext)
+        hits.append(hit)
+    return hits
+
+
+def fetch_usda_search(
+    query: str,
+    *,
+    api_key: str | None = None,
+    http_get: Callable[..., httpx.Response] | None = None,
+) -> dict[str, Any] | None:
+    """Search for discovery; prefer detail endpoint before cache insert.
+
+    Returns the first hit (compat). Prefer :func:`fetch_usda_search_hits` when
+    ranking needs the full page (plain vs breaded).
+    """
+    hits = fetch_usda_search_hits(
+        query, page_size=1, api_key=api_key, http_get=http_get
+    )
+    return hits[0] if hits else None
 
 
 def barcode_lookup(

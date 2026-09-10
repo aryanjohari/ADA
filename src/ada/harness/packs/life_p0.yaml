@@ -8,6 +8,29 @@ packs:
     preferred_tools: [life_food_search, life_meal_log, life_nutrition_day]
     spine: resolve_confirm_then_log
     confirm_class: confirm_bind_on_ambiguity
+  meal_draft_start:
+    tool: life_meal_draft_start
+    prefill: "add a meal"
+    preferred_tools: [life_meal_draft_start, life_meal_draft_add, life_barcode_lookup]
+    spine: draft_session
+  meal_draft_save:
+    tool: life_meal_draft_save
+    preferred_tools: [life_meal_draft_save, life_food_preset_save]
+    spine: draft_save_preset
+  meal_draft_cancel:
+    tool: life_meal_draft_cancel
+    preferred_tools: [life_meal_draft_cancel]
+    spine: draft_cancel
+  meal_preset_log:
+    tool: life_meal_preset_log
+    prefill: "log my "
+    preferred_tools: [life_meal_preset_log, life_meal_log]
+    spine: expand_preset_confirm_log
+  barcode_lookup:
+    tool: life_barcode_lookup
+    prefill: "barcode: "
+    preferred_tools: [life_barcode_lookup, life_meal_draft_add, life_meal_log]
+    spine: barcode_then_confirm
   lift_log:
     tool: life_lift_log
     prefill: "log lift: "
@@ -45,6 +68,10 @@ packs:
   nutrition_day:
     tool: life_nutrition_day
     preferred_tools: [life_nutrition_day]
+    spine: read
+  nutrition_week:
+    tool: life_nutrition_week
+    preferred_tools: [life_nutrition_week]
     spine: read
   time_status:
     tool: life_time_status
@@ -86,6 +113,7 @@ packs:
 
 chips:
   meal: meal_log
+  barcode: barcode_lookup
   lift: lift_log
   focus: time_start
   due: due_add
@@ -93,6 +121,16 @@ chips:
 
 # Literal/contains, case-insensitive. First match after prefixes wins.
 aliases:
+  - {pattern: "add a meal", verb: meal_draft_start}
+  - {pattern: "create a meal", verb: meal_draft_start}
+  - {pattern: "start a meal", verb: meal_draft_start}
+  - {pattern: "new meal", verb: meal_draft_start}
+  - {pattern: "save this meal", verb: meal_draft_save}
+  - {pattern: "cancel meal", verb: meal_draft_cancel}
+  - {pattern: "log my ", verb: meal_preset_log}
+  - {pattern: "barcode:", verb: barcode_lookup}
+  - {pattern: "barcode ", verb: barcode_lookup}
+  - {pattern: "gtin ", verb: barcode_lookup}
   - {pattern: "good morning", verb: time_start}
   - {pattern: "i woke up", verb: time_start}
   - {pattern: "woke up", verb: time_start}
@@ -104,6 +142,15 @@ aliases:
   - {pattern: "goodnight", verb: time_start}
   - {pattern: "stop focus", verb: time_stop}
   - {pattern: "stop timer", verb: time_stop}
+  - {pattern: "tell all macros this week", verb: nutrition_week}
+  - {pattern: "all macros this week", verb: nutrition_week}
+  - {pattern: "what did i eat yesterday", verb: nutrition_day}
+  - {pattern: "macros yesterday", verb: nutrition_day}
+  - {pattern: "macros this week", verb: nutrition_week}
+  - {pattern: "protein this week", verb: nutrition_week}
+  - {pattern: "week macros", verb: nutrition_week}
+  - {pattern: "how's my nutrition", verb: nutrition_week}
+  - {pattern: "nutrition this week", verb: nutrition_week}
   - {pattern: "what did i eat", verb: nutrition_day}
   - {pattern: "macros", verb: nutrition_day}
   - {pattern: "micros", verb: nutrition_day}

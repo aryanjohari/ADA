@@ -17,6 +17,8 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.0.5** | 2026-09-11 | Pointer — meal draft/presets **METAL-in-tree**; phone smoke incomplete. Freeze → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 restart checklist. |
+| **v1.0.4** | 2026-09-06 | Pointer — meal draft → preset teach-in is **METAL** in [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.11 (create-meal session · `nutrition_presets` · favorites re-bind). Same stores; not a second prefs DB. |
 | **v1.0.3** | 2026-08-27 | Pointer only — next sequence capture card → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (multi-slot decompose; not teach-in-flow stores). |
 | **v1.0.2** | 2026-08-26 | Pointer only — next sequence feel card → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md) (spoken friend register; not teach-in-flow stores). |
 | **v1.0.1** | 2026-08-26 | Pointer only — implement plan → [`../reviews/M22_IMPLEMENT_PLAN.md`](../reviews/M22_IMPLEMENT_PLAN.md) (gap map + ordered slices; not METAL). |
@@ -142,7 +144,7 @@ These are **doc/product gravity**, not always false metal. Tag the implied *prim
 
 | Piece | State |
 |-------|--------|
-| Food favorites after Confirm Yes | **METAL** — [`favorites.py`](../../src/ada/logs/favorites.py), M21 §F |
+| Food favorites after Confirm Yes | **METAL** — [`favorites.py`](../../src/ada/logs/favorites.py), M21 §F; meal picker may override default `proposed_ref_id` before Yes |
 | Dream stages `nutrition_favorites` / people | **METAL** — [`dream/merge.py`](../../src/ada/dream/merge.py) |
 | People capture-first (“met X”) | **METAL** packs in [`life_p1.yaml`](../../src/ada/harness/packs/life_p1.yaml); M21 honesty on bind |
 | `life_gym_start` / `life_gym_end` / `life_gym_status` tools | **METAL** — status **reads** `gym_split` FACT if present |
@@ -255,7 +257,7 @@ M20 phases **1→5 stay locked.** This card is a **3→4 insert after M21**, sam
 1. **Unknown habit / routine name** → Confirm-create (after M21 resolve exists); not silent SQL insert; not “seed first.”  
 2. **No `gym_split` FACT** on `gym_start` / first lift week → Confirm proposed split (operator-filled slots), then sticky.  
 3. **Brief section change** (“don’t put gym in the morning brief”) → Confirm prefs patch; subsequent briefs honor list.  
-4. **Food** → unchanged M21 (favorite after Yes).  
+4. **Food** → unchanged M21 (favorite after Yes). Operator may pick a non-default ranked candidate on the meal Confirm card; favorite sticky-writes the **chosen** `ref_id`.  
 5. **People** → unchanged M21 (display_name; clash Confirm).
 
 Proceed **unsticky** if operator says No: log the meal/set **once**; do not write favorite/split/habit def.

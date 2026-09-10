@@ -37,7 +37,7 @@ def test_m23_confirm_templates_friend_shaped_not_tool_voice() -> None:
         assert "confirm yes" not in line.lower()
     assert "Confirm" in CONFIRM_SPLIT
     assert "Confirm" in CONFIRM_HABIT
-    assert "tap confirm" in CONFIRM_LINE.lower()
+    assert "Confirm" in CONFIRM_LINE
 
 
 def test_m23_confirm_skip_still_returns_template() -> None:

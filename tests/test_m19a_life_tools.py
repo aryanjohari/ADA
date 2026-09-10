@@ -32,6 +32,13 @@ def test_observe_allows_nutrition_day(data_root: Path) -> None:
     assert obs.ok
 
 
+def test_observe_allows_nutrition_week(data_root: Path) -> None:
+    gw = Gateway(mode="observe")
+    obs = gw.execute("life_nutrition_week", {"days": 7})
+    assert obs.ok
+    assert obs.data.get("ok") is True
+
+
 def test_meal_log_receipt_and_snapshot(data_root: Path) -> None:
     gw = Gateway(mode="agent")
     lines = [
@@ -48,7 +55,19 @@ def test_meal_log_receipt_and_snapshot(data_root: Path) -> None:
             },
         }
     ]
-    obs = gw.execute("life_meal_log", {"lines": lines})
+    obs = gw.execute(
+        "life_meal_log",
+        {
+            "lines": lines,
+            "resolve": {
+                "bind_authority": "meal_spine",
+                "needs_confirm": False,
+                "reasons": [],
+                "rows": [],
+                "candidates": [],
+            },
+        },
+    )
     assert obs.ok
     assert obs.receipt_id
     assert obs.data["kcal"] == 105.0
@@ -94,7 +113,14 @@ def test_nutrition_day_after_meal(data_root: Path) -> None:
                     "provenance": "manual",
                     "nutrients": {"energy_kcal": 300, "protein_g": 10},
                 }
-            ]
+            ],
+            "resolve": {
+                "bind_authority": "meal_spine",
+                "needs_confirm": False,
+                "reasons": [],
+                "rows": [],
+                "candidates": [],
+            },
         },
     )
     obs = gw.execute("life_nutrition_day", {})

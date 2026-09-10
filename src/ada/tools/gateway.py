@@ -196,6 +196,7 @@ class Gateway:
             "life_food_search",
             "life_barcode_lookup",
             "life_nutrition_day",
+            "life_nutrition_week",
             "life_time_status",
             "life_gym_status",
             "life_habit_status",

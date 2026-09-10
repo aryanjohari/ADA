@@ -305,7 +305,14 @@ def test_meal_snapshot_unchanged_after_cache_update(data_root: Path) -> None:
                         "iron_mg": None,
                     },
                 }
-            ]
+            ],
+            "resolve": {
+                "bind_authority": "meal_spine",
+                "needs_confirm": False,
+                "reasons": [],
+                "rows": [],
+                "candidates": [],
+            },
         },
     )
     with open_life_db(paths=paths) as conn:

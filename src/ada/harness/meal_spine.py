@@ -229,18 +229,7 @@ def build_alt_queries(original_piece: str, parsed_query: str) -> list[str]:
 
     base_tokens = set(parsed_lower.split())
 
-    for mod in _extract_stripped_modifiers(original_piece):
-        if mod in base_tokens or parsed_lower.startswith(f"{mod} "):
-            continue
-        add(f"{mod} {base}")
-        if base.endswith("s") and len(base) > 1:
-            add(f"{mod} {base[:-1]}")
-
-    if base.endswith("s") and len(base) > 1:
-        add(base[:-1])
-    elif base and not base.endswith("s") and not base.endswith("e"):
-        add(f"{base}s")
-
+    # Domain-specific alts first — recover budget is tiny (≤5 searches).
     if "egg" in parsed_lower:
         add("boiled egg")
         add("boiled eggs")
@@ -262,6 +251,18 @@ def build_alt_queries(original_piece: str, parsed_query: str) -> list[str]:
         add("rice, white, long-grain, regular, cooked")
         add("Rice, white, long-grain, regular, enriched, cooked")
         add("white rice cooked long grain")
+
+    for mod in _extract_stripped_modifiers(original_piece):
+        if mod in base_tokens or parsed_lower.startswith(f"{mod} "):
+            continue
+        add(f"{mod} {base}")
+        if base.endswith("s") and len(base) > 1:
+            add(f"{mod} {base[:-1]}")
+
+    if base.endswith("s") and len(base) > 1:
+        add(base[:-1])
+    elif base and not base.endswith("s") and not base.endswith("e"):
+        add(f"{base}s")
 
     return alts
 
@@ -705,6 +706,10 @@ def recover_food_slot(
                 decision = decide_food_bind(
                     query=query, candidates=pool, favorite=favorite
                 )
+                bind = decision.get("bind") or {}
+                # Keep searching when sole bind is still form-mismatched.
+                if bind and catalog_form_mismatch(query, bind, domain="food"):
+                    continue
                 line, _, _ = _slot_from_decision(
                     query=query,
                     qty=qty,
@@ -760,7 +765,10 @@ def build_meal_log_args(
             misses.append({"query": part, "reason": "empty_piece"})
             continue
 
-        favorite = favorites_mod.get_favorite(query, paths=paths)
+        favorite, fav_reasons = favorites_mod.resolve_favorite_bind(query, paths=paths)
+        for fr in fav_reasons:
+            if fr not in reasons:
+                reasons.append(fr)
         candidates = food_mod.search_foods_resolved(
             query, limit=5, fetch_remote=fetch_remote, paths=paths, http_get=http_get
         )

@@ -21,7 +21,7 @@ Given a DELTA summary only, return ONE JSON object with keys:
     brief_time, quiet_hours_start, quiet_hours_end, mute_proactivity,
     tease_ok, preferred_tz, brief_enabled,
     roast_energy, humor_density, chill_immediate, humor_banned_topics
-  worldview_notes: list of strings (may include cite:c_… ids)
+  worldview_notes: list of strings (may include cite:c_… ids or meal:day:YYYY-MM-DD cites)
   campaign_digests: list of {campaign_id, digest, cites?} —
     one short note per campaign/watch group present in cite_heads_by_campaign
     (skip the key "ungrouped" or treat lightly). Each digest about web pages
@@ -34,7 +34,6 @@ When DELTA includes cite_heads about the web:
   - WORLDVIEW digest/notes/campaign_digests about those pages MUST include cite:c_… ids from the heads.
   - If extract_ok is false / extract_status is js_shell|empty|feed_blob: say the page was not readable — do not invent Beehive/stats/paper claims.
   - abs_html means abstract page only — never claim you read the PDF/paper body.
-  - Keep digests short; never paste full page text into WORLDVIEW.
 Return JSON only."""
 
 

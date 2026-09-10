@@ -1276,6 +1276,33 @@ def life_food_import_nz(
         raise typer.Exit(code=1)
 
 
+@life_app.command("food-cache-reset")
+def life_food_cache_reset_cli(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Delete food_reference.db only; recreates on next USDA search."""
+    from ada.io.paths import get_paths
+
+    paths = get_paths()
+    db = paths.food_reference_db
+    removed = db.is_file()
+    if removed:
+        db.unlink()
+    result = {
+        "ok": True,
+        "removed": removed,
+        "path": str(db),
+        "note": "life_logs.db and nutrition_favorites.yaml untouched",
+    }
+    if json_out:
+        console.print_json(data=result)
+    elif removed:
+        console.print(f"removed {db}")
+        console.print("food_reference.db will recreate on next search")
+    else:
+        console.print(f"no file at {db} — nothing to remove")
+
+
 @life_app.command("food-search")
 def life_food_search_cli(
     query: str = typer.Argument(..., help="Food name query"),
@@ -1433,6 +1460,24 @@ def life_nutrition_day_cli(
     else:
         d = obs.data or {}
         console.print(f"day={d.get('date')} totals={d.get('totals')}")
+
+
+@life_app.command("nutrition-week")
+def life_nutrition_week_cli(
+    days: int = typer.Option(7, "--days"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute(
+        "life_nutrition_week",
+        {"days": days},
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        d = obs.data or {}
+        console.print(d.get("summary_text") or d.get("message") or obs.outcome)
 
 
 @life_app.command("lift-log")

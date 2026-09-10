@@ -1,13 +1,13 @@
 # M27 — Cross-domain catalog ranking (research · design lock)
 
-**Status:** v1.4 — Step 2 implemented  
-**Date:** 2026-09-06 (v1.4)  
+**Status:** v1.6 — **FREEZE** — no new rank patches until M26 food restart checklist item **#1** (white rice ≠ Beans-and-rice)  
+**Date:** 2026-09-11 (v1.6)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **unified catalog bind ranking policy** — food now (`food_reference.db` + FDC), gym later (`exercise_catalog`). Not ML. Not rip-out of working gates until Step 2 ships replacement.  
-**Depends on:** [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) (recover alt queries · caps) · [`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) (organ vs reference · capture grammar) · [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) (food resolve chain · organ closed) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) (catalog shapes · FDC) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (favorites sticky) · [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8 · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (B-before-search)
+**Depends on:** [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) (recover alt queries · caps) · [`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) (organ vs reference · capture grammar) · [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) (food resolve chain · **FREEZE v1.12**) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) (catalog shapes · FDC) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (favorites sticky) · [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8 · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (B-before-search)
 
-**Feeds:** Step 2 implement — `src/ada/harness/catalog_rank.py` shared policy; migrate food gates from [`resolve_gate.py`](../../src/ada/harness/resolve_gate.py); gym `exercise_catalog` bind parity.
+**Feeds:** Step 2 implement — `src/ada/harness/catalog_rank.py` shared policy; migrate food gates from [`resolve_gate.py`](../../src/ada/harness/resolve_gate.py); gym `exercise_catalog` bind parity — **paused** until food restart #1.
 
 **Name stays `M27_CATALOG_RANKING.md`:** cross-domain **ranking policy** card. M26 owns *what knowing means*; M25 owns *recover escalation*; M27 owns *how candidates are scored and gated before bind* — one module, two catalogs.
 
@@ -15,6 +15,8 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.6** | 2026-09-11 | **FREEZE:** no new rank patches until food restart checklist item **#1** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12) — phone `e3ab8d20…` white rice → Beans-and-rice still OPEN. |
+| **v1.5** | 2026-09-06 | **Breaded-default falsifier closed:** USDA multi-hit (`pageSize`>1) + form propose-pool — plain cooked chicken breast must not propose breaded tenders when plain exists (phone fail [`1c509c18…`](../../../runs/2026-09-06/1c509c183a6846818d81b7627d06d198.jsonl)). |
 | **v1.4** | 2026-09-06 | **Propose-pool rule:** honest null-CORE may remain in the ranked list, but **must not** become `proposed_ref_id` / default Confirm bind when any macro-complete candidate exists (null ≠ proposed). Sort demotion alone was insufficient — enforce on propose. Ties to M26 v1.10 Confirm→write handoff (`55378c77…`). |
 | **v1.3** | 2026-09-03 | **M26 v1.9 rank rules:** null-macro branded demoted below generic with macros (`_null_macro_tier`); dry/raw demoted when query says cooked/boiled (`_dry_when_cooked_demote`); rank output feeds Confirm picker (top 5 previews per resolve row). |
 | **v1.2** | 2026-09-02 | `rank_catalog_bind` outputs `candidates[]`; HUD meal Confirm picker consumes them (`selected_ref_ids` validated server-side). Bind commit only via spine resolve (`bind_authority=meal_spine`, M26 v1.8). |
@@ -264,9 +266,9 @@ M21–M26 / M25 falsifiers still bind.
 
 ## 12. Freeze declaration
 
-> **Step 2 shipped (v1.1).** Per-food ranking freeze lifted — policy module exists. **No new one-off per-food patches** (`if "thigh"`, `if "rice"`) — extend `catalog_form_mismatch` marker list instead.
+> **v1.6 FREEZE (2026-09-11).** Policy module exists (`catalog_rank.py`). **No new rank patches** — one-off or form-marker — until [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) restart checklist item **#1** closes on phone (white rice boiled ≠ Beans-and-rice). Then resume: extend `catalog_form_mismatch` / propose-pool only — still no `if "rice"` branches in `resolve_gate.py` / `meal_spine.py`.
 
-Tactical patches consolidated:
+Tactical patches consolidated (still bind after unfreeze):
 
 - No new `if "thigh"` / `if "rice"` branches in `resolve_gate.py` or `meal_spine.py`
 - No new one-off entries in `build_alt_queries` except **recover escalation** tied to M25 caps (existing pattern)
@@ -302,4 +304,4 @@ Tactical patches consolidated:
 
 ---
 
-*End M27. v1.1 Step 2 implemented 2026-09-02 — `catalog_rank.py` live.*
+*End M27. v1.6 FREEZE 2026-09-11 — no rank patches until food restart #1.*
