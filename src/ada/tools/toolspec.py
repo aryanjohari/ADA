@@ -850,6 +850,35 @@ SPECS: tuple[ToolSpec, ...] = (
         ),
     ),
     ToolSpec(
+        name="life_gym_day",
+        group="life",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "life_gym_day",
+            "Read one local calendar day of gym sessions, sets, and tonnage.",
+            {"date": {"type": "string", "description": "YYYY-MM-DD local day"}},
+        ),
+    ),
+    ToolSpec(
+        name="life_gym_week",
+        group="life",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "life_gym_week",
+            "Read last N local days of gym sets (deterministic reflection).",
+            {
+                "days": {
+                    "type": "integer",
+                    "description": "Window size in local days (default 7, max 31)",
+                }
+            },
+        ),
+    ),
+    ToolSpec(
         name="life_food_preset_save",
         group="life",
         side_effect="append_local",

@@ -26,7 +26,13 @@ from ada.harness.pack_router import (
     ADMIN_WRITE_VERBS,
     CONFIRM_BOUND_VERBS,
     READ_PACK_VERBS,
+    gym_read_takes_priority,
+    is_gym_end_utterance,
+    is_gym_start_utterance,
+    is_incomplete_lift_utterance,
+    is_lift_log_utterance,
     is_meal_log_utterance,
+    lift_log_fast_path_args,
     meal_log_fast_path_args,
 )
 from ada.harness.plan_artifact import parse_plan_from_assistant
@@ -111,6 +117,13 @@ def _model_tool_blocked(session: ChatSession, tool_name: str) -> str | None:
         turn_text = str(getattr(gateway, "turn_user_text", None) or "")
         if tool_name == "life_food_search" and is_meal_log_utterance(turn_text):
             return "meal_spine owns food search on log turns"
+        if is_incomplete_lift_utterance(turn_text) and tool_name in {
+            "life_lift_log",
+            "life_gym_start",
+        }:
+            return "incomplete lift — ask, no session, no row"
+        if tool_name == "life_lift_log" and is_lift_log_utterance(turn_text):
+            return "gym writes use gym_spine — spine owns sets[]"
 
     hint = session.pack_hint or {}
     verb = str(hint.get("verb") or "")
@@ -339,8 +352,10 @@ def _fast_path_lift(
     if not utterance or args.get("sets"):
         return None, None
     from ada.harness.gym_spine import build_lift_log_args
+    from ada.logs.gym import last_open_session_exercise_name
 
-    lift_args = build_lift_log_args(utterance)
+    follow_on = last_open_session_exercise_name()
+    lift_args = build_lift_log_args(utterance, follow_on_name=follow_on)
     if not lift_args.get("ok") or not lift_args.get("sets"):
         ask = str(lift_args.get("ask") or "").strip()
         # Fail closed with a human ask — never silent no-tool (F-M24-3).
@@ -454,6 +469,8 @@ def _speak_gym_end(data: dict[str, Any]) -> str:
 
 
 def _speak_lift_log(data: dict[str, Any]) -> str:
+    if data.get("ok") is False:
+        return LIFE_SAVE_FAIL_ACK
     resolved = data.get("resolved") or []
     row = resolved[0] if resolved and isinstance(resolved[0], dict) else {}
     name = (
@@ -918,6 +935,56 @@ def _speak_gym_status(data: dict[str, Any]) -> str:
     return f"{n} sets logged today."
 
 
+def _speak_gym_day(data: dict[str, Any]) -> str:
+    date = data.get("date") or "that day"
+    n = int(data.get("set_count") or 0)
+    if n == 0:
+        return str(data.get("message") or f"No gym sets logged for {date}.")
+    bits = [f"{date}: {n} sets"]
+    tonnage = data.get("tonnage_kg")
+    if isinstance(tonnage, (int, float)) and float(tonnage) > 0:
+        bits.append(f"{tonnage} kg tonnage")
+    label = data.get("split_label")
+    if label:
+        bits.append(str(label))
+    cite = data.get("cite")
+    if cite:
+        bits.append(str(cite))
+    text = ". ".join(bits)
+    if not text.endswith("."):
+        text += "."
+    return text
+
+
+def _speak_gym_week(data: dict[str, Any]) -> str:
+    if not data.get("days_logged"):
+        return str(data.get("message") or "No gym sets logged in this window.")
+    window = int(data.get("window_days") or 7)
+    logged = int(data.get("days_logged") or 0)
+    bits = [f"Last {window} days: {logged} day(s) lifted"]
+    ag = data.get("aggregates") if isinstance(data.get("aggregates"), dict) else {}
+    tonnage = ag.get("sum_tonnage_kg")
+    if isinstance(tonnage, (int, float)) and float(tonnage) > 0:
+        bits.append(f"{tonnage} kg tonnage")
+    rest_n = ag.get("rest_day_count")
+    if isinstance(rest_n, int) and rest_n > 0:
+        bits.append(f"{rest_n} rest day(s)")
+    days = data.get("days") if isinstance(data.get("days"), list) else []
+    cites = [
+        str(d.get("cite"))
+        for d in days
+        if isinstance(d, dict) and d.get("set_count", 0) > 0 and d.get("cite")
+    ]
+    if cites:
+        bits.append(f"Logged: {', '.join(cites[:2])}")
+    for pat in data.get("patterns") or []:
+        bits.append(str(pat))
+    text = ". ".join(bits)
+    if not text.endswith("."):
+        text += "."
+    return text
+
+
 def _speak_habit_status(data: dict[str, Any]) -> str:
     habits = data.get("habits") or []
     if not habits:
@@ -989,6 +1056,10 @@ def _fast_path_read(
         speech = _speak_due_list(data)
     elif verb == "gym_status" or tool == "life_gym_status":
         speech = _speak_gym_status(data)
+    elif verb == "gym_day" or tool == "life_gym_day":
+        speech = _speak_gym_day(data)
+    elif verb == "gym_week" or tool == "life_gym_week":
+        speech = _speak_gym_week(data)
     elif verb == "streak_show" or tool == "life_habit_status":
         speech = _speak_habit_status(data)
     elif verb == "who_is" or tool == "life_who_is":
@@ -1145,6 +1216,34 @@ def _fast_path_gym_end(
         return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
     data = last.get("data") if isinstance(last.get("data"), dict) else {}
     return "pack_fast_path", _speak_gym_end(data)
+
+
+def _maybe_gym_write_fast_path(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    user_text: str,
+) -> tuple[str | None, str | None]:
+    """Force gym start/end/lift before cortex even if pack_hint is missing/wrong."""
+    if session.mode != "agent":
+        return None, None
+    if gym_read_takes_priority(user_text):
+        return None, None
+    if is_incomplete_lift_utterance(user_text):
+        from ada.harness.gym_spine import INCOMPLETE_ASK, build_lift_log_args
+
+        built = build_lift_log_args(user_text)
+        ask = str(built.get("ask") or "").strip()
+        return "missing_life_receipt", ask or INCOMPLETE_ASK
+    if is_lift_log_utterance(user_text):
+        args = lift_log_fast_path_args(user_text) or {"utterance": user_text}
+        return _fast_path_lift(session, sink, history, receipts, args)
+    if is_gym_start_utterance(user_text):
+        return _fast_path_gym_start(session, sink, history, receipts)
+    if is_gym_end_utterance(user_text):
+        return _fast_path_gym_end(session, sink, history, receipts)
+    return None, None
 
 
 def _fast_path_habit(
@@ -1540,6 +1639,35 @@ def run_turn(
                     run_path=str(session.run_path),
                     plan=None,
                 )
+
+    if session.mode == "agent":
+        gym_stop, gym_text = _maybe_gym_write_fast_path(
+            session, sink, history, receipts, user_text
+        )
+        if gym_stop:
+            stop_reason = gym_stop
+            last_text = gym_text
+            if gym_stop == "missing_life_receipt" and not last_text:
+                last_text = LIFE_SAVE_FAIL_ACK
+            if gym_stop == "pack_fast_path" and gym_text:
+                last_text = apply_register_pass(
+                    adapter,
+                    receipts=receipts,
+                    template=gym_text,
+                )
+            if last_text:
+                sink.emit("token_delta", {"text": last_text})
+            if end_session:
+                session.end(stop_reason=stop_reason, steps=steps)
+            return LoopResult(
+                text=last_text,
+                stop_reason=stop_reason,
+                steps=steps,
+                tool_receipts=receipts,
+                usage_rounds=usage_rounds,
+                run_path=str(session.run_path),
+                plan=None,
+            )
 
     fast_stop, fast_text = _maybe_pack_fast_path(session, sink, history, receipts)
     if fast_stop:

@@ -1480,6 +1480,42 @@ def life_nutrition_week_cli(
         console.print(d.get("summary_text") or d.get("message") or obs.outcome)
 
 
+@life_app.command("gym-day")
+def life_gym_day_cli(
+    date: Optional[str] = typer.Option(None, "--date"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute(
+        "life_gym_day",
+        {"date": date},
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        d = obs.data or {}
+        console.print(d.get("summary_text") or d.get("message") or obs.outcome)
+
+
+@life_app.command("gym-week")
+def life_gym_week_cli(
+    days: int = typer.Option(7, "--days"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute(
+        "life_gym_week",
+        {"days": days},
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        d = obs.data or {}
+        console.print(d.get("summary_text") or d.get("message") or obs.outcome)
+
+
 @life_app.command("lift-log")
 def life_lift_log_cli(
     sets_json: str = typer.Option(..., "--sets", help="JSON array of sets"),

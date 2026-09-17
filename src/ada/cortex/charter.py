@@ -298,6 +298,11 @@ def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
                 f"- HARD: pack routed `{verb}` — do not substitute "
                 "`life_nutrition_day` for week queries or `life_nutrition_week` for a single day."
             )
+        if verb in {"gym_day", "gym_week"}:
+            lines.append(
+                f"- HARD: pack routed `{verb}` — do not substitute "
+                "`life_gym_status` for day/week queries or `life_gym_week` for a single day."
+            )
         if verb in {"streak_show", "who_is", "people_remind"}:
             lines.append(
                 "- HARD: habit continuity requires life_habit_status; "
@@ -325,8 +330,8 @@ def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
             )
         if tool == "life_lift_log":
             lines.append(
-                "- M24: multi-set / ladder lifts stay on this pack spine — "
-                "complete sets[] or ask; never silent drop."
+                "- M24/M26: lift turns stay on gym_spine — complete sets[] or ask; "
+                "never invent kg; never a gym physiology essay."
             )
     return "\n".join(lines)
 
@@ -424,6 +429,8 @@ def build_system_charter(
             "Life capture (M19a): meal/gym/time writes via life_* tools only — "
             "never claim a meal or set was logged without life_meal_log / life_lift_log receipt. "
             "Day macros require life_nutrition_day read — never invent totals. "
+            "Gym day/week require life_gym_day / life_gym_week — never invent tonnage; "
+            "do not substitute life_gym_status for those reads. "
             "Single active timer: life_time_start / life_time_stop; never parallel blocks. "
             "Habits (M19a P1): habit_do ticks habit_events — distinct from time_start custom blocks. "
             "Continuity rate only — never shame streak / guilt copy. "

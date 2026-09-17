@@ -177,7 +177,8 @@ def test_gym_status_and_end_expose_catalog_muscles(seeded_gym: None, data_root: 
     spoken = _speak_gym_status(ended.data or {})
     assert "chest" in spoken.lower()
     spoken_status = _speak_gym_status(status.data or {})
-    assert "chest" in spoken_status.lower()
+    assert "set" in spoken_status.lower()
+    assert "chest" in str((status.data or {}).get("exercises_today") or "").lower()
 
 
 def test_unknown_exercise_creates_custom(data_root: Path) -> None:
@@ -196,7 +197,11 @@ def test_life_write_tools_in_write_set() -> None:
     assert "life_meal_log" in WRITE_TOOL_NAMES
     assert "life_nutrition_day" not in WRITE_TOOL_NAMES
     assert "life_gym_status" not in WRITE_TOOL_NAMES
+    assert "life_gym_day" not in WRITE_TOOL_NAMES
+    assert "life_gym_week" not in WRITE_TOOL_NAMES
     assert "life_gym_status" in SPECS_BY_NAME
+    assert "life_gym_day" in SPECS_BY_NAME
+    assert "life_gym_week" in SPECS_BY_NAME
     assert "life_meal_log" in SPECS_BY_NAME
 
 
@@ -205,6 +210,15 @@ def test_observe_allows_gym_status(data_root: Path) -> None:
     obs = gw.execute("life_gym_status", {})
     assert obs.ok
     assert "sets_today" in (obs.data or {})
+
+
+def test_observe_allows_gym_day_and_week(data_root: Path) -> None:
+    gw = Gateway(mode="observe")
+    day = gw.execute("life_gym_day", {})
+    assert day.ok
+    week = gw.execute("life_gym_week", {"days": 7})
+    assert week.ok
+    assert week.data.get("ok") is True
 
 
 def _iter_array_schemas(node: object, path: str):

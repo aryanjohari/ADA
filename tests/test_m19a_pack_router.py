@@ -178,6 +178,14 @@ def test_route_gym_status_alias() -> None:
     assert r["tool"] == "life_gym_status"
 
 
+def test_route_gym_week_alias() -> None:
+    r = route_utterance("lifts this week")
+    assert r is not None
+    assert r["verb"] == "gym_week"
+    assert r["tool"] == "life_gym_week"
+    assert r["args"].get("days") == 7
+
+
 def test_route_gym_start_alias() -> None:
     r = route_utterance("start gym")
     assert r is not None

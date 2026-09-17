@@ -70,6 +70,11 @@ HUD_EDGE_SMOKE: list[dict[str, str]] = [
         "expect": "pack_fast_path",
     },
     {
+        "id": "lift_sets_at_load",
+        "utterance": "flat bench 3x6 at 50kg",
+        "expect": "pack_fast_path",
+    },
+    {
         "id": "capture",
         "utterance": "capture: buy oat milk",
         "expect": "pack_fast_path",
@@ -337,6 +342,8 @@ def test_hud_smoke_lift_bench(hud_smoke_root: Path) -> None:
     result = _agent_turn("log lift: flat bench 50kg x6")
     assert result.stop_reason == "pack_fast_path"
     assert "Logged" in (result.text or "")
+    assert "50" in (result.text or "")
+    assert "6" in (result.text or "")
     assert "life_lift_log" in _tools(result)
     _assert_no_facts_append_ok(result)
     with open_life_db(paths=get_paths()) as conn:
@@ -351,6 +358,7 @@ def test_hud_smoke_lift_pullups_bodyweight(hud_smoke_root: Path) -> None:
     result = _agent_turn("log lift: pull-ups x8")
     assert result.stop_reason == "pack_fast_path"
     assert "Logged" in (result.text or "")
+    assert "0 kg" not in (result.text or "").lower()
     assert "life_lift_log" in _tools(result)
     with open_life_db(paths=get_paths()) as conn:
         row = conn.execute(
@@ -364,6 +372,33 @@ def test_hud_smoke_lift_pullups_bodyweight(hud_smoke_root: Path) -> None:
     assert row["load_kg"] is None
     assert row["reps"] == 8
     assert row["canonical_name"].lower().replace("-", "") in {"pullup", "pullups"}
+
+
+def test_hud_smoke_lift_sets_at_load_no_prefix(hud_smoke_root: Path) -> None:
+    result = _agent_turn("flat bench 3x6 at 50kg")
+    assert result.stop_reason == "pack_fast_path"
+    assert "life_lift_log" in _tools(result)
+    assert "Logged" in (result.text or "")
+    assert "50" in (result.text or "")
+    assert "6" in (result.text or "")
+    _assert_no_facts_append_ok(result)
+    with open_life_db(paths=get_paths()) as conn:
+        rows = conn.execute(
+            "SELECT load_kg, reps FROM gym_sets ORDER BY logged_at ASC"
+        ).fetchall()
+    assert len(rows) == 3
+    assert all(float(r["load_kg"]) == 50.0 and int(r["reps"]) == 6 for r in rows)
+
+
+def test_hud_smoke_observe_lift_no_write(hud_smoke_root: Path) -> None:
+    session = ChatSession(mode="observe")
+    result = run_turn(session, "flat bench 3x6 at 50kg", _QuietAdapter())
+    assert result.stop_reason != "pack_fast_path"
+    assert "life_lift_log" not in _tools(result)
+    _assert_no_facts_append_ok(result)
+    with open_life_db(paths=get_paths()) as conn:
+        n = conn.execute("SELECT COUNT(*) FROM gym_sets").fetchone()[0]
+    assert int(n) == 0
 
 
 def test_hud_fast_path_emits_token_delta(hud_smoke_root: Path) -> None:
@@ -445,6 +480,7 @@ def test_hud_edge_smoke_table_ids_cover_operator_list() -> None:
         "stop",
         "lift",
         "lift_bw",
+        "lift_sets_at_load",
         "capture",
         "unknown_food",
         "due_prefix",

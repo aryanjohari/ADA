@@ -199,6 +199,8 @@ class Gateway:
             "life_nutrition_week",
             "life_time_status",
             "life_gym_status",
+            "life_gym_day",
+            "life_gym_week",
             "life_habit_status",
             "life_who_is",
             "life_people_remind",

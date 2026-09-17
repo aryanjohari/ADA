@@ -88,6 +88,14 @@ packs:
     tool: life_gym_status
     preferred_tools: [life_gym_status]
     spine: read
+  gym_day:
+    tool: life_gym_day
+    preferred_tools: [life_gym_day]
+    spine: read
+  gym_week:
+    tool: life_gym_week
+    preferred_tools: [life_gym_week]
+    spine: read
   gym_start:
     tool: life_gym_start
     prefill: "start gym"
@@ -167,11 +175,26 @@ aliases:
   - {pattern: "what to buy", verb: due_list}
   - {pattern: "grocery", verb: due_list}
   - {pattern: "shopping list", verb: due_list}
+  - {pattern: "what did i lift yesterday", verb: gym_day}
+  - {pattern: "lifts this week", verb: gym_week}
+  - {pattern: "gym this week", verb: gym_week}
   - {pattern: "what did i lift", verb: gym_status}
   - {pattern: "split today", verb: gym_status}
+  - {pattern: "i started a gym", verb: gym_start}
+  - {pattern: "i started gym", verb: gym_start}
+  - {pattern: "starting gym", verb: gym_start}
+  - {pattern: "started gym", verb: gym_start}
   - {pattern: "start gym", verb: gym_start}
+  - {pattern: "i'm at the gym", verb: gym_start}
+  - {pattern: "im at the gym", verb: gym_start}
+  - {pattern: "at the gym", verb: gym_start}
+  - {pattern: "i finished gym", verb: gym_end}
+  - {pattern: "finished workout", verb: gym_end}
+  - {pattern: "finished gym", verb: gym_end}
   - {pattern: "close gym", verb: gym_end}
   - {pattern: "end workout", verb: gym_end}
   - {pattern: "end gym", verb: gym_end}
+  - {pattern: "gym done", verb: gym_end}
+  - {pattern: "done gym", verb: gym_end}
   - {pattern: "how's my day", verb: life_status}
   - {pattern: "today summary", verb: life_status}

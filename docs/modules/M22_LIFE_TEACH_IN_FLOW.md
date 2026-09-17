@@ -1,7 +1,7 @@
 # M22 — Life teach-in-flow (research · pick)
 
-**Status:** design lock — food presets/favorites **phone 1–4 METAL** (2026-09-17). Remaining M22 slices (gym packs/split) later.  
-**Date:** 2026-09-17 (v1.0.6)  
+**Status:** design lock — food presets/favorites **phone 1–4 METAL** (2026-09-17). Gym capture **CLOSED** — happy **PHONE METAL** `504fb6a5…`; miss **PHONE METAL** `1a54acda…` ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Split Confirm + last-closed **METAL** (pytest). Remaining: brief sections · unknown-habit · package interview.  
+**Date:** 2026-09-18 (v1.0.9)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** M20 **life-vision / personalization delta** — how ADA gets personal *while talking*. Not a second cortex. Not retrieval. Not package. Not mail. Not food ML.  
@@ -17,6 +17,9 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.0.9** | 2026-09-18 | Pointer — gym capture **CLOSED**: start+lift NL **PHONE METAL** `504fb6a5…`; miss **PHONE METAL** `1a54acda…`. Split schema not reopened. [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4. **Next ≠ join-as-gate** — leftover survey. Join OPEN later. |
+| **v1.0.8** | 2026-09-18 | Pointer — gym capture closed enough: start+lift NL **PHONE METAL** `504fb6a5…`; miss pytest. Split schema not reopened. [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.3. **Next ≠ join-as-gate** — leftover survey. Join OPEN later. |
+| **v1.0.7** | 2026-09-17 | Stamp — gym **packs** + last-closed **METAL** (pytest). Split schema not reopened. [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.2 pack door. **Next:** food+gym `local_day` join. |
 | **v1.0.6** | 2026-09-17 | Pointer — food presets/favorites restart **1–4 PHONE METAL**. Life freeze → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.17. **#5–#6 + vocative later**, not this card. **Next:** gym Phase 2 card, then day-join rollup. |
 | **v1.0.5** | 2026-09-11 | Pointer — meal draft/presets **METAL-in-tree**; phone smoke incomplete. Freeze → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 restart checklist. |
 | **v1.0.4** | 2026-09-06 | Pointer — meal draft → preset teach-in is **METAL** in [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.11 (create-meal session · `nutrition_presets` · favorites re-bind). Same stores; not a second prefs DB. |
@@ -71,7 +74,7 @@ Secondary lenses:
 | Field | Answer |
 |-------|--------|
 | **Question / capability** | Personalization posture: learn-while-talking into existing life stores, with Confirm, without seed-as-primary or silent auto-learn |
-| **Lens tags** | **EVIDENCE** (Ask Once / PRELUDE editable prefs / Tiny Habits / Hevy last-set) · **FEASIBLE** (M21 Confirm + FACTS YAML + gym/habit logs already exist) · **FANFICTION** (movie “she just knows”; sentience) · **POLICY** (Confirm Integrity; one cortex; code binds ids; no ear Yes) · **METAL** (favorites after Yes; Dream stages favorites/people; `gym_split` FACT read; habit CLI seed; gym_start/end **tools** without pack doors) |
+| **Lens tags** | **EVIDENCE** (Ask Once / PRELUDE editable prefs / Tiny Habits / Hevy last-set) · **FEASIBLE** (M21 Confirm + FACTS YAML + gym/habit logs already exist) · **FANFICTION** (movie “she just knows”; sentience) · **POLICY** (Confirm Integrity; one cortex; code binds ids; no ear Yes) · **METAL** (favorites after Yes; Dream stages favorites/people; `gym_split` FACT read; habit CLI seed; gym_start/end **tools + packs**) |
 | **Citations** | §G ≥6 + internal METAL |
 | **Pi 5 8GB feasibility** | **Yes** — no new model. Ask-once is one Confirm round-trip the operator already knows from M21. Last-session weights = SQL read on `gym_sets`. |
 | **Learning objective** | After this card, implement chats extend **UX on existing stores** without reopening “hand-seed YAML,” second cortex, package-now, or food ML |
@@ -149,9 +152,9 @@ These are **doc/product gravity**, not always false metal. Tag the implied *prim
 | Dream stages `nutrition_favorites` / people | **METAL** — [`dream/merge.py`](../../src/ada/dream/merge.py) |
 | People capture-first (“met X”) | **METAL** packs in [`life_p1.yaml`](../../src/ada/harness/packs/life_p1.yaml); M21 honesty on bind |
 | `life_gym_start` / `life_gym_end` / `life_gym_status` tools | **METAL** — status **reads** `gym_split` FACT if present |
-| Gym **packs** for start/end | **GAP** — [`life_p0.yaml`](../../src/ada/harness/packs/life_p0.yaml) has `gym_status` + `lift_log` only |
+| Gym **packs** for start/end | **METAL** — [`life_p0.yaml`](../../src/ada/harness/packs/life_p0.yaml) `gym_start` / `gym_end` + structural NL ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Start+lift happy path **PHONE METAL** `504fb6a5…`; miss **PHONE METAL** `1a54acda…` |
 | Register-pass mouth | **METAL** — [`mouth.py`](../../src/ada/harness/mouth.py); receipt JSON; numeric fail-closed |
-| Last-session weights | **GAP** — `gym_sets` exist; `gym_status` is **today’s sets**, not prior load |
+| Last-session weights | **METAL** (pytest) — `last_closed_sets` / `last_closed_receipt_fields`; **PHONE OPEN**. Open bout ignored |
 
 ---
 
@@ -214,7 +217,7 @@ These are **doc/product gravity**, not always false metal. Tag the implied *prim
 | **Morning / EOD brief prefs** | **This card** (section list) · timer already M04/M16 | Clock keys **METAL**; **NEW** include/exclude list | Operator add/remove; receipts not PubMed |
 | **Habits resolve** | **M21** implement-next #5 | Gate **NEW** on **METAL** `resolve_habit` 0/1/many | Ambiguous *id* — not create |
 | **Unknown habit create** | **This card** after M21 habits resolve | **NEW** Confirm-create; SQL **METAL** | Replaces seed-as-primary |
-| **Gym close** (`gym_end`) | **M19a P0 tools METAL** · **this card** pack doors | Tools **METAL**; packs **GAP** | Auto-session on first lift already P0 |
+| **Gym close** (`gym_end`) | **M19a P0 tools METAL** · pack doors **METAL** | Tools + packs **METAL** | Auto-session on first lift already P0 |
 | **Register mouth** | **M20 phase 2** / M19b | **METAL** `mouth.py` | Not this implement; keep numeric guard |
 | **Body week brief** | **M19 P4** analysis | Logs **METAL**; week UI **later** | Not this slice |
 | **Work lane / mail / campaigns** | **M20 phase 5** / M19 P2–P3 | — | After life closes |
@@ -334,8 +337,8 @@ M21 F-M21-*, M20 F-M20-2/3/5, M19a F-P1.2c still bind.
 | # | Question | Default until a later chat locks it |
 |---|----------|-------------------------------------|
 | 1 | **Brief section inventory** (`brief_include` keys) | Dues · overnight heal heads · meal-gap · open gym · habits due. Operator add/remove via Confirm. No news/PubMed. |
-| 2 | **Gym split schema** | Days → `{label, body_parts[]}` in existing `gym_split` FACT; Confirm shows the table |
-| 3 | **Last-session lookback** | Last **closed** session, same `exercise_id`; speak/prefill load×reps; not PR / coverage |
+| 2 | **Gym split schema** | **METAL** (do not reopen): days → `{label, body_parts[]}` in `gym_split` FACT; Confirm shows the table |
+| 3 | **Last-session lookback** | **METAL** pytest: last **closed** session, same `exercise_id`; **PHONE OPEN**. Not PR / coverage |
 | 4 | **Package interview depth** | Optional ≤8 slots (split, targets, 1–2 habits, brief sections). **Skip** still allows full capture. Phase **4**, not this slice |
 | 5 | **Unknown habit** today vs after M21 | After habits **resolve** lands: 0 matches → Confirm-create. Until then keep `missing_life_receipt` (honest). CLI seed stays **optional** |
 
@@ -345,10 +348,10 @@ M21 F-M21-*, M20 F-M20-2/3/5, M19a F-P1.2c still bind.
 
 ## Implement-next (ordered)
 
-This card is **docs-only**. Executable checklist: [`../reviews/M22_IMPLEMENT_PLAN.md`](../reviews/M22_IMPLEMENT_PLAN.md). Later implement chats, in order:
+This card is **docs-only** for remaining slices. Gym packs + split ask-once + last-closed **landed** (pytest). Later chats, in order:
 
-1. **Gym session packs + split ask-once** — wire `gym_start` / `gym_end` into [`life_p0.yaml`](../../src/ada/harness/packs/life_p0.yaml) (tools **METAL**; packs **GAP**); first missing `gym_split` → Confirm → same FACT `gym_status` already reads.  
-2. **Last-session weights** — read last closed `gym_sets` for this `exercise_id`; mouth/template from receipt JSON only.  
+1. **Gym session packs + split ask-once** — **METAL** pytest: `gym_start` / `gym_end` in [`life_p0.yaml`](../../src/ada/harness/packs/life_p0.yaml); missing `gym_split` → Confirm → same FACT `gym_status` already reads. Do not reopen split schema.  
+2. **Last-session weights** — **METAL** pytest: last closed `gym_sets` for this `exercise_id`; mouth from receipt JSON only. **PHONE OPEN**.  
 3. **M21 habits resolve** (if not yet green) — ambiguous tick still Confirm-bind; **then** unknown-habit Confirm-create (this card OPEN #5). Do not make `habit-seed` required.  
 4. **Brief section prefs** — include/exclude list in FACTS prefs; morning/EOD consume it; Dream does not auto-merge the list.  
 5. **Phase 4 (later):** skippable interview writes the **same** stores. Not a gate for (1)–(4).
@@ -410,4 +413,4 @@ This card is **docs-only**. Executable checklist: [`../reviews/M22_IMPLEMENT_PLA
 
 ---
 
-*End M22 life teach-in-flow. v1.0.6 pointer: food presets/favorites 1–4 PHONE METAL; next gym Phase 2, then day-join rollup.*
+*End M22 life teach-in-flow. v1.0.9 stamp: gym capture CLOSED (happy 504fb6a5; miss 1a54acda); next leftover survey, join later.*

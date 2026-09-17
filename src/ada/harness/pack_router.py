@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from ada.harness.gym_date import is_gym_read_shape, parse_gym_date
+from ada.harness.gym_spine import is_bare_nxm_without_unit, lift_utterance_body
 from ada.harness.nutrition_date import (
     has_week_cue,
     is_nutrition_read_shape,
@@ -36,6 +38,35 @@ _LIFT_LADDER = re.compile(
     r"(?:reps?\s+)?(?:\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\s*[x×]\s*\d+)",
     re.IGNORECASE,
 )
+# "3x6 at 50kg" / "flat bench 3x6 @ 50" — sets×reps with load (M26 v1.2).
+_LIFT_SETS_AT_LOAD = re.compile(
+    r"\b\d+\s*[x×]\s*\d+\s*(?:at|@)\s*\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\b",
+    re.IGNORECASE,
+)
+_GYM_START_SHAPE = re.compile(
+    r"(?:"
+    r"\b(?:i(?:['’]?m|\s+am)\s+)?at\s+(?:the\s+)?gym\b"
+    r"|\b(?:i\s+)?start(?:ed|ing)?\s+(?:a\s+|the\s+)?gym\b"
+    r")",
+    re.IGNORECASE,
+)
+_GYM_END_SHAPE = re.compile(
+    r"(?:"
+    r"\b(?:i\s+)?(?:finish(?:ed)?|done|end(?:ed)?|close[d]?)\s+"
+    r"(?:the\s+|a\s+)?(?:gym|workout)\b"
+    r"|\bgym\s+done\b"
+    r")",
+    re.IGNORECASE,
+)
+# Whole-utterance exercise name (catalog/custom fold) — not a sentence.
+_NAME_ONLY_LIFT = re.compile(
+    r"^[A-Za-z][A-Za-z'+-]*(?:\s+[A-Za-z][A-Za-z'+-]*){0,5}$"
+)
+_NAME_ONLY_CHAT = re.compile(
+    r"^(?:i|i['’]m|im|we|what|how|did|do|why)\b",
+    re.IGNORECASE,
+)
+_LIFT_PREFIX = re.compile(r"^(?:log\s+lift\b|lift\s*:)", re.IGNORECASE)
 # Multi-item meal: log/add + qty cue + and/+ — slot optional (M26 path integrity).
 _MEAL_MULTI = re.compile(
     r"\b(?:log|add|long)\b.+"
@@ -78,6 +109,8 @@ READ_PACK_VERBS = frozenset(
         "time_status",
         "due_list",
         "gym_status",
+        "gym_day",
+        "gym_week",
         "life_status",
         "streak_show",
         "who_is",
@@ -251,6 +284,15 @@ def _route_from_pack(
                 args["date"] = parsed
             elif verb == "nutrition_day":
                 args.setdefault("date", local_today())
+    elif tool == "life_gym_week":
+        args.setdefault("days", 7)
+    elif tool == "life_gym_day":
+        if not has_week_cue(raw):
+            parsed = parse_gym_date(raw)
+            if parsed:
+                args["date"] = parsed
+            elif verb == "gym_day":
+                args.setdefault("date", local_today())
     return {
         "verb": verb,
         "tool": tool,
@@ -291,6 +333,28 @@ def _route_nutrition_read(
     return routed
 
 
+def _route_gym_read(
+    raw: str,
+    *,
+    config: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Structural gym read: week window or explicit/relative day. Not gym_status."""
+    if not is_gym_read_shape(raw):
+        return None
+    if has_week_cue(raw):
+        routed = _route_from_pack("gym_week", raw, raw, config=config)
+        if routed is not None:
+            routed["args"]["days"] = 7
+        return routed
+    parsed = parse_gym_date(raw)
+    if parsed is None:
+        return None
+    routed = _route_from_pack("gym_day", raw, raw, config=config)
+    if routed is not None:
+        routed["args"]["date"] = parsed
+    return routed
+
+
 def _route_aliases(
     raw: str,
     lower: str,
@@ -308,6 +372,100 @@ def _route_aliases(
         if pattern and verb and pattern in lower:
             return _route_from_pack(verb, raw, raw, config=config)
     return None
+
+
+def gym_read_takes_priority(text: str) -> bool:
+    """Week / relative-day gym reads win over start/end/lift writes."""
+    raw = (text or "").strip()
+    if not is_gym_read_shape(raw):
+        return False
+    if has_week_cue(raw):
+        return True
+    return parse_gym_date(raw) is not None
+
+
+def is_gym_start_utterance(text: str) -> bool:
+    """Structural gym-start NL — independent of pack_hint match."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or gym_read_takes_priority(raw):
+        return False
+    return bool(_GYM_START_SHAPE.match(raw))
+
+
+def is_gym_end_utterance(text: str) -> bool:
+    """Structural gym-end NL — does not steal habit `done:` / due `done:`."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or gym_read_takes_priority(raw):
+        return False
+    lower = raw.lower()
+    if lower.startswith("done:") or lower.startswith("habit "):
+        return False
+    return bool(_GYM_END_SHAPE.match(raw))
+
+
+def is_lift_log_utterance(text: str) -> bool:
+    """Structural lift capture — independent of pack_hint match."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or gym_read_takes_priority(raw):
+        return False
+    if _LIFT_PREFIX.match(raw):
+        return True
+    if _LIFT_LINE.search(raw) or _LIFT_LADDER.search(raw) or _LIFT_SETS_AT_LOAD.search(raw):
+        return True
+    return False
+
+
+def _is_complete_lift_shape(body: str) -> bool:
+    return bool(
+        _LIFT_LINE.search(body)
+        or _LIFT_LADDER.search(body)
+        or _LIFT_SETS_AT_LOAD.search(body)
+    )
+
+
+def is_incomplete_lift_utterance(text: str) -> bool:
+    """Miss-path lift: ask, no session, no row. Not a write. Not gym_start.
+
+    Matches bare ``60x6`` / ``3x6`` (no kg/lb) and name-only catalog/custom
+    folds. Does not steal gym reads, start/end, complete kg×reps, or chat
+    that is not an exercise bind (``I like bench``).
+    """
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or gym_read_takes_priority(raw):
+        return False
+    if is_gym_start_utterance(raw) or is_gym_end_utterance(raw):
+        return False
+    body = lift_utterance_body(raw)
+    if not body:
+        return False
+    if _is_complete_lift_shape(body):
+        return False
+    if is_bare_nxm_without_unit(body):
+        return True
+    if _NAME_ONLY_CHAT.match(body):
+        return False
+    if not _NAME_ONLY_LIFT.match(body):
+        return False
+    from ada.logs.gym import exercise_name_known
+
+    return exercise_name_known(body)
+
+
+def lift_log_fast_path_args(text: str) -> dict[str, Any] | None:
+    """Return {utterance} for build_lift_log_args, or None."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or not is_lift_log_utterance(raw):
+        return None
+    lower = raw.lower()
+    if lower.startswith("log lift:") or lower.startswith("lift:"):
+        body = raw.split(":", 1)[1].strip() if ":" in raw else raw
+        return {"utterance": body or raw}
+    return {"utterance": raw}
 
 
 def _normalize_meal_slot(raw_slot: str) -> str:
@@ -341,9 +499,11 @@ def meal_log_fast_path_args(text: str) -> dict[str, Any] | None:
 
     meal = _ADD_MEAL.match(raw)
     if meal:
+        slot_raw = meal.group(2)
+        body = _meal_body_from_raw(raw, slot=slot_raw)
         return {
-            "utterance": meal.group(1).strip(),
-            "meal_slot": _normalize_meal_slot(meal.group(2)),
+            "utterance": body or meal.group(1).strip(),
+            "meal_slot": _normalize_meal_slot(slot_raw),
         }
 
     meal_single = _MEAL_SINGLE.match(raw)
@@ -395,9 +555,19 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
             body = raw[len(prefill) :].strip()
             return _route_from_pack(verb, raw, body, config=cfg)
 
+    gym = _route_gym_read(raw, config=cfg)
+    if gym is not None:
+        return gym
+
     nutrition = _route_nutrition_read(raw, config=cfg)
     if nutrition is not None:
         return nutrition
+
+    # Lift writes before YAML aliases so "at the gym" cannot steal kg×reps NL.
+    if is_lift_log_utterance(raw):
+        lift_args = lift_log_fast_path_args(raw) or {}
+        body = str(lift_args.get("utterance") or raw)
+        return _route_from_pack("lift_log", raw, body, config=cfg)
 
     aliased = _route_aliases(raw, lower, config=cfg)
     if aliased is not None:
@@ -461,8 +631,10 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
     if _BRIEF_PREF_NL.search(raw):
         return _route_from_pack("brief_include", raw, raw, config=cfg)
 
-    if lower.startswith("log lift:") or _LIFT_LINE.search(raw) or _LIFT_LADDER.search(raw):
-        body = raw.split(":", 1)[1].strip() if ":" in raw else raw
-        return _route_from_pack("lift_log", raw, body, config=cfg)
+    if is_gym_start_utterance(raw):
+        return _route_from_pack("gym_start", raw, raw, config=cfg)
+
+    if is_gym_end_utterance(raw):
+        return _route_from_pack("gym_end", raw, raw, config=cfg)
 
     return None

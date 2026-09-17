@@ -498,6 +498,25 @@ def run_life_gym_status(args: dict[str, Any]) -> dict[str, Any]:
     return gym_mod.gym_status(date=args.get("date"))
 
 
+def run_life_gym_day(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs.gym_reflection import gym_day
+
+    return gym_day(date=args.get("date"))
+
+
+def run_life_gym_week(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs.gym_reflection import gym_window, write_gym_reflection_scratch
+
+    days = args.get("days", 7)
+    try:
+        days_n = int(days)
+    except (TypeError, ValueError):
+        days_n = 7
+    result = gym_window(days=days_n)
+    write_gym_reflection_scratch(result)
+    return result
+
+
 def run_life_food_preset_save(args: dict[str, Any]) -> dict[str, Any]:
     from ada.logs import nutrition_presets as presets_mod
 
@@ -1025,6 +1044,8 @@ DISPATCH = {
     "life_time_stop": run_life_time_stop,
     "life_time_status": run_life_time_status,
     "life_gym_status": run_life_gym_status,
+    "life_gym_day": run_life_gym_day,
+    "life_gym_week": run_life_gym_week,
     "life_food_preset_save": run_life_food_preset_save,
     "life_food_favorite_set": run_life_food_favorite_set,
     "life_meal_draft_start": run_life_meal_draft_start,

@@ -107,6 +107,8 @@ def test_life_tools_registered() -> None:
     assert "life_food_search" in SPECS_BY_NAME
     assert "life_barcode_lookup" in SPECS_BY_NAME
     assert "life_gym_status" in SPECS_BY_NAME
+    assert "life_gym_day" in SPECS_BY_NAME
+    assert "life_gym_week" in SPECS_BY_NAME
 
 
 def test_forget_foods_custom_only(data_root: Path) -> None:

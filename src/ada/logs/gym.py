@@ -85,6 +85,20 @@ def _lookup_exercise(
     }
 
 
+def exercise_name_known(name: str, *, paths: DataPaths | None = None) -> bool:
+    """True when *name* folds to catalog or an existing custom exercise.
+
+    Does not create a custom on miss — name-only incomplete ask must not
+    invent a bind.
+    """
+    needle = (name or "").strip()
+    if not needle:
+        return False
+    with open_life_db(paths=paths) as conn:
+        hit = _lookup_exercise(conn, needle, paths=paths, create_custom=False)
+    return str(hit.get("source") or "") in {"catalog", "facts_custom"}
+
+
 def _muscles_for(
     conn, *, exercise_id: str | None, name: str, paths: DataPaths | None = None
 ) -> tuple[list[str], str | None]:
@@ -219,6 +233,42 @@ def last_closed_receipt_fields(
     }
 
 
+def last_open_session_exercise_name(
+    *,
+    paths: DataPaths | None = None,
+    conn=None,
+) -> str | None:
+    """Raw name of the latest set in the currently OPEN session.
+
+    Follow-on lock target only. Last-closed (prior bout) is never returned.
+    None if no open session or no set in this bout.
+    """
+
+    def _query(c) -> str | None:
+        sess = _active_session(c)
+        if sess is None:
+            return None
+        row = c.execute(
+            """
+            SELECT exercise_name_raw
+            FROM gym_sets
+            WHERE session_id = ?
+            ORDER BY sort_order DESC, logged_at DESC
+            LIMIT 1
+            """,
+            (sess["session_id"],),
+        ).fetchone()
+        if row is None:
+            return None
+        name = str(row["exercise_name_raw"] or "").strip()
+        return name or None
+
+    if conn is not None:
+        return _query(conn)
+    with open_life_db(paths=paths) as c:
+        return _query(c)
+
+
 def gym_start(
     *,
     receipt_id: str,
@@ -288,6 +338,7 @@ def lift_log(
         set_ids: list[str] = []
         names: list[str] = []
         resolved_rows: list[dict[str, Any]] = []
+        written_sets: list[dict[str, Any]] = []
         volume = 0.0
         for idx, s in enumerate(sets):
             ex_name = str(s.get("exercise_name") or s.get("name") or "unknown")
@@ -304,21 +355,28 @@ def lift_log(
                     conn=conn,
                     paths=paths,
                 )
+            # Current set numbers — same values written to SQLite (mouth reads these).
+            load = s.get("load_kg")
+            reps = s.get("reps")
             row_out: dict[str, Any] = {
                 "raw": ex_name,
+                "exercise_name": ex_name,
                 "source": resolved.get("source"),
                 "exercise_id": exercise_id,
                 "canonical_name": resolved.get("canonical_name"),
                 "body_parts": body_parts or [],
                 "movement": resolved.get("movement")
                 or (resolved.get("custom") or {}).get("movement"),
+                "load_kg": load,
+                "reps": reps,
             }
             if prior:
                 row_out.update(prior)
+                # last_* must not overwrite the just-logged set.
+                row_out["load_kg"] = load
+                row_out["reps"] = reps
             resolved_rows.append(row_out)
             set_id = uuid.uuid4().hex
-            load = s.get("load_kg")
-            reps = s.get("reps")
             if load is not None and reps is not None:
                 volume += float(load) * int(reps)
             conn.execute(
@@ -342,6 +400,15 @@ def lift_log(
             )
             set_ids.append(set_id)
             names.append(ex_name)
+            written_sets.append(
+                {
+                    "set_id": set_id,
+                    "exercise_id": exercise_id,
+                    "exercise_name": ex_name,
+                    "load_kg": load,
+                    "reps": reps,
+                }
+            )
     # Top-level last_* from first resolved exercise that has prior closed data.
     prior_top: dict[str, Any] | None = None
     for row in resolved_rows:
@@ -359,6 +426,7 @@ def lift_log(
         "set_ids": set_ids,
         "exercise_names": names,
         "resolved": resolved_rows,
+        "sets": written_sets,
         "volume_kg": round(volume, 1),
         "receipt_id": receipt_id,
     }
