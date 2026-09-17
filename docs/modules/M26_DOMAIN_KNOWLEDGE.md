@@ -1,7 +1,7 @@
 # M26 — Domain knowledge (what “knowing” a life-admin domain means)
 
 **Status:** design lock — **not code** · **life verticals FROZEN (2026-09-11)** except explicit unfreeze via [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 restart checklist  
-**Date:** 2026-09-11 (v1.7)  
+**Date:** 2026-09-17 (v1.8)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **domain-agnostic foundation** — organ vs reference vs reject; capture grammar; phased template for per-domain cited memory docs. Not a pack implement. Not package. Not analysis.  
@@ -17,6 +17,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.8** | 2026-09-17 | **Later review (copy into every pack door):** vocative filler (`Hi Ada.`, `Hey Ada,`) is not stripped — substring alias still routes; name/slot scrape can use the whole sentence (food cite `dde9d72d…`). Default: filler hygiene like `please`/`yes`, **not** a cortex chat turn. Food OPEN #4. |
 | **v1.7** | 2026-09-11 | **Life verticals FROZEN.** Food first vertical paused — organ yes, library phone incomplete ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12). Next life work = finish food restart checklist, then gym. |
 | **v1.6** | 2026-09-06 | Food Confirm→write: preview macros must survive handoff (M26_FOOD v1.10); propose-pool never defaults null-CORE (M27 v1.4). |
 | **v1.5** | 2026-09-03 | Food meal capture = spine-first (`is_meal_log_utterance` before cortex); cortex parse/mouth only on meal turns; Confirm for all non-favorite binds (M26 v1.9). |
@@ -215,7 +216,7 @@ utterance
 
 | Stage | Verbs help | Ontology (organ know) helps |
 |-------|------------|----------------------------|
-| Route | `meal_log` vs `lift_log` vs `time_start` | Pack hint; chip aliases |
+| Route | `meal_log` vs `lift_log` vs `time_start` | Pack hint; chip aliases; **vocative filler** (`Hi Ada.`) stripped before name scrape — later lock, food OPEN #4 |
 | Decompose | — | Meal lines; lift sets; due objects |
 | Resolve | — | Units, catalogs, alias tables, null rules |
 | Bind | — | `decide_food_bind`, exercise fold, person alias |
@@ -241,7 +242,7 @@ utterance
 | **3 — Implement wrap** | Stores (if any), capture types, NL patterns, parse, track — **analyse last** | Implement chat |
 | **4 — Phone METAL** | Operator smoke on live HUD; falsifiers | Review doc |
 
-**Domain close checklist (copy per vertical):** pack door → resolve gate → Confirm sticky → mouth = receipt → smokes → **reflection (deterministic SQL on logs)** → doc. **Read path:** pack router must pass **`date` / `days` args** for nutrition reads — alias substring match alone is insufficient. **Meal writes:** cortex parse only; `life_meal_log` commit requires spine resolve (`bind_authority=meal_spine`, M26 v1.8). **Confirm handoff (M26 v1.10):** picker preview macros must reach the write line — never propose null-CORE as default when a macro-complete candidate exists.
+**Domain close checklist (copy per vertical):** pack door → resolve gate → Confirm sticky → mouth = receipt → smokes → **reflection (deterministic SQL on logs)** → doc. **Read path:** pack router must pass **`date` / `days` args** for nutrition reads — alias substring match alone is insufficient. **Meal writes:** cortex parse only; `life_meal_log` commit requires spine resolve (`bind_authority=meal_spine`, M26 v1.8). **Confirm handoff (M26 v1.10):** picker preview macros must reach the write line — never propose null-CORE as default when a macro-complete candidate exists. **Multi-line Confirm (M26 food v1.14):** each resolve row needs a **unique** `query_norm` — shared keys collapse HUD radios (`invalid meal selection`). **Vocative (v1.8, later):** strip `hi/hey ada` before verb name scrape; still Verb→Pack, not a chat turn.
 
 **Food order lock:** Phase 2 food reference doc **after** M25 recover patch lands on phone — recover is organ know; reference doc must not pretend to fix null-CORE. **Shipped:** [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) (2026-08-29).
 

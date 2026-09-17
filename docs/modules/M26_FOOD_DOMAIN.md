@@ -1,7 +1,7 @@
 # M26 food — Phase 2 cited domain memory (first vertical)
 
 **Status:** **FREEZE (2026-09-11)** — capture + reflection **METAL**; personal library **code landed** but **phone incomplete**. No new food work until **Restart checklist** below.  
-**Date:** 2026-09-11 (v1.12)  
+**Date:** 2026-09-17 (v1.15)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **Phase 2 cited domain memory** for **food only** — organ wiring + organism purpose + Dream contract. Not a nutrition textbook. Not cortex prompt stuffing. Not P4 charts.  
@@ -17,6 +17,9 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.15** | 2026-09-17 | **OPEN #4 (later):** vocative filler — `Hi Ada. Log my lunch` still pack-routes (`log my ` substring) but name scrape is the whole sentence (`dde9d72d…`). Not a chatbot path; peel `hi/hey ada` like `please`/`yes`. Not this freeze. |
+| **v1.14** | 2026-09-17 | **Preset Confirm keys:** `expand_preset_log_args` keyed every line as `my_lunch` → HUD one radio group (chicken vs rice) → `invalid meal selection for 'my_lunch'` (`dde9d72d…`). Each line now has unique `query_norm` (`slug:index`); picker unchanged; USDA option Confirm untouched. Phone re-smoke checklist #4. |
+| **v1.13** | 2026-09-17 | **“Log my X” lookup only:** `save as my lunch` stores `my_lunch`; pack parse of `Log my lunch` is `lunch` → phone `preset_unknown` [`edef2243…`](../../../runs/2026-09-16/edef22435a074065a8dbe75d6250ca44.jsonl). `get_preset` now aliases `X` ↔ `my X` (exact id still wins); `parse_log_preset_name` strips leading Yes/ok. Not phone-closed — re-smoke checklist #4. Barcode + estimate untouched. |
 | **v1.12** | 2026-09-11 | **FREEZE:** capture + reflection stay METAL; library code stays in-tree but phone incomplete (`e3ab8d20…`, `1c509c18…`). Restart checklist (rank defaults · favorites wipe · draft→preset→“log my X” · barcode GTIN · estimate). No new food work until checklist closes. Parked: camera barcode · P4 charts · NZ FOODfiles · photo-of-plate · gym Phase 2. |
 | **v1.11** | 2026-09-06 | **Personal library + create-meal session code landed (not phone-closed):** multi-hit USDA + form propose-pool (plain breast > breaded; cite `1c509c18…`); favorites re-bind after cache wipe; scratch `meal_draft` session (start→add→save preset→optional log); `nutrition_presets.yaml` map + “log my X”; HUD `barcode:` chip/GTIN → Confirm → draft or one-shot; `provenance=estimate` + mouth/day `honest_partial`. See Library close plan + Restart checklist — v1.12 freezes until phone proves. |
 | **v1.10** | 2026-09-06 | **Confirm→write macro handoff:** Confirm path was clearing line `nutrients`/`snapshot_json` then rehydrating from `food_reference.db` — if proposed/selected was null-CORE or enrich missed, write refused `empty_macros` even when the picker preview showed kcal (METAL `55378c77…` brown rice / mashed potatoes). **Why:** picker kcal lived only in resolve candidate previews; Confirm discarded the line snapshot and trusted a thin cache. **Fix:** (1) propose-pool never sets `proposed_ref_id` to null-CORE when any macro-complete candidate exists; (2) Confirm copies preview macros into `lines[]`; (3) confirmed `life_meal_log` falls back to resolve preview before refuse. |
@@ -42,7 +45,7 @@
 | Rank default | Multi-hit USDA + form propose-pool (`catalog_rank.py`) | **PHONE OPEN** — `e3ab8d20…` “white rice boiled” still Beans-and-rice default |
 | Favorites | `favorites.py` re-bind after Confirm Yes | **PHONE OPEN** — wipe → `favorite_ref_missing` stuck (`e3ab8d20…`) |
 | Create-meal session | scratch `meal_draft_{session}.json`; `meal_draft_spine.py` | **PHONE OPEN** — draft→save preset not proven; presets file missing on disk |
-| Named preset | `nutrition_presets.py` + `life_meal_preset_log` / “log my X” | **PHONE OPEN** — expand→Confirm→write unproven |
+| Named preset | `nutrition_presets.py` + `life_meal_preset_log` / “log my X” | **CODE FIX (v1.13–1.14)** — `X`↔`my X` alias + unique Confirm row keys; **PHONE OPEN** — re-smoke `Log my lunch` → Confirm Yes |
 | Barcode typed GTIN | `life_barcode_lookup` + HUD `barcode:` chip | **PHONE OPEN** — one packaged bind smoke still due (camera PARK) |
 | Estimate dish | `provenance=estimate` + day `honest_partial` | **PHONE OPEN** — omelette estimate tag smoke still due |
 | Capture spine / Confirm | `meal_spine.py` + HUD picker | **PHONE METAL** — mostly works (`1c509c18…`, `55378c77…`) |
@@ -61,7 +64,7 @@ Ordered, copy-pasteable. Close each with phone evidence before the next.
 | 1 | Rank: “white rice boiled” ≠ Beans-and-rice default | `e3ab8d20…` | plain cooked white rice proposed or Confirm picks it |
 | 2 | Favorites after cache wipe: no stuck `favorite_ref_missing` | same run | Confirm → sticky → 2nd log silent |
 | 3 | Draft→save: Add a meal → 2 lines → save as named preset | presets file missing on disk | `nutrition_presets.yaml` exists |
-| 4 | “Log my X” expands preset → Confirm → write | — | receipt + rollup |
+| 4 | “Log my X” expands preset → Confirm → write | `edef2243…` miss; `dde9d72d…` shared key `invalid meal selection`; v1.13–1.14 | Confirm Yes writes chicken+rice; rollup |
 | 5 | Typed barcode GTIN path smoke | camera PARK | one packaged bind |
 | 6 | Estimate omelette tagged | — | `provenance=estimate` / `honest_partial` |
 
@@ -382,15 +385,16 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 
 ---
 
-## OPEN (≤3) — parked until restart checklist
+## OPEN (≤4) — parked until restart checklist / later review
 
 | # | Question | Default until a later chat locks it |
 |---|----------|-------------------------------------|
 | 1 | **Phone camera barcode scan?** | Typed GTIN smoke = restart #5; camera = M19b PARK (same `life_barcode_lookup`). |
 | 2 | **P4 week charts / brief macro UI?** | Deferred until honest rollups justify; not a capture gate. |
 | 3 | **NZ FOODfiles / NZ label import?** | Manual CLI (`ada life food-import-nz`) when operator drops a bundle — not capture-path web hunt. **No NZ market research in freeze.** |
+| 4 | **Vocative filler on pack verbs?** (`Hi Ada. Log my lunch`) | **Later.** Alias still fires; name scrape uses the whole utterance [`dde9d72d…`](../../../runs/2026-09-16/dde9d72df37c467ea8ef83ecd13e2e87.jsonl). Default: strip `hi/hey ada` like `please`/`yes` — still Verb→Pack, **not** a Gemini chat turn. Copy into gym/time pack doors ([`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) capture grammar). |
 
-**Active reopen path:** Restart checklist items 1–6 only — not the parked row above.
+**Active reopen path:** Restart checklist items 1–6 only — not the parked row above. OPEN #4 is **later review**, not a freeze unfreeze.
 
 **Do not reopen:** invent kcal; essay in charter; Dream auto-merge nutrition FACTS; analysis-as-write-gate; second cortex; ranking whack-a-mole without pack fence; `memory/domain/` boot-load without an implement chat; **new food features while FREEZE**.
 
@@ -400,7 +404,7 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 
 **METAL-in-tree (frozen):** processed ranking · favorites sticky · head-noun gate · path integrity · deterministic reflection · capture organ · personal library code (create-meal draft · presets · barcode GTIN · estimate tag · multi-hit USDA).
 
-**PHONE OPEN (restart 1–6):** rank defaults · favorites after wipe · draft→preset→“log my X” · typed barcode · estimate tag.
+**PHONE OPEN (restart 1–6):** rank defaults · favorites after wipe · draft→preset · **“log my X” code-fixed v1.13–1.14, phone re-smoke** · typed barcode · estimate tag.
 
 **Parked after 1–6:** camera barcode · P4 charts · NZ import · photo-of-plate · gym Phase 2.
 
@@ -410,4 +414,4 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 
 **Next slice (after unfreeze):** close Restart checklist 1→6 on phone, then gym Phase 2 card — copy **domain close checklist** above.
 
-*End M26 food. FREEZE 2026-09-11 (v1.12) — capture + reflection METAL; library code in-tree; phone gaps = restart checklist; logs are truth; this doc is the lens.*
+*End M26 food. FREEZE 2026-09-11 (v1.12) + v1.13 alias + v1.14 preset Confirm keys + v1.15 vocative OPEN — capture + reflection METAL; library code in-tree; phone gaps = restart checklist; logs are truth; this doc is the lens.*

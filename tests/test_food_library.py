@@ -8,6 +8,7 @@ from ada.harness.meal_draft_spine import (
     parse_log_preset_name,
     wants_estimate,
 )
+from ada.hud.chat_service import _patch_meal_confirm_selection
 from ada.harness.meal_spine import build_meal_log_args
 from ada.io.paths import get_paths
 from ada.logs import meal_draft as draft_mod
@@ -221,6 +222,116 @@ def test_unknown_preset_honest_miss(data_root) -> None:
     assert out.get("ok") is False
     assert out.get("reason") == "preset_unknown"
     assert "ask" in out
+
+
+def test_log_my_x_finds_save_as_my_preset(data_root) -> None:
+    """save as my lunch stores my_lunch; Log my lunch must still expand (edef2243)."""
+    paths = get_paths()
+    egg = _egg(paths)
+    save_preset(
+        name="my lunch",
+        components=[
+            {
+                "ref_id": egg["food_ref_id"],
+                "display_name": egg["name"],
+                "serving_qty": 2,
+                "serving_unit": "serving",
+                "serving_grams": 100,
+                "provenance": "custom",
+                "nutrients": {
+                    "energy_kcal": 155,
+                    "protein_g": 12.6,
+                    "fat_g": 10.6,
+                    "carb_g": 1.1,
+                },
+            }
+        ],
+        confirmed=True,
+        paths=paths,
+    )
+    assert parse_log_preset_name("Log my lunch") == "lunch"
+    assert parse_log_preset_name("Yes log my lunch") == "lunch"
+    hit = get_preset("lunch", paths=paths)
+    assert hit is not None
+    assert hit["id"] == "my_lunch"
+    expanded = expand_preset_lines("lunch", paths=paths)
+    assert expanded.get("ok") is True
+    built = expand_preset_log_args("lunch", paths=paths)
+    assert built.get("ok") is True
+    out = run_life_meal_preset_log(
+        {
+            "name": "lunch",
+            "lines": built["lines"],
+            "resolve": {**(built.get("resolve") or {}), "bind_authority": "meal_spine"},
+            "confirmed": True,
+        }
+    )
+    assert out.get("ok") is True
+
+
+def test_preset_confirm_rows_have_unique_keys(data_root) -> None:
+    """Two-line preset must not share query_norm (HUD radio + Confirm pool)."""
+    paths = get_paths()
+    egg = _egg(paths)
+    rice = _rice(paths)
+    save_preset(
+        name="my lunch",
+        components=[
+            {
+                "ref_id": egg["food_ref_id"],
+                "display_name": egg["name"],
+                "serving_qty": 100,
+                "serving_unit": "g",
+                "serving_grams": 100,
+                "provenance": "custom",
+                "nutrients": {
+                    "energy_kcal": 155,
+                    "protein_g": 12.6,
+                    "fat_g": 10.6,
+                    "carb_g": 1.1,
+                },
+            },
+            {
+                "ref_id": rice["food_ref_id"],
+                "display_name": rice["name"],
+                "serving_qty": 100,
+                "serving_unit": "g",
+                "serving_grams": 100,
+                "provenance": "custom",
+                "nutrients": {
+                    "energy_kcal": 130,
+                    "protein_g": 2.7,
+                    "fat_g": 0.3,
+                    "carb_g": 28.0,
+                },
+            },
+        ],
+        confirmed=True,
+        paths=paths,
+    )
+    built = expand_preset_log_args("lunch", paths=paths)
+    rows = (built.get("resolve") or {}).get("rows") or []
+    assert len(rows) == 2
+    keys = [str(r.get("query_norm") or "") for r in rows]
+    assert all(keys) and len(set(keys)) == 2
+    selected = {str(r["query_norm"]): str(r["proposed_ref_id"]) for r in rows}
+    patched = _patch_meal_confirm_selection(
+        {"lines": built["lines"], "resolve": built["resolve"]},
+        selected,
+    )
+    assert [ln["ref_id"] for ln in patched["lines"]] == [
+        egg["food_ref_id"],
+        rice["food_ref_id"],
+    ]
+    out = run_life_meal_preset_log(
+        {
+            "name": "lunch",
+            "lines": patched["lines"],
+            "resolve": {**(patched.get("resolve") or {}), "bind_authority": "meal_spine"},
+            "confirmed": True,
+        }
+    )
+    assert out.get("ok") is True
 
 
 def test_estimate_tagged_on_draft_add(data_root) -> None:

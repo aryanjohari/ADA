@@ -77,9 +77,18 @@ def parse_barcode_gtin(text: str) -> str | None:
     return (m.group(1) or m.group(2) or "").strip() or None
 
 
+_LOG_PRESET_FILLER = re.compile(
+    r"^(?:yes|yeah|yep|ok|okay|sure|please)[,.\s]+",
+    re.I,
+)
+
+
 def parse_log_preset_name(text: str) -> str | None:
-    """Return preset name for 'log my breakfast' / 'log omelette breakfast'."""
-    raw = (text or "").strip()
+    """Return preset name for 'log my breakfast' / 'log omelette breakfast'.
+
+    Grammar is 'log my X' → X. Save-as-my may store 'my X'; lookup aliases that.
+    """
+    raw = _LOG_PRESET_FILLER.sub("", (text or "").strip()).strip()
     if is_meal_draft_start(raw) or is_meal_draft_cancel(raw):
         return None
     if parse_barcode_gtin(raw):
@@ -231,38 +240,50 @@ def expand_preset_log_args(
     expanded = presets_mod.expand_preset_lines(name, paths=paths)
     if not expanded.get("ok"):
         return expanded
-    lines = expanded["lines"]
+    # One Confirm row per line. Shared preset id as query_norm collapsed chicken+rice
+    # into one radio group → invalid meal selection (phone dde9d72d).
+    keyed_lines: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    for i, raw in enumerate(expanded["lines"]):
+        ln = dict(raw)
+        query = str(ln.get("display_name") or ln.get("ref_id") or f"line {i + 1}").strip()
+        slug = re.sub(r"[^a-z0-9]+", "_", query.lower()).strip("_") or "line"
+        query_norm = f"{slug}:{i}"
+        ln["_query"] = query
+        ln["_query_norm"] = query_norm
+        keyed_lines.append(ln)
+        ref_id = ln.get("ref_id")
+        rows.append(
+            {
+                "query": query,
+                "query_norm": query_norm,
+                "reasons": ["preset_log"],
+                "proposed_ref_id": ref_id,
+                "candidates": [
+                    {
+                        "ref_id": ref_id,
+                        "label": ln.get("display_name"),
+                        "nutrients": ln.get("nutrients") or {},
+                    }
+                ]
+                if ref_id
+                else [],
+            }
+        )
     # Always Confirm first log of a named preset unless every line has sticky ref
     # (policy: Confirm when any line unbound macros / no favorite — keep simple Confirm).
     return {
         "ok": True,
         "preset_id": expanded.get("preset_id"),
         "display_name": expanded.get("display_name"),
-        "lines": lines,
+        "lines": keyed_lines,
         "meal_slot": meal_slot,
         "needs_confirm": True,
         "resolve": {
             "bind_authority": "meal_spine",
             "needs_confirm": True,
             "reasons": ["preset_log"],
-            "rows": [
-                {
-                    "query": expanded.get("display_name") or name,
-                    "query_norm": (expanded.get("preset_id") or name),
-                    "reasons": ["preset_log"],
-                    "proposed_ref_id": ln.get("ref_id"),
-                    "candidates": [
-                        {
-                            "ref_id": ln.get("ref_id"),
-                            "label": ln.get("display_name"),
-                            "nutrients": ln.get("nutrients") or {},
-                        }
-                    ]
-                    if ln.get("ref_id")
-                    else [],
-                }
-                for ln in lines
-            ],
+            "rows": rows,
         },
         "save_favorite": False,
     }

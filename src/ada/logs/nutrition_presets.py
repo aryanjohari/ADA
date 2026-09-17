@@ -52,21 +52,45 @@ def load_presets(*, paths: DataPaths | None = None) -> dict[str, Any]:
     return doc
 
 
+def _preset_id_aliases(pid: str) -> list[str]:
+    """'log my lunch' looks up lunch; save-as-my stores my_lunch. Try both."""
+    keys = [pid]
+    if pid.startswith("my_"):
+        rest = pid[3:]
+        if rest:
+            keys.append(rest)
+    else:
+        keys.append(f"my_{pid}")
+    return keys
+
+
+def _preset_name_needles(name: str) -> set[str]:
+    needle = re.sub(r"\s+", " ", (name or "").strip().lower())
+    needles = {needle} if needle else set()
+    if needle.startswith("my "):
+        rest = needle[3:].strip()
+        if rest:
+            needles.add(rest)
+    elif needle:
+        needles.add(f"my {needle}")
+    return needles
+
+
 def get_preset(name: str, *, paths: DataPaths | None = None) -> dict[str, Any] | None:
     pid = _norm_id(name)
     if not pid:
         return None
     presets = load_presets(paths=paths).get("presets") or {}
-    hit = presets.get(pid)
-    if isinstance(hit, dict):
-        return {**hit, "id": pid}
-    # Soft match display_name
-    needle = re.sub(r"\s+", " ", (name or "").strip().lower())
+    for key in _preset_id_aliases(pid):
+        hit = presets.get(key)
+        if isinstance(hit, dict):
+            return {**hit, "id": key}
+    needles = _preset_name_needles(name)
     for key, row in presets.items():
         if not isinstance(row, dict):
             continue
         disp = str(row.get("display_name") or key).strip().lower()
-        if disp == needle or key.replace("_", " ") == needle:
+        if disp in needles or key.replace("_", " ") in needles:
             return {**row, "id": key}
     return None
 
