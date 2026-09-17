@@ -1,7 +1,7 @@
 # M22 — Life teach-in-flow (research · pick)
 
-**Status:** design lock — **not code**  
-**Date:** 2026-08-26 (v1.0)  
+**Status:** design lock — food presets/favorites **phone 1–4 METAL** (2026-09-17). Remaining M22 slices (gym packs/split) later.  
+**Date:** 2026-09-17 (v1.0.6)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** M20 **life-vision / personalization delta** — how ADA gets personal *while talking*. Not a second cortex. Not retrieval. Not package. Not mail. Not food ML.  
@@ -17,6 +17,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.0.6** | 2026-09-17 | Pointer — food presets/favorites restart **1–4 PHONE METAL**. Life freeze → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.17. **#5–#6 + vocative later**, not this card. **Next:** gym Phase 2 card, then day-join rollup. |
 | **v1.0.5** | 2026-09-11 | Pointer — meal draft/presets **METAL-in-tree**; phone smoke incomplete. Freeze → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 restart checklist. |
 | **v1.0.4** | 2026-09-06 | Pointer — meal draft → preset teach-in is **METAL** in [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.11 (create-meal session · `nutrition_presets` · favorites re-bind). Same stores; not a second prefs DB. |
 | **v1.0.3** | 2026-08-27 | Pointer only — next sequence capture card → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (multi-slot decompose; not teach-in-flow stores). |
@@ -409,4 +410,4 @@ This card is **docs-only**. Executable checklist: [`../reviews/M22_IMPLEMENT_PLA
 
 ---
 
-*End M22 life teach-in-flow. v1.0 design lock: three doors, one store; teach-in-flow default; still before package.*
+*End M22 life teach-in-flow. v1.0.6 pointer: food presets/favorites 1–4 PHONE METAL; next gym Phase 2, then day-join rollup.*

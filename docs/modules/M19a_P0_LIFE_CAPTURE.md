@@ -1,7 +1,7 @@
 # M19a — P0 Life Capture (implement spec)
 
-**Status:** design + implement spec (**v1.8**) — **P0.5 + gym catalog remote-default / NL fold lookup shipped**; Gemini FunctionDeclaration `items` on life array schemas (2026-08-19); M19b PTT/camera still blocked until **live** operator HUD smoke PASS  
-**Date:** 2026-08-17  
+**Status:** design + implement spec (**v1.8**) — **P0.5 + gym catalog remote-default / NL fold lookup shipped**; food presets/favorites **phone 1–4 METAL** (2026-09-17); Gemini FunctionDeclaration `items` on life array schemas (2026-08-19); M19b PTT/camera still blocked until **live** operator HUD smoke PASS  
+**Date:** 2026-09-17  
 **Kind:** Tier B **implement slice** — child of [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md)  
 **Depends on:** M19 (catalog/phases) · [`M18_CLOSE_TIER_A.md`](./M18_CLOSE_TIER_A.md) (kernel freeze gate) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) / [`M16_OPERATOR_NOTE.md`](./M16_OPERATOR_NOTE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (strip/sheet locks) · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`../01_BODY.md`](../01_BODY.md) (SQLite WAL durability notes §6.2) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill) · [`M07_WEB.md`](./M07_WEB.md) (egress for USDA/OFF only)  
 **Feeds:** M19 P1+ (habits, people, mail, analysis packs)
@@ -14,6 +14,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.13** | 2026-09-17 | Pointer — **life freeze stamp:** food restart **1–4 PHONE METAL**; **#5–#6 + vocative OPEN later**. Next = gym Phase 2 ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.17). |
 | **v1.12** | 2026-09-11 | Food/life capture **FREEZE** → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 (restart checklist). |
 | **v1.11** | 2026-09-06 | Pointer only → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.11 personal library: create-meal draft session, preset log-by-name, barcode GTIN HUD, favorites re-bind, estimate provenance. Doors in this card (`meal_log` / `barcode_lookup` / `food_preset_save`) stay; session/pack verbs live under M26. |
 | **v1.10** | 2026-08-27 | Pointer only → [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md). Multi-item meal / multi-set lift = **skill-spine Phase 1** (decompose + Confirm), not a P0 mega-rewrite. Sequence: after M23, before package. No P0 METAL rewrite in this pointer. |

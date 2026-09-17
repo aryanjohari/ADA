@@ -1,7 +1,7 @@
 # M19a — P1 Habits + People (implement spec)
 
-**Status:** design + implement spec (**v1.0**) — **not shipped**; depends on P0 operator HUD smoke PASS  
-**Date:** 2026-08-18  
+**Status:** design + implement spec — **P1.1–1.3 capture DONE** ([`M19a_P1_IMPLEMENT_PLAN.md`](../reviews/M19a_P1_IMPLEMENT_PLAN.md)). Food presets/favorites **phone 1–4 METAL**. Next = gym Phase 2.  
+**Date:** 2026-09-17  
 **Kind:** Tier B **implement slice** — child of [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · sibling of [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md)  
 **Depends on:** M19 P3.1 P1 row · P0 metal (pack router, `life_logs.db`, due spine, Today strip) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (`remind_at`, `people_ids`, ntfy budget) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) (people stubs; Dream never auto-merges people) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (strip/sheet locks) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill)  
 **Feeds:** M19 P2 (mail) · P4 (analysis packs) · M19b (PTT/camera transport — still blocked on P0 live smoke)
@@ -14,6 +14,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.2** | 2026-09-17 | Pointer — P1.1–1.3 capture **DONE** (implement receipt). Header was “not shipped” — stale. Life freeze: food 1–4 PHONE METAL; **#5–#6 + vocative later**. **Next:** gym Phase 2 card, then day-join rollup. |
 | **v1.1** | 2026-08-26 | Pointer only → [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md). Habit **defs** enter via teach-in-flow Confirm-create (after M21 resolve) or **optional** CLI seed — seed is not the primary door. OPEN #4 default unchanged as optional. No P1 schema rewrite. |
 | **v1.0** | 2026-08-18 | Initial P1 implement spec: habits + people + birthday/kin notify; operator locks from P0 + M19 brainstorm; phased close gates P1.1→P1.3; falsifiers + HUD smoke stub |
 
@@ -227,6 +228,8 @@ utterance | chip | (future) PTT transcript
 ---
 
 ## 3.7 Phased close gates (P1.1 → P1.3 → P1.x)
+
+**Stamp (2026-09-17):** P1.1–1.3 capture **DONE** — [`M19a_P1_IMPLEMENT_PLAN.md`](../reviews/M19a_P1_IMPLEMENT_PLAN.md). Table below is the original gate list, not live “not shipped.”
 
 **P1 CLOSED** (operator sign-off) requires **P1 metal** (§2) **+ P1.x PASS**. M19b PTT/camera still blocked on **P0 live** smoke.
 

@@ -1,13 +1,13 @@
 # M26 — Domain knowledge (what “knowing” a life-admin domain means)
 
-**Status:** design lock — **not code** · **life verticals FROZEN (2026-09-11)** except explicit unfreeze via [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 restart checklist  
-**Date:** 2026-09-17 (v1.8)  
+**Status:** design lock — **life freeze stamped (2026-09-17)** — food organ + restart **1–4 PHONE METAL**; **#5–#6 + vocative OPEN later**. Gym Phase 2 card **shipped** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md)).  
+**Date:** 2026-09-17 (v1.10)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **domain-agnostic foundation** — organ vs reference vs reject; capture grammar; phased template for per-domain cited memory docs. Not a pack implement. Not package. Not analysis.  
 **Depends on:** [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8 · trust rings · structured logs > RAG-brain · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) (Confirm Integrity; truth > charm; no consciousness) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill; skills = packs) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) · [`M20_V1_PRODUCT.md`](./M20_V1_PRODUCT.md) (sequence 1→5 — **this card does not reorder**) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library/cites organ — sibling, not duplicate)
 
-**Feeds:** per-domain **Phase 2 cited memory docs** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) **food FROZEN** — organ METAL, library phone incomplete; then gym · time · habits · people · dues — copy domain close checklist **after food restart**). Phase 3 implement wraps per domain. Phase 4 phone METAL.
+**Feeds:** per-domain **Phase 2 cited memory docs** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) **food 1–4 PHONE METAL** — organ + retrieval closed enough; library **#5–#6 + vocative OPEN later**; gym Phase 2 card **shipped** [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) · then time · habits · people · dues — copy domain close checklist). Phase 3 implement wraps per domain. Phase 4 phone METAL.
 
 **Name stays `M26_DOMAIN_KNOWLEDGE.md`:** this is the **agnostic “knowing” lock** before vertical memory essays. Rejected: `M19c` (catalog child, not foundation); `M10b` (M10 owns fetch→library; this owns life-domain *purpose* + organ/reference split); stuffing into M25 (recover ≠ ontology).
 
@@ -17,6 +17,8 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.10** | 2026-09-17 | **Pointer:** gym Phase 2 card **shipped** [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md). No M26 agnostic rewrite. |
+| **v1.9** | 2026-09-17 | **Life freeze stamp:** food is no longer “library phone incomplete” as if 1–4 were open. Restart **1–4 PHONE METAL** (`edef2243…`, `293134b…`). **#5–#6 + vocative OPEN later** — not the gym blocker. **Next:** gym Phase 2 card, then day-join rollup. |
 | **v1.8** | 2026-09-17 | **Later review (copy into every pack door):** vocative filler (`Hi Ada.`, `Hey Ada,`) is not stripped — substring alias still routes; name/slot scrape can use the whole sentence (food cite `dde9d72d…`). Default: filler hygiene like `please`/`yes`, **not** a cortex chat turn. Food OPEN #4. |
 | **v1.7** | 2026-09-11 | **Life verticals FROZEN.** Food first vertical paused — organ yes, library phone incomplete ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12). Next life work = finish food restart checklist, then gym. |
 | **v1.6** | 2026-09-06 | Food Confirm→write: preview macros must survive handoff (M26_FOOD v1.10); propose-pool never defaults null-CORE (M27 v1.4). |
@@ -337,6 +339,6 @@ M21–M25 falsifiers still bind.
 
 ---
 
-**Next slice:** finish food restart checklist ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12), then gym Phase 2 cited memory doc. Food = **partial** (organ yes; library phone incomplete).
+**Next:** gym Phase 2 card **shipped** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md)); gym capture smokes → gym_week → day-join. Food = organ + **1–4 PHONE METAL**; **#5–#6 + vocative named OPEN later**.
 
-*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; life verticals FROZEN 2026-09-11.*
+*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; life freeze stamped 2026-09-17 — gym Phase 2 card shipped.*

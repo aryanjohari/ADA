@@ -1,13 +1,13 @@
 # M26 food — Phase 2 cited domain memory (first vertical)
 
-**Status:** **FREEZE (2026-09-11)** — capture + reflection **METAL**; personal library **code landed** but **phone incomplete**. No new food work until **Restart checklist** below.  
-**Date:** 2026-09-17 (v1.15)  
+**Status:** **LIFE FREEZE (2026-09-17)** — food organ + retrieval closed enough. Restart **1–4 PHONE METAL**; capture spine / Confirm / `nutrition_day`+`week` **METAL**. **OPEN later (not gym blockers):** restart **#5** typed barcode write · **#6** estimate omelette · vocative OPEN #4. Gym Phase 2 card **shipped** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md)).  
+**Date:** 2026-09-17 (v1.18)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **Phase 2 cited domain memory** for **food only** — organ wiring + organism purpose + Dream contract. Not a nutrition textbook. Not cortex prompt stuffing. Not P4 charts.  
 **Depends on:** [`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) (organ · reference · reject) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) (food verbs, §5 nutrient slots) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (decompose + empty-macro guard) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) (bounded recover) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (favorites / presets / targets) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library ≠ logs) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) (WORLDVIEW cites; Dream ~03:30; brief ~05:30)
 
-**Feeds:** gym/time/habits Phase 2 cards **only after** food restart checklist closes (copy **domain close checklist** below).
+**Feeds:** gym Phase 2 cited memory card **shipped** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md)). Food restart **5–6** + vocative OPEN #4 stay named later — not this gate.
 
 **Name stays `M26_FOOD_DOMAIN.md`:** git-tracked **reference know** for food. Sibling of the agnostic lock, not a charter dump. Runtime `memory/domain/food.md` is **not** shipped here — boot/brief cannot load that path (charter injects FACT slice + WORLDVIEW digest only; `paths.py` has no `domain/` dir). Module doc is the source of truth until a later chat wires a capped slice.
 
@@ -17,6 +17,9 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.18** | 2026-09-17 | **Pointer (no code):** gym Phase 2 card **shipped** [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md). |
+| **v1.17** | 2026-09-17 | **Life freeze stamp (no code):** 1–4 stay PHONE METAL (`edef2243…` rice ≠ beans mix; eggs Confirm then silent; draft→`my lunch`; `293134b…` `Log my lunch` write `bc268e8f…`). **#5–#6 + vocative OPEN later** — not the freeze gate; do not mark barcode/estimate SHIPPED. **Next:** gym Phase 2 card, then day-join rollup. |
+| **v1.16** | 2026-09-17 | **Stamp only (no code):** restart **1–4 PHONE METAL** from `edef2243…` (rank rice ≠ beans mix; eggs Confirm then silent; draft→`my lunch` preset) and `293134b…` (`Log my lunch` Confirm→write `bc268e8f…` 295 kcal / 33.7 g P). **Still OPEN:** #5 barcode write · #6 estimate · vocative OPEN #4 (`Hi Ada` still miss on `293134b…`). |
 | **v1.15** | 2026-09-17 | **OPEN #4 (later):** vocative filler — `Hi Ada. Log my lunch` still pack-routes (`log my ` substring) but name scrape is the whole sentence (`dde9d72d…`). Not a chatbot path; peel `hi/hey ada` like `please`/`yes`. Not this freeze. |
 | **v1.14** | 2026-09-17 | **Preset Confirm keys:** `expand_preset_log_args` keyed every line as `my_lunch` → HUD one radio group (chicken vs rice) → `invalid meal selection for 'my_lunch'` (`dde9d72d…`). Each line now has unique `query_norm` (`slug:index`); picker unchanged; USDA option Confirm untouched. Phone re-smoke checklist #4. |
 | **v1.13** | 2026-09-17 | **“Log my X” lookup only:** `save as my lunch` stores `my_lunch`; pack parse of `Log my lunch` is `lunch` → phone `preset_unknown` [`edef2243…`](../../../runs/2026-09-16/edef22435a074065a8dbe75d6250ca44.jsonl). `get_preset` now aliases `X` ↔ `my X` (exact id still wins); `parse_log_preset_name` strips leading Yes/ok. Not phone-closed — re-smoke checklist #4. Barcode + estimate untouched. |
@@ -36,37 +39,37 @@
 
 ---
 
-## Library close plan (v1.12 freeze)
+## Library close plan (v1.17 life freeze stamp)
 
-**Why:** Spine + Confirm + write mostly work on phone (`1c509c18…`, `55378c77…`, `e3ab8d20…`), but personal library is **not** phone-closed. Code landed in-tree; rank defaults, favorites-after-wipe, and draft→save preset→“log my X” still fail or unproven on device. Freeze = no new food features until **Restart checklist** passes.
+**Why:** Spine + Confirm + write work on phone. Restart **1–4** closed 2026-09-17 (`edef2243…`, `293134b…`). **#5–#6** (typed barcode write · estimate tag) and vocative OPEN #4 are **named later**, not gym blockers. Freeze = no new food features; next life work = gym Phase 2.
 
 | Capability | In-tree (METAL code) | Phone |
 |------------|----------------------|-------|
-| Rank default | Multi-hit USDA + form propose-pool (`catalog_rank.py`) | **PHONE OPEN** — `e3ab8d20…` “white rice boiled” still Beans-and-rice default |
-| Favorites | `favorites.py` re-bind after Confirm Yes | **PHONE OPEN** — wipe → `favorite_ref_missing` stuck (`e3ab8d20…`) |
-| Create-meal session | scratch `meal_draft_{session}.json`; `meal_draft_spine.py` | **PHONE OPEN** — draft→save preset not proven; presets file missing on disk |
-| Named preset | `nutrition_presets.py` + `life_meal_preset_log` / “log my X” | **CODE FIX (v1.13–1.14)** — `X`↔`my X` alias + unique Confirm row keys; **PHONE OPEN** — re-smoke `Log my lunch` → Confirm Yes |
-| Barcode typed GTIN | `life_barcode_lookup` + HUD `barcode:` chip | **PHONE OPEN** — one packaged bind smoke still due (camera PARK) |
-| Estimate dish | `provenance=estimate` + day `honest_partial` | **PHONE OPEN** — omelette estimate tag smoke still due |
+| Rank default | Multi-hit USDA + form propose-pool (`catalog_rank.py`) | **PHONE METAL** — `edef2243…` 300g boiled white rice → plain cooked white rice (not Beans-and-rice). Old fail `e3ab8d20…` superseded. |
+| Favorites | `favorites.py` re-bind after Confirm Yes | **PHONE METAL** — `edef2243…` wipe → eggs `favorite_ref_missing` Confirm → 2nd boiled eggs **silent** |
+| Create-meal session | scratch `meal_draft_{session}.json`; `meal_draft_spine.py` | **PHONE METAL** — `edef2243…` Add a meal → chicken + rice → `save as my lunch`; `nutrition_presets.yaml` on disk |
+| Named preset | `nutrition_presets.py` + `life_meal_preset_log` / “log my X” | **PHONE METAL** — `293134b…` `Log my lunch` Confirm→write `bc268e8f…` (295 kcal / 33.7 g P). Vocative `Hi Ada. Log my lunch` still miss (OPEN #4). |
+| Barcode typed GTIN | `life_barcode_lookup` + HUD `barcode:` chip | **PHONE OPEN** — `edef2243…` dummy GTIN miss; `94147803` hit+Confirm, **no write** (camera PARK) |
+| Estimate dish | `provenance=estimate` + day `honest_partial` | **PHONE OPEN** — `edef2243…` `Log omelette (estimate)` USDA-looped, never logged |
 | Capture spine / Confirm | `meal_spine.py` + HUD picker | **PHONE METAL** — mostly works (`1c509c18…`, `55378c77…`) |
 | Reflection | `food_reflection.py` + `life_nutrition_week` | **METAL** (deterministic; not library gate) |
 
-**Implement order (strict, on unfreeze):** restart checklist items **1→6** in order. Do **not** reopen ranking whack-a-mole or NZ research in the freeze commit.
+**Later (not gym gate):** restart **#5** typed barcode write · **#6** estimate. Do **not** reopen ranking whack-a-mole or NZ research in this stamp. Do **not** mark barcode/estimate SHIPPED.
 
-**Parked (won’t-chase until after 1–6):** camera barcode · P4 charts · NZ FOODfiles · photo-of-plate · gym Phase 2.
+**Parked:** camera barcode · P4 charts · NZ FOODfiles · photo-of-plate. **Gym Phase 2 is next**, not parked behind 5–6.
 
-### Restart checklist (unfreeze food)
+### Restart checklist (1–4 closed; 5–6 later)
 
-Ordered, copy-pasteable. Close each with phone evidence before the next.
+1–4 **PHONE METAL**. 5–6 stay named OPEN later — not the life-unfreeze gate.
 
 | # | Item | Evidence / fail | Done when |
 |---|------|-----------------|-----------|
-| 1 | Rank: “white rice boiled” ≠ Beans-and-rice default | `e3ab8d20…` | plain cooked white rice proposed or Confirm picks it |
-| 2 | Favorites after cache wipe: no stuck `favorite_ref_missing` | same run | Confirm → sticky → 2nd log silent |
-| 3 | Draft→save: Add a meal → 2 lines → save as named preset | presets file missing on disk | `nutrition_presets.yaml` exists |
-| 4 | “Log my X” expands preset → Confirm → write | `edef2243…` miss; `dde9d72d…` shared key `invalid meal selection`; v1.13–1.14 | Confirm Yes writes chicken+rice; rollup |
-| 5 | Typed barcode GTIN path smoke | camera PARK | one packaged bind |
-| 6 | Estimate omelette tagged | — | `provenance=estimate` / `honest_partial` |
+| 1 | Rank: “white rice boiled” ≠ Beans-and-rice default | **PASS** [`edef2243…`](../../../runs/2026-09-16/edef22435a074065a8dbe75d6250ca44.jsonl) | **PHONE METAL** |
+| 2 | Favorites after cache wipe: no stuck `favorite_ref_missing` | **PASS** same run — 2nd eggs silent | **PHONE METAL** |
+| 3 | Draft→save: Add a meal → 2 lines → save as named preset | **PASS** same run — `my lunch` in `nutrition_presets.yaml` | **PHONE METAL** |
+| 4 | “Log my X” expands preset → Confirm → write | **PASS** [`293134b…`](../../../runs/2026-09-16/293134b046f341fc99a27c4c230d6a9a.jsonl) write `bc268e8f…` (after v1.13–1.14). Prior fails: `edef2243…` miss; `dde9d72d…` shared key | **PHONE METAL** |
+| 5 | Typed barcode GTIN path smoke | camera PARK · `edef2243…` lookup+Confirm, no write | one packaged **write** |
+| 6 | Estimate omelette tagged | `edef2243…` never logged | `provenance=estimate` / `honest_partial` |
 
 **Key files for restart (short):** `meal_spine.py`, `catalog_rank.py`, `meal_draft_spine.py`, `meal_draft.py`, `nutrition_presets.py`, `favorites.py`, `food.py`, `life_tools.py`, `pack_router.py`, `loop.py`, HUD confirm/barcode chip.
 
@@ -385,7 +388,7 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 
 ---
 
-## OPEN (≤4) — parked until restart checklist / later review
+## OPEN (≤4) — later / parked (not gym blockers)
 
 | # | Question | Default until a later chat locks it |
 |---|----------|-------------------------------------|
@@ -394,9 +397,9 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 | 3 | **NZ FOODfiles / NZ label import?** | Manual CLI (`ada life food-import-nz`) when operator drops a bundle — not capture-path web hunt. **No NZ market research in freeze.** |
 | 4 | **Vocative filler on pack verbs?** (`Hi Ada. Log my lunch`) | **Later.** Alias still fires; name scrape uses the whole utterance [`dde9d72d…`](../../../runs/2026-09-16/dde9d72df37c467ea8ef83ecd13e2e87.jsonl). Default: strip `hi/hey ada` like `please`/`yes` — still Verb→Pack, **not** a Gemini chat turn. Copy into gym/time pack doors ([`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) capture grammar). |
 
-**Active reopen path:** Restart checklist items 1–6 only — not the parked row above. OPEN #4 is **later review**, not a freeze unfreeze.
+**Active reopen path:** none for gym. Food restart **#5–#6** + vocative OPEN #4 are **later**, named — not this freeze.
 
-**Do not reopen:** invent kcal; essay in charter; Dream auto-merge nutrition FACTS; analysis-as-write-gate; second cortex; ranking whack-a-mole without pack fence; `memory/domain/` boot-load without an implement chat; **new food features while FREEZE**.
+**Do not reopen:** invent kcal; essay in charter; Dream auto-merge nutrition FACTS; analysis-as-write-gate; second cortex; ranking whack-a-mole without pack fence; `memory/domain/` boot-load without an implement chat; **new food features this freeze**; **do not treat 5–6 as gym blockers**.
 
 ---
 
@@ -404,14 +407,14 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 
 **METAL-in-tree (frozen):** processed ranking · favorites sticky · head-noun gate · path integrity · deterministic reflection · capture organ · personal library code (create-meal draft · presets · barcode GTIN · estimate tag · multi-hit USDA).
 
-**PHONE OPEN (restart 1–6):** rank defaults · favorites after wipe · draft→preset · **“log my X” code-fixed v1.13–1.14, phone re-smoke** · typed barcode · estimate tag.
+**PHONE OPEN later (not SHIPPED, not gym gate):** typed barcode **write** · estimate tag. **1–4 PHONE METAL** (`edef2243…`, `293134b…`). Vocative `Hi Ada` = OPEN #4 later.
 
-**Parked after 1–6:** camera barcode · P4 charts · NZ import · photo-of-plate · gym Phase 2.
+**Parked:** camera barcode · P4 charts · NZ import · photo-of-plate.
 
-**Won’t-chase this freeze:** food ML · Cronometer OAuth · NZ market research · gym/time domain essays.
+**Won’t-chase this freeze:** food ML · Cronometer OAuth · NZ market research · treating 5–6 as the gym blocker.
 
 ---
 
-**Next slice (after unfreeze):** close Restart checklist 1→6 on phone, then gym Phase 2 card — copy **domain close checklist** above.
+**Next:** gym Phase 2 card **shipped** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md)); gym capture smokes → gym_week → day-join.
 
-*End M26 food. FREEZE 2026-09-11 (v1.12) + v1.13 alias + v1.14 preset Confirm keys + v1.15 vocative OPEN — capture + reflection METAL; library code in-tree; phone gaps = restart checklist; logs are truth; this doc is the lens.*
+*End M26 food. LIFE FREEZE 2026-09-17 (v1.18) — 1–4 PHONE METAL; 5–6 + vocative OPEN later; gym Phase 2 card shipped; logs are truth; this doc is the lens.*

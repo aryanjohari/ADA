@@ -1,7 +1,7 @@
 # M19 — Tier B Life Admin (research · Verb→Pack catalog)
 
 **Status:** design / research only (v1.0) — **no implementation, no fine-tune**  
-**Date:** 2026-08-17  
+**Date:** 2026-09-17  
 **Kind:** Tier B **life-admin** card after Tier A kernel freeze ([`M18_CLOSE_TIER_A.md`](./M18_CLOSE_TIER_A.md))  
 **Parent vision:** [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (A/B/C tiers; Verb→Pack→Cortex-fill)  
 **Constitution:** [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) (Confirm Integrity, dual-store, quiet hours, no Funnel-as-default, no consciousness)  
@@ -12,6 +12,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.0.2** | 2026-09-17 | Pointer — **life freeze stamp:** food restart **1–4 PHONE METAL**; **#5–#6 + vocative OPEN later**. Next = gym Phase 2 ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.17). |
 | **v1.0.1** | 2026-09-11 | Food/life capture **FREEZE** → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 (restart checklist). |
 | **v1.0** | 2026-08-17 | Pass 1 market/fiction/SOTA → Pass 2 operator reconcile → Pass 3 final catalog |
 
