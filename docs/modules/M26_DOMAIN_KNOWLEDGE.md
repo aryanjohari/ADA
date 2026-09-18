@@ -1,13 +1,13 @@
 # M26 — Domain knowledge (what “knowing” a life-admin domain means)
 
-**Status:** design lock — **life freeze stamped (2026-09-17)** — food organ + restart **1–4 PHONE METAL**; **#5–#6 + vocative OPEN later**. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4): happy path **PHONE METAL** `504fb6a5…`; miss **PHONE METAL** `1a54acda…`; day/week **PHONE METAL** `2306ab59…`. **Next ≠ join-as-gate**.  
-**Date:** 2026-09-18 (v1.13)  
+**Status:** design lock — **life freeze stamped (2026-09-17)** — food organ + restart **1–4 PHONE METAL**; **#5–#6 + vocative OPEN later**. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3): **PHONE METAL** `5a370eb0…`. **Next = habits Phase 2**, not join.  
+**Date:** 2026-09-19 (v1.16)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **domain-agnostic foundation** — organ vs reference vs reject; capture grammar; phased template for per-domain cited memory docs. Not a pack implement. Not package. Not analysis.  
 **Depends on:** [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8 · trust rings · structured logs > RAG-brain · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) (Confirm Integrity; truth > charm; no consciousness) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill; skills = packs) · [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) · [`M20_V1_PRODUCT.md`](./M20_V1_PRODUCT.md) (sequence 1→5 — **this card does not reorder**) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library/cites organ — sibling, not duplicate)
 
-**Feeds:** per-domain **Phase 2 cited memory docs** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) **food 1–4 PHONE METAL** — organ + retrieval closed enough; library **#5–#6 + vocative OPEN later**; gym capture **CLOSED** [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4 · then time · habits · people · dues leftover survey — copy domain close checklist). Phase 3 implement wraps per domain. Phase 4 phone METAL. Food+gym join **OPEN later**.
+**Feeds:** per-domain **Phase 2 cited memory docs** ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) **food 1–4 PHONE METAL**; library **#5–#6 + vocative OPEN later**; gym capture **CLOSED** [`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4; time capture **CLOSED** [`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3 · then habits · people · dues — copy domain close checklist). Phase 3 implement wraps per domain. Phase 4 phone METAL. Food+gym join **OPEN later**.
 
 **Name stays `M26_DOMAIN_KNOWLEDGE.md`:** this is the **agnostic “knowing” lock** before vertical memory essays. Rejected: `M19c` (catalog child, not foundation); `M10b` (M10 owns fetch→library; this owns life-domain *purpose* + organ/reference split); stuffing into M25 (recover ≠ ontology).
 
@@ -17,6 +17,9 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.16** | 2026-09-19 | **Pointer:** time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3) — phone `5a370eb0…`. **Next = habits Phase 2**. Do not reopen food 5–6. Join OPEN later. |
+| **v1.15** | 2026-09-18 | **Pointer:** time Phase 2 **v1.2 pytest METAL, PHONE OPEN** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md)) — 7-pass in tree; organ **not CLOSED** (no time jsonl). **Next = time phone jsonl**, then habits → people → dues. Do not reopen food 5–6. Join OPEN later. |
+| **v1.14** | 2026-09-18 | **Pointer:** time Phase 2 **v1.1 7-pass ready** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md)) — start-shape pack door locked; no per-label regex; alias FACT not a start gate. **Next = time 7-pass implement** (do not rebuild `time_start`/`stop`/`status`). Do not reopen food 5–6. Join OPEN later. |
 | **v1.13** | 2026-09-18 | **Pointer:** gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4) — happy `504fb6a5…`; miss `1a54acda…`; day/week `2306ab59…`. Do not reopen food 5–6. **Next ≠ join-as-gate** — leftover survey (time/habits/people/dues). Join OPEN later. |
 | **v1.12** | 2026-09-18 | **Pointer:** gym capture closed enough ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.3) — happy path phone `504fb6a5…` + miss pytest. Do not reopen food 5–6. **Next ≠ join-as-gate** — leftover survey (time/habits/people/dues) + later decide/miss-path research. Join OPEN later. |
 | **v1.11** | 2026-09-17 | **Pointer:** gym pack door now has food-style structural force ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.2). Do not reopen food 5–6. **Next:** food+gym `local_day` join. |
@@ -342,6 +345,8 @@ M21–M25 falsifiers still bind.
 
 ---
 
-**Next:** leftover survey (time/habits/people/dues) + later decide-layer research for all life. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4); food+gym `local_day` join **OPEN later**. Food = organ + **1–4 PHONE METAL**; **#5–#6 + vocative named OPEN later**.
+**Next:** habits Phase 2 ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3 CLOSED — then `M26_HABITS_DOMAIN.md`). Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4); time capture **CLOSED**; food+gym `local_day` join **OPEN later**. Food = organ + **1–4 PHONE METAL**; **#5–#6 + vocative named OPEN later**.
 
-*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; life freeze stamped 2026-09-17 — gym capture v1.4 CLOSED (happy 504fb6a5; miss 1a54acda; day/week 2306ab59).*
+*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; life freeze stamped 2026-09-17 — gym v1.4 CLOSED; time v1.3 CLOSED (5a370eb0).*
+
+*End M26. Design lock 2026-08-28 — domain-agnostic “knowing”; life freeze stamped 2026-09-17 — gym capture v1.4 CLOSED; time v1.2 pytest METAL, PHONE OPEN.*

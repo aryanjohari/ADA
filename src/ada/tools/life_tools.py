@@ -494,6 +494,25 @@ def run_life_time_status(args: dict[str, Any]) -> dict[str, Any]:
     return time_mod.time_status()
 
 
+def run_life_time_day(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs.time_reflection import time_day
+
+    return time_day(date=args.get("date"))
+
+
+def run_life_time_week(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs.time_reflection import time_window, write_time_reflection_scratch
+
+    days = args.get("days", 7)
+    try:
+        days_n = int(days)
+    except (TypeError, ValueError):
+        days_n = 7
+    result = time_window(days=days_n)
+    write_time_reflection_scratch(result)
+    return result
+
+
 def run_life_gym_status(args: dict[str, Any]) -> dict[str, Any]:
     return gym_mod.gym_status(date=args.get("date"))
 
@@ -1043,6 +1062,8 @@ DISPATCH = {
     "life_time_start": run_life_time_start,
     "life_time_stop": run_life_time_stop,
     "life_time_status": run_life_time_status,
+    "life_time_day": run_life_time_day,
+    "life_time_week": run_life_time_week,
     "life_gym_status": run_life_gym_status,
     "life_gym_day": run_life_gym_day,
     "life_gym_week": run_life_gym_week,

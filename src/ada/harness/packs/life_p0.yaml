@@ -77,6 +77,14 @@ packs:
     tool: life_time_status
     preferred_tools: [life_time_status]
     spine: read
+  time_day:
+    tool: life_time_day
+    preferred_tools: [life_time_day]
+    spine: read
+  time_week:
+    tool: life_time_week
+    preferred_tools: [life_time_week]
+    spine: read
   due_list:
     tool: memory_open_loops_list
     preferred_tools: [memory_open_loops_list]
@@ -165,6 +173,8 @@ aliases:
   - {pattern: "nutrient", verb: nutrition_day}
   - {pattern: "what's running", verb: time_status}
   - {pattern: "am i tracking", verb: time_status}
+  - {pattern: "what did i track yesterday", verb: time_day}
+  - {pattern: "time this week", verb: time_week}
   - {pattern: "gotta", verb: due_add}
   - {pattern: "i need to finish", verb: due_add}
   - {pattern: "due by", verb: due_add}

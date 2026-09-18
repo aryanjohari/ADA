@@ -32,6 +32,7 @@ from ada.harness.pack_router import (
     is_incomplete_lift_utterance,
     is_lift_log_utterance,
     is_meal_log_utterance,
+    is_time_start_utterance,
     lift_log_fast_path_args,
     meal_log_fast_path_args,
 )
@@ -310,8 +311,7 @@ def _fast_path_time_start(
         args={},
         call_id="time-status",
     )
-    label = str(kind).replace("_", " ")
-    return "pack_fast_path", f"Started {label}."
+    return "pack_fast_path", _speak_time_start(_receipt_data(receipts, "life_time_start"))
 
 
 def _fast_path_time_stop(
@@ -338,7 +338,7 @@ def _fast_path_time_stop(
         args={},
         call_id="time-status",
     )
-    return "pack_fast_path", "Stopped the timer."
+    return "pack_fast_path", _speak_time_stop(_receipt_data(receipts, "life_time_stop"))
 
 
 def _fast_path_lift(
@@ -900,6 +900,69 @@ def _speak_time_status(data: dict[str, Any]) -> str:
     return "No timer running."
 
 
+def _speak_time_start(data: dict[str, Any]) -> str:
+    """Ack from start receipt only — never invent duration_s."""
+    if data.get("ok") is False:
+        return "Could not start a timer."
+    label = str(data.get("label") or "").strip()
+    kind = str(data.get("kind") or "timer").replace("_", " ")
+    name = label or kind
+    return f"Started {name}."
+
+
+def _speak_time_stop(data: dict[str, Any]) -> str:
+    """Ack from stop receipt. Miss-stop never claims minutes."""
+    if data.get("ok") is False or data.get("reason") == "no_active_block":
+        return "No timer running."
+    kind = str(data.get("kind") or "timer").replace("_", " ")
+    duration = data.get("duration_s")
+    if duration is None:
+        return f"Stopped {kind}."
+    return f"Stopped {kind} ({duration}s)."
+
+
+def _speak_time_day(data: dict[str, Any]) -> str:
+    date = data.get("date") or "that day"
+    n = int(data.get("block_count") or 0)
+    if n == 0:
+        return str(data.get("message") or f"No time blocks logged for {date}.")
+    bits = [f"{date}: {n} time block(s)"]
+    duration = data.get("duration_s")
+    if isinstance(duration, int) and duration > 0:
+        bits.append(f"{duration}s")
+    cite = data.get("cite")
+    if cite:
+        bits.append(str(cite))
+    text = ". ".join(bits)
+    if not text.endswith("."):
+        text += "."
+    return text
+
+
+def _speak_time_week(data: dict[str, Any]) -> str:
+    if not data.get("days_logged"):
+        return str(data.get("message") or "No time blocks logged in this window.")
+    window = int(data.get("window_days") or 7)
+    logged = int(data.get("days_logged") or 0)
+    bits = [f"Last {window} days: {logged} day(s) with time blocks"]
+    ag = data.get("aggregates") if isinstance(data.get("aggregates"), dict) else {}
+    duration = ag.get("sum_duration_s")
+    if isinstance(duration, int) and duration > 0:
+        bits.append(f"{duration}s")
+    days = data.get("days") if isinstance(data.get("days"), list) else []
+    cites = [
+        str(d.get("cite"))
+        for d in days
+        if isinstance(d, dict) and d.get("block_count", 0) > 0 and d.get("cite")
+    ]
+    if cites:
+        bits.append(f"Logged: {', '.join(cites[:2])}")
+    text = ". ".join(bits)
+    if not text.endswith("."):
+        text += "."
+    return text
+
+
 def _speak_due_list(data: dict[str, Any]) -> str:
     loops = data.get("loops") if isinstance(data.get("loops"), list) else []
     count = data.get("count")
@@ -1052,6 +1115,10 @@ def _fast_path_read(
         speech = _speak_nutrition_week(data)
     elif verb == "time_status" or tool == "life_time_status":
         speech = _speak_time_status(data)
+    elif verb == "time_day" or tool == "life_time_day":
+        speech = _speak_time_day(data)
+    elif verb == "time_week" or tool == "life_time_week":
+        speech = _speak_time_week(data)
     elif verb == "due_list" or tool == "memory_open_loops_list":
         speech = _speak_due_list(data)
     elif verb == "gym_status" or tool == "life_gym_status":
@@ -1243,6 +1310,24 @@ def _maybe_gym_write_fast_path(
         return _fast_path_gym_start(session, sink, history, receipts)
     if is_gym_end_utterance(user_text):
         return _fast_path_gym_end(session, sink, history, receipts)
+    return None, None
+
+
+def _maybe_time_write_fast_path(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    user_text: str,
+) -> tuple[str | None, str | None]:
+    """Force time_start before cortex even if pack_hint is missing/wrong."""
+    if session.mode != "agent":
+        return None, None
+    if is_time_start_utterance(user_text):
+        from ada.harness.time_intent import map_time_intent
+
+        args = map_time_intent(user_text)
+        return _fast_path_time_start(session, sink, history, receipts, args)
     return None, None
 
 
@@ -1654,6 +1739,34 @@ def run_turn(
                     adapter,
                     receipts=receipts,
                     template=gym_text,
+                )
+            if last_text:
+                sink.emit("token_delta", {"text": last_text})
+            if end_session:
+                session.end(stop_reason=stop_reason, steps=steps)
+            return LoopResult(
+                text=last_text,
+                stop_reason=stop_reason,
+                steps=steps,
+                tool_receipts=receipts,
+                usage_rounds=usage_rounds,
+                run_path=str(session.run_path),
+                plan=None,
+            )
+
+        time_stop, time_text = _maybe_time_write_fast_path(
+            session, sink, history, receipts, user_text
+        )
+        if time_stop:
+            stop_reason = time_stop
+            last_text = time_text
+            if time_stop == "missing_life_receipt" and not last_text:
+                last_text = LIFE_SAVE_FAIL_ACK
+            if time_stop == "pack_fast_path" and time_text:
+                last_text = apply_register_pass(
+                    adapter,
+                    receipts=receipts,
+                    template=time_text,
                 )
             if last_text:
                 sink.emit("token_delta", {"text": last_text})

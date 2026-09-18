@@ -198,6 +198,8 @@ class Gateway:
             "life_nutrition_day",
             "life_nutrition_week",
             "life_time_status",
+            "life_time_day",
+            "life_time_week",
             "life_gym_status",
             "life_gym_day",
             "life_gym_week",

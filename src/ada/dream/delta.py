@@ -228,6 +228,7 @@ def _summary_text(
         "do not invent numbers when extract_ok is false; abs_html = abstract page not PDF; "
         "keep digests short — never paste full page text. "
         "Life meal metrics use life_nutrition_day/week tools — not Dream delta. "
-        "Gym day/week metrics use life_gym_day/week tools — not Dream delta."
+        "Gym day/week metrics use life_gym_day/week tools — not Dream delta. "
+        "Time day/week metrics use life_time_day/week tools — not Dream delta."
     )
     return "\n".join(lines)

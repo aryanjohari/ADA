@@ -838,6 +838,35 @@ SPECS: tuple[ToolSpec, ...] = (
         schema=_schema("life_time_status", "Active block and today mix by kind."),
     ),
     ToolSpec(
+        name="life_time_day",
+        group="life",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "life_time_day",
+            "Read one local calendar day of time_blocks (named durations).",
+            {"date": {"type": "string", "description": "YYYY-MM-DD local day"}},
+        ),
+    ),
+    ToolSpec(
+        name="life_time_week",
+        group="life",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "life_time_week",
+            "Read last N local days of time_blocks (deterministic reflection).",
+            {
+                "days": {
+                    "type": "integer",
+                    "description": "Window size in local days (default 7, max 31)",
+                }
+            },
+        ),
+    ),
+    ToolSpec(
         name="life_gym_status",
         group="life",
         side_effect="read_local",

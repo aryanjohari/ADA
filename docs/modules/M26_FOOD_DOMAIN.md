@@ -1,13 +1,13 @@
 # M26 food — Phase 2 cited domain memory (first vertical)
 
-**Status:** **LIFE FREEZE (2026-09-17)** — food organ + retrieval closed enough. Restart **1–4 PHONE METAL**; capture spine / Confirm / `nutrition_day`+`week` **METAL**. **OPEN later (not gym blockers):** restart **#5** typed barcode write · **#6** estimate omelette · vocative OPEN #4. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4).  
-**Date:** 2026-09-18 (v1.21)  
+**Status:** **LIFE FREEZE (2026-09-17)** — food organ + retrieval closed enough. Restart **1–4 PHONE METAL**; capture spine / Confirm / `nutrition_day`+`week` **METAL**. **OPEN later (not gym/time blockers):** restart **#5** typed barcode write · **#6** estimate omelette · vocative OPEN #4. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3). **Next = habits Phase 2**, not join.  
+**Date:** 2026-09-19 (v1.22)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **Phase 2 cited domain memory** for **food only** — organ wiring + organism purpose + Dream contract. Not a nutrition textbook. Not cortex prompt stuffing. Not P4 charts.  
 **Depends on:** [`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) (organ · reference · reject) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) (food verbs, §5 nutrient slots) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (decompose + empty-macro guard) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) (bounded recover) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (favorites / presets / targets) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library ≠ logs) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) (WORLDVIEW cites; Dream ~03:30; brief ~05:30)
 
-**Feeds:** gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Food restart **5–6** + vocative OPEN #4 stay named later — not this gate. Join **OPEN later**.
+**Feeds:** gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3). Food restart **5–6** + vocative OPEN #4 stay named later — not this gate. Join **OPEN later**. **Next = habits Phase 2**.
 
 **Name stays `M26_FOOD_DOMAIN.md`:** git-tracked **reference know** for food. Sibling of the agnostic lock, not a charter dump. Runtime `memory/domain/food.md` is **not** shipped here — boot/brief cannot load that path (charter injects FACT slice + WORLDVIEW digest only; `paths.py` has no `domain/` dir). Module doc is the source of truth until a later chat wires a capped slice.
 
@@ -17,6 +17,7 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.22** | 2026-09-19 | **Pointer (no food code):** time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3 — `5a370eb0…`). Do not reopen food 5–6. **Next:** habits Phase 2; join later. |
 | **v1.21** | 2026-09-18 | **Pointer (no food code):** gym capture v1.4 **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) — happy `504fb6a5…`; miss `1a54acda…`; day/week `2306ab59…`). Do not reopen food 5–6. **Next:** leftover survey; join later. |
 | **v1.20** | 2026-09-18 | **Pointer (no food code):** gym capture v1.3 close ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) — happy path phone `504fb6a5…` + miss pytest). Do not reopen food 5–6. **Next:** leftover survey; join later. |
 | **v1.19** | 2026-09-17 | **Pointer (no food code):** gym pack door v1.2 landed ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md)). Do not reopen food 5–6. **Next:** food+gym `local_day` join. |
@@ -418,6 +419,6 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 
 ---
 
-**Next:** leftover survey (time/habits/people/dues); **join later**. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Do not reopen food 5–6.
+**Next:** habits Phase 2 ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3 CLOSED → copy checklist). **Join later**. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED**. Do not reopen food 5–6.
 
-*End M26 food. LIFE FREEZE 2026-09-17 (v1.21) — 1–4 PHONE METAL; 5–6 + vocative OPEN later; gym v1.4 CLOSED; logs are truth; this doc is the lens.*
+*End M26 food. LIFE FREEZE 2026-09-17 (v1.22 pointer) — 1–4 PHONE METAL; 5–6 + vocative OPEN later; gym v1.4 CLOSED; time v1.3 CLOSED; logs are truth; this doc is the lens.*

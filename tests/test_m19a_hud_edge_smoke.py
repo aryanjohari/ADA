@@ -20,6 +20,10 @@ Utterance table (test-local; not a pack YAML):
 | eat_q         | what did i eat                                 | pack_fast_path        |
 | macros        | macros                                         | pack_fast_path        |
 | good_morning  | good morning                                   | pack_fast_path        |
+| start_timer   | start timer: morning cooking                   | pack_fast_path        |
+| hanging       | I'm hanging clothes                            | pack_fast_path        |
+| whats_running | what's running                                 | pack_fast_path        |
+| gym_at        | I'm at the gym                                 | pack_fast_path        |
 | due_done_miss | done: flurmble glorp                           | missing_life_receipt  |
 """
 
@@ -98,6 +102,26 @@ HUD_EDGE_SMOKE: list[dict[str, str]] = [
     {"id": "eat_q", "utterance": "what did i eat", "expect": "pack_fast_path"},
     {"id": "macros", "utterance": "macros", "expect": "pack_fast_path"},
     {"id": "good_morning", "utterance": "good morning", "expect": "pack_fast_path"},
+    {
+        "id": "start_timer_cooking",
+        "utterance": "start timer: morning cooking",
+        "expect": "pack_fast_path",
+    },
+    {
+        "id": "hanging_clothes",
+        "utterance": "I'm hanging clothes",
+        "expect": "pack_fast_path",
+    },
+    {
+        "id": "whats_running",
+        "utterance": "what's running",
+        "expect": "pack_fast_path",
+    },
+    {
+        "id": "gym_at",
+        "utterance": "I'm at the gym",
+        "expect": "pack_fast_path",
+    },
     {
         "id": "due_done_miss",
         "utterance": "done: flurmble glorp",
@@ -338,6 +362,69 @@ def test_hud_smoke_time_wake_sleep_stop(hud_smoke_root: Path) -> None:
     assert today_after.get("running_timer") is None
 
 
+def test_hud_smoke_time_start_shapes_auto_stop_gym_fence(hud_smoke_root: Path) -> None:
+    cooking = _agent_turn("start timer: morning cooking")
+    assert cooking.stop_reason == "pack_fast_path"
+    assert "life_time_start" in _tools(cooking)
+    assert "life_meal_log" not in _tools(cooking)
+    assert "life_gym_start" not in _tools(cooking)
+    _assert_no_facts_append_ok(cooking)
+    assert _running_count() == 1
+    start = next(r for r in cooking.tool_receipts if r.get("tool") == "life_time_start")
+    assert (start.get("data") or {}).get("kind") == "cooking"
+    first_id = (start.get("data") or {}).get("block_id")
+
+    hang = _agent_turn("I'm hanging clothes")
+    assert hang.stop_reason == "pack_fast_path"
+    assert "life_time_start" in _tools(hang)
+    _assert_no_facts_append_ok(hang)
+    assert _running_count() == 1
+    second = next(r for r in hang.tool_receipts if r.get("tool") == "life_time_start")
+    data = second.get("data") or {}
+    assert data.get("label") == "hanging clothes"
+    assert data.get("auto_stopped_prior") == first_id
+    with open_life_db(paths=get_paths()) as conn:
+        n_running = conn.execute(
+            "SELECT COUNT(*) AS n FROM time_blocks WHERE status = 'running'"
+        ).fetchone()["n"]
+        prior = conn.execute(
+            "SELECT status, auto_stopped_by FROM time_blocks WHERE block_id = ?",
+            (first_id,),
+        ).fetchone()
+    assert int(n_running) == 1
+    assert prior["status"] == "orphan_closed"
+    assert prior["auto_stopped_by"] == data.get("block_id")
+
+    status = run_turn(
+        ChatSession(mode="observe"), "what's running", _ShouldNotRunAdapter()
+    )
+    assert status.stop_reason == "pack_fast_path"
+    assert "life_time_status" in _tools(status)
+    assert "life_time_start" not in _tools(status)
+
+    stop_ok = _agent_turn("stop timer")
+    assert stop_ok.stop_reason == "pack_fast_path"
+    assert _running_count() == 0
+
+    miss = _agent_turn("stop timer")
+    assert miss.stop_reason == "pack_fast_path"
+    miss_stop = next(r for r in miss.tool_receipts if r.get("tool") == "life_time_stop")
+    miss_data = miss_stop.get("data") or {}
+    assert miss_data.get("ok") is False
+    assert miss_data.get("reason") == "no_active_block"
+    spoken = (miss.text or "").lower()
+    assert "minute" not in spoken
+    assert "logged" not in spoken
+    _assert_no_facts_append_ok(miss)
+
+    gym = _agent_turn("I'm at the gym")
+    assert gym.stop_reason == "pack_fast_path"
+    assert "life_gym_start" in _tools(gym)
+    assert "life_time_start" not in _tools(gym)
+    _assert_no_facts_append_ok(gym)
+    assert _running_count() == 0
+
+
 def test_hud_smoke_lift_bench(hud_smoke_root: Path) -> None:
     result = _agent_turn("log lift: flat bench 50kg x6")
     assert result.stop_reason == "pack_fast_path"
@@ -489,6 +576,10 @@ def test_hud_edge_smoke_table_ids_cover_operator_list() -> None:
         "eat_q",
         "macros",
         "good_morning",
+        "start_timer_cooking",
+        "hanging_clothes",
+        "whats_running",
+        "gym_at",
         "due_done_miss",
     }
 

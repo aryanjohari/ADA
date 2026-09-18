@@ -303,6 +303,11 @@ def _pack_hint_addendum(pack_hint: dict[str, object] | None) -> str:
                 f"- HARD: pack routed `{verb}` — do not substitute "
                 "`life_gym_status` for day/week queries or `life_gym_week` for a single day."
             )
+        if verb in {"time_day", "time_week"}:
+            lines.append(
+                f"- HARD: pack routed `{verb}` — do not substitute "
+                "`life_time_status` for day/week queries or `life_time_week` for a single day."
+            )
         if verb in {"streak_show", "who_is", "people_remind"}:
             lines.append(
                 "- HARD: habit continuity requires life_habit_status; "
@@ -431,6 +436,8 @@ def build_system_charter(
             "Day macros require life_nutrition_day read — never invent totals. "
             "Gym day/week require life_gym_day / life_gym_week — never invent tonnage; "
             "do not substitute life_gym_status for those reads. "
+            "Time day/week require life_time_day / life_time_week — never invent duration; "
+            "do not substitute life_time_status for those reads. "
             "Single active timer: life_time_start / life_time_stop; never parallel blocks. "
             "Habits (M19a P1): habit_do ticks habit_events — distinct from time_start custom blocks. "
             "Continuity rate only — never shame streak / guilt copy. "

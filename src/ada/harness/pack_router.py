@@ -17,6 +17,7 @@ from ada.harness.nutrition_date import (
     local_today,
     parse_nutrition_date,
 )
+from ada.harness.time_date import is_time_read_shape, parse_time_date
 from ada.harness.time_intent import map_time_intent
 
 _DEFAULT_PACK = "life_p0.yaml"
@@ -45,8 +46,19 @@ _LIFT_SETS_AT_LOAD = re.compile(
 )
 _GYM_START_SHAPE = re.compile(
     r"(?:"
-    r"\b(?:i(?:['’]?m|\s+am)\s+)?at\s+(?:the\s+)?gym\b"
-    r"|\b(?:i\s+)?start(?:ed|ing)?\s+(?:a\s+|the\s+)?gym\b"
+    r"(?:i(?:['’]?m|\s+am)\s+)?at\s+(?:the\s+)?gym"
+    r"|(?:i\s+)?start(?:ed|ing)?\s+(?:a\s+|the\s+)?gym"
+    r")\.?\s*$",
+    re.IGNORECASE,
+)
+# Time pack door — start-shapes only. Labels are slots, not YAML/regex per phrase.
+# Ordered most-specific first so "I'm starting X" does not collapse to "I'm X".
+_TIME_START_SHAPE = re.compile(
+    r"^(?:"
+    r"i\s+started\s+\S.*"
+    r"|i(?:['’]?m|\s+am)\s+starting\s+\S.*"
+    r"|starting\s+\S.*"
+    r"|i(?:['’]?m|\s+am)\s+\S.*"
     r")",
     re.IGNORECASE,
 )
@@ -107,6 +119,8 @@ READ_PACK_VERBS = frozenset(
         "nutrition_day",
         "nutrition_week",
         "time_status",
+        "time_day",
+        "time_week",
         "due_list",
         "gym_status",
         "gym_day",
@@ -293,6 +307,15 @@ def _route_from_pack(
                 args["date"] = parsed
             elif verb == "gym_day":
                 args.setdefault("date", local_today())
+    elif tool == "life_time_week":
+        args.setdefault("days", 7)
+    elif tool == "life_time_day":
+        if not has_week_cue(raw):
+            parsed = parse_time_date(raw)
+            if parsed:
+                args["date"] = parsed
+            elif verb == "time_day":
+                args.setdefault("date", local_today())
     return {
         "verb": verb,
         "tool": tool,
@@ -355,6 +378,28 @@ def _route_gym_read(
     return routed
 
 
+def _route_time_read(
+    raw: str,
+    *,
+    config: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Structural time day/week read. Not time_status / what's running."""
+    if not is_time_read_shape(raw):
+        return None
+    if has_week_cue(raw):
+        routed = _route_from_pack("time_week", raw, raw, config=config)
+        if routed is not None:
+            routed["args"]["days"] = 7
+        return routed
+    parsed = parse_time_date(raw)
+    if parsed is None:
+        return None
+    routed = _route_from_pack("time_day", raw, raw, config=config)
+    if routed is not None:
+        routed["args"]["date"] = parsed
+    return routed
+
+
 def _route_aliases(
     raw: str,
     lower: str,
@@ -370,6 +415,9 @@ def _route_aliases(
         pattern = str(alias.get("pattern") or "").strip().lower()
         verb = str(alias.get("verb") or "").strip()
         if pattern and verb and pattern in lower:
+            # Substring "starting gym" must not steal "I'm starting gym commute".
+            if verb == "gym_start" and not is_gym_start_utterance(raw):
+                continue
             return _route_from_pack(verb, raw, raw, config=config)
     return None
 
@@ -391,6 +439,28 @@ def is_gym_start_utterance(text: str) -> bool:
     if not raw or gym_read_takes_priority(raw):
         return False
     return bool(_GYM_START_SHAPE.match(raw))
+
+
+def is_time_start_utterance(text: str) -> bool:
+    """Structural time-start NL — start-shapes only; hint optional.
+
+    Inserted after meal / lift / gym start / gym end so those organs win.
+    Bare spine labels without a start-shape are not a door.
+    """
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw:
+        return False
+    if is_meal_log_utterance(raw) or is_lift_log_utterance(raw):
+        return False
+    if is_incomplete_lift_utterance(raw):
+        return False
+    if is_gym_start_utterance(raw) or is_gym_end_utterance(raw):
+        return False
+    lower = raw.lower()
+    if lower.startswith("start focus") or lower.startswith("start timer"):
+        return True
+    return bool(_TIME_START_SHAPE.match(raw))
 
 
 def is_gym_end_utterance(text: str) -> bool:
@@ -563,6 +633,10 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
     if nutrition is not None:
         return nutrition
 
+    timed = _route_time_read(raw, config=cfg)
+    if timed is not None:
+        return timed
+
     # Lift writes before YAML aliases so "at the gym" cannot steal kg×reps NL.
     if is_lift_log_utterance(raw):
         lift_args = lift_log_fast_path_args(raw) or {}
@@ -636,5 +710,9 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
 
     if is_gym_end_utterance(raw):
         return _route_from_pack("gym_end", raw, raw, config=cfg)
+
+    # After meal / lift / gym start / gym end — start-shapes only, hint optional.
+    if is_time_start_utterance(raw):
+        return _route_from_pack("time_start", raw, raw, config=cfg)
 
     return None
