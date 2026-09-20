@@ -18,6 +18,8 @@ CONFIRM_FOOD = "Tap the right food, then Confirm."
 CONFIRM_SPLIT = "Gym's open — Confirm split on the card if you want me to remember it."
 CONFIRM_HABIT = "Which habit — tap Confirm on the card."
 CONFIRM_HABIT_CREATE = "Confirm save habit — tap Confirm on the card."
+CONFIRM_PERSON = "Which person — tap Confirm on the card."
+CONFIRM_PERSON_CREATE = "Confirm save person — tap Confirm on the card."
 
 # Back-compat aliases for substring skip checks.
 _CONFIRM_LINE = CONFIRM_LINE
@@ -140,9 +142,24 @@ def should_skip_register_pass(template: str | None, receipts: list[dict[str, Any
         CONFIRM_SPLIT,
         CONFIRM_HABIT,
         CONFIRM_HABIT_CREATE,
+        CONFIRM_PERSON,
+        CONFIRM_PERSON_CREATE,
     ):
         if marker in tmpl:
             return True
+    stripped = tmpl.strip()
+    if re.fullmatch(
+        r"(?:due add|remind|due done) logged\.|\d+ open due\(s\)\.|"
+        r"(?:person|note|birthday|alias set) saved\.|"
+        r"matched .+\.|"
+        r"no person match — offer to capture a stub\.|"
+        r"no upcoming kin events in horizon\.|"
+        r"upcoming: .+\.|"
+        r"\d+ matches — tap confirm on the card\.",
+        stripped,
+        flags=re.IGNORECASE,
+    ):
+        return True
     for row in receipts or []:
         if row.get("needs_confirm") or (row.get("data") or {}).get("needs_confirm"):
             return True

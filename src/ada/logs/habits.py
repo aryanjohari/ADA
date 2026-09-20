@@ -61,6 +61,31 @@ def list_habit_definitions(*, paths: DataPaths | None = None) -> list[dict[str, 
     return out
 
 
+def _slug_habit_id(display_name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", _normalize_name(display_name)).strip("_")
+    return f"habit_{slug}" if slug else ""
+
+
+def _canonical_habit(matches: list[dict[str, Any]]) -> dict[str, Any]:
+    """Prefer unsuffixed slug, then seed, then stable habit_id order."""
+    exact = [
+        h
+        for h in matches
+        if h.get("habit_id") == _slug_habit_id(str(h.get("display_name") or ""))
+    ]
+    pool = exact or [h for h in matches if h.get("source") == "seed"] or matches
+    return sorted(pool, key=lambda h: str(h.get("habit_id") or ""))[0]
+
+
+def _collapse_same_display_name(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Identical display names are one habit, not a picker (seed Skincare vs teach-in skincare)."""
+    names = {_normalize_name(str(h.get("display_name") or "")) for h in matches}
+    names.discard("")
+    if len(matches) < 2 or len(names) != 1:
+        return matches
+    return [_canonical_habit(matches)]
+
+
 def resolve_habit(name: str, *, paths: DataPaths | None = None) -> dict[str, Any]:
     """Resolve habit name/alias to 0/1/many."""
     needle = _normalize_name(name)
@@ -71,6 +96,7 @@ def resolve_habit(name: str, *, paths: DataPaths | None = None) -> dict[str, Any
         names = {_normalize_name(habit["display_name"])} | set(habit.get("aliases") or [])
         if needle in names or needle == _normalize_name(habit["habit_id"].removeprefix("habit_")):
             matches.append(habit)
+    matches = _collapse_same_display_name(matches)
     if len(matches) == 1:
         return {"ok": True, "habit_id": matches[0]["habit_id"], "habit": matches[0], "matches": matches}
     return {
@@ -173,8 +199,7 @@ def upsert_habit_definition(
 
 def _habit_id_from_display_name(display_name: str, *, paths: DataPaths | None = None) -> str:
     """Slug habit_id from display name; avoid colliding with an existing id."""
-    slug = re.sub(r"[^a-z0-9]+", "_", _normalize_name(display_name)).strip("_")
-    base = f"habit_{slug}" if slug else f"habit_{uuid.uuid4().hex[:8]}"
+    base = _slug_habit_id(display_name) or f"habit_{uuid.uuid4().hex[:8]}"
     existing = {h["habit_id"] for h in list_habit_definitions(paths=paths)}
     if base not in existing:
         return base
@@ -210,6 +235,31 @@ def create_habit(
             "tick_after": bool(tick_after),
             "source": "teach_in_flow",
         }
+    existing = resolve_habit(name, paths=paths)
+    if existing.get("ok"):
+        habit_id = str(existing["habit_id"])
+        prior = existing.get("habit") if isinstance(existing.get("habit"), dict) else {}
+        out: dict[str, Any] = {
+            "ok": True,
+            "habit_id": habit_id,
+            "display_name": str(prior.get("display_name") or name),
+            "source": "reused",
+            "receipt_id": receipt_id,
+        }
+        if tick_after and receipt_id:
+            tick = habit_do(
+                habit_id=habit_id,
+                note=note,
+                receipt_id=receipt_id,
+                paths=paths,
+            )
+            out["tick"] = tick
+            if tick.get("ok"):
+                out["event_id"] = tick.get("event_id")
+                out["local_day"] = tick.get("local_day")
+            elif tick.get("reason") == "already_done":
+                out["tick_reason"] = "already_done"
+        return out
     habit_id = _habit_id_from_display_name(name, paths=paths)
     written = upsert_habit_definition(
         habit_id=habit_id,

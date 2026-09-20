@@ -960,12 +960,32 @@ def run_life_habit_status(args: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def run_life_habit_day(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs.habit_reflection import habit_day
+
+    return habit_day(date=args.get("date"))
+
+
+def run_life_habit_week(args: dict[str, Any]) -> dict[str, Any]:
+    from ada.logs.habit_reflection import habit_window, write_habit_reflection_scratch
+
+    days = args.get("days", 7)
+    try:
+        days_n = int(days)
+    except (TypeError, ValueError):
+        days_n = 7
+    result = habit_window(days=days_n)
+    write_habit_reflection_scratch(result)
+    return result
+
+
 def run_life_person_capture(args: dict[str, Any]) -> dict[str, Any]:
     receipt_id = str(args.get("receipt_id") or "")
     outcome = people_mod.person_capture(
         utterance=args.get("utterance"),
         display_name=args.get("display_name"),
         note=args.get("note"),
+        person_id=args.get("person_id"),
         confirmed=bool(args.get("confirmed", False)),
     )
     if outcome.get("needs_confirm"):
@@ -981,15 +1001,16 @@ def run_life_who_is(args: dict[str, Any]) -> dict[str, Any]:
 
 def run_life_person_note(args: dict[str, Any]) -> dict[str, Any]:
     receipt_id = str(args.get("receipt_id") or "")
-    return _write(
-        "life_person_note",
-        receipt_id,
-        people_mod.person_note(
-            person_id=args.get("person_id"),
-            mention=args.get("mention"),
-            text=str(args.get("text") or ""),
-        ),
+    outcome = people_mod.person_note(
+        person_id=args.get("person_id"),
+        mention=args.get("mention"),
+        text=str(args.get("text") or ""),
+        confirmed=bool(args.get("confirmed", False)),
     )
+    if outcome.get("needs_confirm"):
+        outcome["ok"] = False
+        return outcome
+    return _write("life_person_note", receipt_id, outcome)
 
 
 def run_life_birthday_set(args: dict[str, Any]) -> dict[str, Any]:
@@ -1081,6 +1102,8 @@ DISPATCH = {
     "life_habit_miss": run_life_habit_miss,
     "life_routine_run": run_life_routine_run,
     "life_habit_status": run_life_habit_status,
+    "life_habit_day": run_life_habit_day,
+    "life_habit_week": run_life_habit_week,
     "life_person_capture": run_life_person_capture,
     "life_who_is": run_life_who_is,
     "life_person_note": run_life_person_note,

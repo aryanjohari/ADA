@@ -121,6 +121,103 @@ def _scale_preview_to_line(
     return out
 
 
+def _habit_candidate_ids(args: dict[str, Any]) -> set[str]:
+    cands = list(args.get("candidates") or [])
+    resolve = args.get("resolve") if isinstance(args.get("resolve"), dict) else {}
+    if not cands:
+        cands = list(resolve.get("candidates") or [])
+    ids: set[str] = set()
+    for cand in cands:
+        if not isinstance(cand, dict):
+            continue
+        hid = str(cand.get("habit_id") or cand.get("ref_id") or "").strip()
+        if hid:
+            ids.add(hid)
+    return ids
+
+
+def _people_candidate_ids(args: dict[str, Any]) -> set[str]:
+    cands = list(args.get("candidates") or [])
+    resolve = args.get("resolve") if isinstance(args.get("resolve"), dict) else {}
+    if not cands:
+        cands = list(resolve.get("candidates") or [])
+    ids: set[str] = set()
+    for cand in cands:
+        if not isinstance(cand, dict):
+            continue
+        pid = str(cand.get("person_id") or cand.get("ref_id") or "").strip()
+        if pid:
+            ids.add(pid)
+    return ids
+
+
+def _patch_habit_confirm_selection(
+    args: dict[str, Any],
+    selected_ref_ids: dict[str, str] | None,
+    selected_ref_id: str | None = None,
+) -> dict[str, Any]:
+    """Apply operator habit pick to stashed tick args (Consent Integrity).
+
+    HACK / invented habit_id from the client is ignored. Only ids in the
+    Confirm candidate pool bind.
+    """
+    pool = _habit_candidate_ids(args)
+    picked = (selected_ref_id or "").strip() or None
+    if selected_ref_ids:
+        for value in selected_ref_ids.values():
+            token = str(value or "").strip()
+            if token and token in pool:
+                picked = token
+                break
+    if not picked:
+        return args
+    if picked not in pool:
+        raise ValueError(f"invalid habit selection {picked!r}")
+    merged = dict(args)
+    merged["habit_id"] = picked
+    resolve = merged.get("resolve")
+    if isinstance(resolve, dict):
+        resolve_copy = dict(resolve)
+        resolve_copy["proposed_habit_id"] = picked
+        merged["resolve"] = resolve_copy
+    return merged
+
+
+def _patch_people_confirm_selection(
+    args: dict[str, Any],
+    selected_ref_ids: dict[str, str] | None,
+    selected_ref_id: str | None = None,
+) -> dict[str, Any]:
+    """Apply operator person pick to stashed capture/note/alias args.
+
+    HACK / invented person_id from the client is ignored. Only ids in the
+    Confirm candidate pool bind.
+    """
+    pool = _people_candidate_ids(args)
+    picked = (selected_ref_id or "").strip() or None
+    if selected_ref_ids:
+        for value in selected_ref_ids.values():
+            token = str(value or "").strip()
+            if not token:
+                continue
+            if token not in pool:
+                raise ValueError(f"invalid person selection {token!r}")
+            picked = token
+            break
+    if picked and picked not in pool:
+        raise ValueError(f"invalid person selection {picked!r}")
+    if not picked:
+        return args
+    merged = dict(args)
+    merged["person_id"] = picked
+    resolve = merged.get("resolve")
+    if isinstance(resolve, dict):
+        resolve_copy = dict(resolve)
+        resolve_copy["proposed_person_id"] = picked
+        merged["resolve"] = resolve_copy
+    return merged
+
+
 def _patch_meal_confirm_selection(
     args: dict[str, Any],
     selected_ref_ids: dict[str, str] | None,
@@ -432,6 +529,11 @@ class ChatService:
 
         with self._lock:
             stashed = False
+            client_selected_ref_id = None
+            if isinstance(args, dict):
+                raw_sel = args.get("selected_ref_id")
+                if raw_sel:
+                    client_selected_ref_id = str(raw_sel).strip() or None
             if pending_id:
                 pending = self.pending_confirms.get(pending_id)
                 if pending is None:
@@ -454,6 +556,22 @@ class ChatService:
                 and isinstance(merged.get("resolve"), dict)
             ):
                 merged = _patch_meal_confirm_selection(merged, selected_ref_ids)
+            if stashed and tool in {"life_habit_do", "life_habit_miss"}:
+                merged = _patch_habit_confirm_selection(
+                    merged,
+                    selected_ref_ids,
+                    selected_ref_id=client_selected_ref_id,
+                )
+            if stashed and tool in {
+                "life_person_capture",
+                "life_person_note",
+                "life_alias_set",
+            }:
+                merged = _patch_people_confirm_selection(
+                    merged,
+                    selected_ref_ids,
+                    selected_ref_id=client_selected_ref_id,
+                )
             # Draft tools need the HUD session id if missing from stash.
             if tool.startswith("life_meal_draft_") and not merged.get("session_id"):
                 merged["session_id"] = self.session.session_id

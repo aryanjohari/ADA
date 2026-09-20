@@ -19,6 +19,8 @@ from ada.harness.mouth import (
     CONFIRM_HABIT,
     CONFIRM_HABIT_CREATE,
     CONFIRM_LINE,
+    CONFIRM_PERSON,
+    CONFIRM_PERSON_CREATE,
     CONFIRM_SPLIT,
     apply_register_pass,
 )
@@ -26,15 +28,30 @@ from ada.harness.pack_router import (
     ADMIN_WRITE_VERBS,
     CONFIRM_BOUND_VERBS,
     READ_PACK_VERBS,
+    alias_set_body,
+    birthday_set_body,
     gym_read_takes_priority,
+    is_alias_set_utterance,
+    is_birthday_set_utterance,
+    is_due_add_utterance,
+    is_due_done_utterance,
     is_gym_end_utterance,
     is_gym_start_utterance,
+    is_habit_do_utterance,
+    is_habit_miss_utterance,
     is_incomplete_lift_utterance,
     is_lift_log_utterance,
     is_meal_log_utterance,
+    is_people_remind_utterance,
+    is_person_capture_utterance,
+    is_person_note_utterance,
+    is_remind_utterance,
     is_time_start_utterance,
+    is_who_is_utterance,
     lift_log_fast_path_args,
     meal_log_fast_path_args,
+    person_note_body,
+    who_is_mention,
 )
 from ada.harness.plan_artifact import parse_plan_from_assistant
 from ada.harness.session import ChatSession
@@ -181,6 +198,10 @@ def _execute_tool(
             card_args["resolve"] = data["resolve"]
         if data.get("candidates") and not card_args.get("candidates"):
             card_args["candidates"] = data["candidates"]
+        if data.get("proposed_display_name") and not card_args.get("proposed_display_name"):
+            card_args["proposed_display_name"] = data["proposed_display_name"]
+        if data.get("display_name") and not card_args.get("display_name"):
+            card_args["display_name"] = data["display_name"]
         if data.get("lines") and not card_args.get("lines"):
             card_args["lines"] = data["lines"]
         if data.get("meal_slot") is not None and card_args.get("meal_slot") is None:
@@ -1060,6 +1081,63 @@ def _speak_habit_status(data: dict[str, Any]) -> str:
     return text
 
 
+def _speak_habit_day(data: dict[str, Any]) -> str:
+    date = data.get("date") or "that day"
+    n = int(data.get("event_count") or 0)
+    if n == 0:
+        return str(data.get("message") or f"No habit ticks for {date}.")
+    done = int(data.get("done_count") or 0)
+    miss = int(data.get("miss_count") or 0)
+    bits = [f"{date}: {done} done, {miss} miss"]
+    cite = data.get("cite")
+    if cite:
+        bits.append(str(cite))
+    text = ". ".join(bits)
+    if not text.endswith("."):
+        text += "."
+    return text
+
+
+def _speak_habit_week(data: dict[str, Any]) -> str:
+    if not data.get("days_logged"):
+        return str(data.get("message") or "No habit ticks in this window.")
+    window = int(data.get("window_days") or 7)
+    logged = int(data.get("days_logged") or 0)
+    bits = [f"Last {window} days: {logged} day(s) with habit ticks"]
+    pct = data.get("continuity_pct")
+    if pct is None:
+        ag = data.get("aggregates") if isinstance(data.get("aggregates"), dict) else {}
+        pct = ag.get("continuity_pct")
+    if isinstance(pct, int):
+        bits.append(f"Continuity {pct}%")
+    days = data.get("days") if isinstance(data.get("days"), list) else []
+    cites = [
+        str(d.get("cite"))
+        for d in days
+        if isinstance(d, dict) and d.get("event_count", 0) > 0 and d.get("cite")
+    ]
+    if cites:
+        bits.append(", ".join(cites[:2]))
+    text = ". ".join(bits)
+    if not text.endswith("."):
+        text += "."
+    return text
+
+
+def _speak_habit_tick(data: dict[str, Any], *, verb: str = "habit_do") -> str:
+    """Ack from habit write receipt only — no invented tick, no shame copy."""
+    if data.get("ok") is False:
+        reason = str(data.get("reason") or "")
+        if reason == "already_done":
+            return "Already done today."
+        return LIFE_SAVE_FAIL_ACK
+    if verb == "habit_miss" or data.get("kind") == "miss":
+        return "Habit miss."
+    if verb == "routine_run":
+        return "Routine logged."
+    return "Habit logged."
+
+
 def _speak_who_is(data: dict[str, Any]) -> str:
     count = int(data.get("match_count") or len(data.get("candidates") or []))
     if count == 0:
@@ -1129,6 +1207,10 @@ def _fast_path_read(
         speech = _speak_gym_week(data)
     elif verb == "streak_show" or tool == "life_habit_status":
         speech = _speak_habit_status(data)
+    elif verb == "habit_day" or tool == "life_habit_day":
+        speech = _speak_habit_day(data)
+    elif verb == "habit_week" or tool == "life_habit_week":
+        speech = _speak_habit_week(data)
     elif verb == "who_is" or tool == "life_who_is":
         speech = _speak_who_is(data)
     elif verb == "people_remind" or tool == "life_people_remind":
@@ -1179,12 +1261,16 @@ def _fast_path_due(
     sink: StreamSink,
     history: list[Any],
     receipts: list[dict[str, Any]],
+    *,
+    verb: str | None = None,
+    utterance: str | None = None,
 ) -> tuple[str | None, str | None]:
     hint = session.pack_hint or {}
-    verb = str(hint.get("verb") or "")
+    verb = str(verb or hint.get("verb") or "")
     args = hint.get("args") if isinstance(hint.get("args"), dict) else {}
     utterance = str(
-        (args or {}).get("utterance")
+        utterance
+        or (args or {}).get("utterance")
         or (args or {}).get("text")
         or hint.get("body")
         or ""
@@ -1331,6 +1417,143 @@ def _maybe_time_write_fast_path(
     return None, None
 
 
+def _maybe_habit_write_fast_path(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    user_text: str,
+) -> tuple[str | None, str | None]:
+    """Force habit_do / habit_miss before cortex; pack_hint optional."""
+    if session.mode != "agent":
+        return None, None
+    args = {"utterance": user_text, "name": user_text}
+    if is_habit_do_utterance(user_text):
+        return _fast_path_habit(
+            session,
+            sink,
+            history,
+            receipts,
+            verb="habit_do",
+            tool="life_habit_do",
+            args=args,
+        )
+    if is_habit_miss_utterance(user_text):
+        return _fast_path_habit(
+            session,
+            sink,
+            history,
+            receipts,
+            verb="habit_miss",
+            tool="life_habit_miss",
+            args=args,
+        )
+    return None, None
+
+
+def _maybe_due_write_fast_path(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    user_text: str,
+) -> tuple[str | None, str | None]:
+    """Force due_add / remind / due_done before cortex; pack_hint optional."""
+    if session.mode != "agent":
+        return None, None
+    if is_due_done_utterance(user_text):
+        return _fast_path_due(
+            session, sink, history, receipts, verb="due_done", utterance=user_text
+        )
+    if is_remind_utterance(user_text):
+        return _fast_path_due(
+            session, sink, history, receipts, verb="remind", utterance=user_text
+        )
+    if is_due_add_utterance(user_text):
+        return _fast_path_due(
+            session, sink, history, receipts, verb="due_add", utterance=user_text
+        )
+    return None, None
+
+
+def _maybe_people_fast_path(
+    session: ChatSession,
+    sink: StreamSink,
+    history: list[Any],
+    receipts: list[dict[str, Any]],
+    user_text: str,
+) -> tuple[str | None, str | None]:
+    """Force the six people verbs before cortex; pack_hint optional.
+
+    Writes Agent-only. Reads Observe+Agent. After meal/lift/gym/time/habit/due.
+    """
+    if is_person_capture_utterance(user_text):
+        if session.mode != "agent":
+            return None, None
+        return _fast_path_people_write(
+            session,
+            sink,
+            history,
+            receipts,
+            verb="person_capture",
+            tool="life_person_capture",
+            args={"utterance": user_text},
+        )
+    if is_person_note_utterance(user_text):
+        if session.mode != "agent":
+            return None, None
+        return _fast_path_people_write(
+            session,
+            sink,
+            history,
+            receipts,
+            verb="person_note",
+            tool="life_person_note",
+            args={"text": person_note_body(user_text)},
+        )
+    if is_birthday_set_utterance(user_text):
+        if session.mode != "agent":
+            return None, None
+        return _fast_path_people_write(
+            session,
+            sink,
+            history,
+            receipts,
+            verb="birthday_set",
+            tool="life_birthday_set",
+            args={"body": birthday_set_body(user_text)},
+        )
+    if is_alias_set_utterance(user_text):
+        if session.mode != "agent":
+            return None, None
+        return _fast_path_confirm_bound(
+            session,
+            sink,
+            history,
+            receipts,
+            verb="alias_set",
+            tool="life_alias_set",
+            args={"utterance": alias_set_body(user_text)},
+        )
+    if session.mode not in ("observe", "agent"):
+        return None, None
+    if is_who_is_utterance(user_text):
+        session.pack_hint = {
+            "verb": "who_is",
+            "tool": "life_who_is",
+            "args": {"mention": who_is_mention(user_text)},
+        }
+        return _fast_path_read(session, sink, history, receipts)
+    if is_people_remind_utterance(user_text):
+        session.pack_hint = {
+            "verb": "people_remind",
+            "tool": "life_people_remind",
+            "args": {},
+        }
+        return _fast_path_read(session, sink, history, receipts)
+    return None, None
+
+
 def _fast_path_habit(
     session: ChatSession,
     sink: StreamSink,
@@ -1382,10 +1605,11 @@ def _fast_path_habit(
     )
     last = receipts[-1] if receipts else {}
     if not last.get("ok"):
-        reason = (last.get("data") or {}).get("reason") if isinstance(last.get("data"), dict) else None
+        data = last.get("data") if isinstance(last.get("data"), dict) else {}
+        reason = data.get("reason")
         if reason == "already_done":
-            return "pack_fast_path", "Already logged today."
-        return "missing_life_receipt", None
+            return "pack_fast_path", _speak_habit_tick(data, verb=verb)
+        return "missing_life_receipt", _speak_habit_tick(data or {"ok": False}, verb=verb)
     _execute_tool(
         session,
         sink,
@@ -1395,11 +1619,10 @@ def _fast_path_habit(
         args={},
         call_id=f"{verb}-status",
     )
-    if verb == "habit_miss":
-        return "pack_fast_path", "Habit miss logged."
-    if verb == "routine_run":
-        return "pack_fast_path", "Routine logged."
-    return "pack_fast_path", "Habit logged."
+    write_data = last.get("data") if isinstance(last.get("data"), dict) else {}
+    return "pack_fast_path", _speak_habit_tick(
+        {"ok": True, **write_data}, verb=verb
+    )
 
 
 def _fast_path_people_write(
@@ -1419,7 +1642,29 @@ def _fast_path_people_write(
         from ada.harness.people_spine import build_capture_args
 
         parsed = build_capture_args(utterance)
-        if not parsed.get("ok"):
+        if parsed.get("needs_confirm"):
+            confirm_tool = str(parsed.get("confirm_tool") or tool)
+            tick_args = parsed.get("args")
+            if not isinstance(tick_args, dict):
+                return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+            _execute_tool(
+                session,
+                sink,
+                history,
+                receipts,
+                tool=confirm_tool,
+                args=tick_args,
+                call_id="person-capture-confirm-probe",
+            )
+            last = receipts[-1] if receipts else {}
+            if parsed.get("create"):
+                return "pack_fast_path", CONFIRM_PERSON_CREATE
+            if last.get("needs_confirm") or (last.get("data") or {}).get("needs_confirm"):
+                return "pack_fast_path", CONFIRM_PERSON
+            if last.get("ok"):
+                return "pack_fast_path", "Person saved."
+            return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+        if not parsed.get("ok") or not parsed.get("args"):
             return "missing_life_receipt", None
         _execute_tool(
             session,
@@ -1461,22 +1706,41 @@ def _fast_path_people_write(
     if verb == "person_note":
         text = str(args.get("text") or "").strip()
         mention = str(args.get("mention") or "").strip()
-        if not text:
+        blob = " ".join(p for p in (mention, text) if p).strip() or text
+        if not blob:
             return "missing_life_receipt", None
-        from ada.memory import people as people_mod
+        from ada.harness.people_spine import build_note_args
 
-        if not args.get("person_id") and mention:
-            resolved = people_mod.resolve_mention(mention)
-            if not resolved.get("ok"):
-                return "missing_life_receipt", None
-            args = {**args, "person_id": resolved["person_id"]}
+        parsed = build_note_args(blob)
+        if parsed.get("needs_confirm"):
+            confirm_tool = str(parsed.get("confirm_tool") or tool)
+            note_args = parsed.get("args")
+            if not isinstance(note_args, dict):
+                return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+            _execute_tool(
+                session,
+                sink,
+                history,
+                receipts,
+                tool=confirm_tool,
+                args=note_args,
+                call_id="person-note-confirm-probe",
+            )
+            last = receipts[-1] if receipts else {}
+            if last.get("needs_confirm") or (last.get("data") or {}).get("needs_confirm"):
+                return "pack_fast_path", CONFIRM_PERSON
+            if last.get("ok"):
+                return "pack_fast_path", "Note saved."
+            return "missing_life_receipt", LIFE_SAVE_FAIL_ACK
+        if not parsed.get("ok") or not parsed.get("args"):
+            return "missing_life_receipt", None
         _execute_tool(
             session,
             sink,
             history,
             receipts,
             tool=tool,
-            args={"person_id": args.get("person_id"), "text": text},
+            args=parsed["args"],
             call_id="person-note-fast-path",
         )
         last = receipts[-1] if receipts else {}
@@ -1513,6 +1777,8 @@ def _fast_path_confirm_bound(
     )
     last = receipts[-1] if receipts else {}
     if last.get("needs_confirm") or (last.get("data") or {}).get("needs_confirm"):
+        if verb in {"alias_set", "kin_link", "person_update"}:
+            return "pack_fast_path", CONFIRM_PERSON
         return "pack_fast_path", CONFIRM_LINE
     if last.get("ok"):
         return "pack_fast_path", f"{verb.replace('_', ' ')} saved."
@@ -1781,6 +2047,90 @@ def run_turn(
                 run_path=str(session.run_path),
                 plan=None,
             )
+
+        habit_stop, habit_text = _maybe_habit_write_fast_path(
+            session, sink, history, receipts, user_text
+        )
+        if habit_stop:
+            stop_reason = habit_stop
+            last_text = habit_text
+            if habit_stop == "missing_life_receipt" and not last_text:
+                last_text = LIFE_SAVE_FAIL_ACK
+            if habit_stop == "pack_fast_path" and habit_text:
+                last_text = apply_register_pass(
+                    adapter,
+                    receipts=receipts,
+                    template=habit_text,
+                )
+            if last_text:
+                sink.emit("token_delta", {"text": last_text})
+            if end_session:
+                session.end(stop_reason=stop_reason, steps=steps)
+            return LoopResult(
+                text=last_text,
+                stop_reason=stop_reason,
+                steps=steps,
+                tool_receipts=receipts,
+                usage_rounds=usage_rounds,
+                run_path=str(session.run_path),
+                plan=None,
+            )
+
+        due_stop, due_text = _maybe_due_write_fast_path(
+            session, sink, history, receipts, user_text
+        )
+        if due_stop:
+            stop_reason = due_stop
+            last_text = due_text
+            if due_stop == "missing_life_receipt" and not last_text:
+                last_text = LIFE_SAVE_FAIL_ACK
+            if due_stop == "pack_fast_path" and due_text:
+                last_text = apply_register_pass(
+                    adapter,
+                    receipts=receipts,
+                    template=due_text,
+                )
+            if last_text:
+                sink.emit("token_delta", {"text": last_text})
+            if end_session:
+                session.end(stop_reason=stop_reason, steps=steps)
+            return LoopResult(
+                text=last_text,
+                stop_reason=stop_reason,
+                steps=steps,
+                tool_receipts=receipts,
+                usage_rounds=usage_rounds,
+                run_path=str(session.run_path),
+                plan=None,
+            )
+
+    people_stop, people_text = _maybe_people_fast_path(
+        session, sink, history, receipts, user_text
+    )
+    if people_stop:
+        stop_reason = people_stop
+        last_text = people_text
+        if people_stop == "missing_life_receipt" and not last_text:
+            last_text = LIFE_SAVE_FAIL_ACK
+        if people_stop == "pack_fast_path" and people_text:
+            last_text = apply_register_pass(
+                adapter,
+                receipts=receipts,
+                template=people_text,
+            )
+        if last_text:
+            sink.emit("token_delta", {"text": last_text})
+        if end_session:
+            session.end(stop_reason=stop_reason, steps=steps)
+        return LoopResult(
+            text=last_text,
+            stop_reason=stop_reason,
+            steps=steps,
+            tool_receipts=receipts,
+            usage_rounds=usage_rounds,
+            run_path=str(session.run_path),
+            plan=None,
+        )
 
     fast_stop, fast_text = _maybe_pack_fast_path(session, sink, history, receipts)
     if fast_stop:

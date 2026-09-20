@@ -1662,6 +1662,64 @@ def life_habit_status_cli(
         console.print_json(data=obs.data)
 
 
+@life_app.command("habit-day")
+def life_habit_day_cli(
+    date: Optional[str] = typer.Option(None, "--date"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute(
+        "life_habit_day",
+        {"date": date},
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        d = obs.data or {}
+        console.print(d.get("summary_text") or d.get("message") or obs.outcome)
+
+
+@life_app.command("habit-week")
+def life_habit_week_cli(
+    days: int = typer.Option(7, "--days"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute(
+        "life_habit_week",
+        {"days": days},
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+    else:
+        d = obs.data or {}
+        console.print(d.get("summary_text") or d.get("message") or obs.outcome)
+
+
+@life_app.command("due-list")
+def life_due_list_cli(
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Open todos (kind=todo status=open) — same tool as pack due_list."""
+    from ada.tools.gateway import Gateway
+
+    obs = Gateway(mode="observe").execute(
+        "memory_open_loops_list",
+        {"kind": "todo", "status": "open"},
+    )
+    if json_out:
+        console.print_json(data=obs.as_observation())
+        return
+    d = obs.data or {}
+    loops = d.get("loops") if isinstance(d.get("loops"), list) else []
+    n = int(d["count"]) if isinstance(d.get("count"), int) else len(loops)
+    console.print(f"{n} open due(s).")
+    for item in loops:
+        console.print(f"- [{item.get('id')}] {item.get('title') or item.get('text')}")
+
+
 @life_app.command("routine-run")
 def life_routine_run_cli(
     name: str = typer.Argument(...),

@@ -304,6 +304,11 @@
   margin-top: var(--space-1);
 }
 
+.confirm-create-summary {
+  margin: var(--space-2) 0;
+  font-size: 0.95rem;
+}
+
 .confirm-candidate-list {
   display: flex;
   flex-direction: column;

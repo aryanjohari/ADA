@@ -83,7 +83,9 @@ def test_f_m21_habit_ambiguous_needs_confirm(data_root: Path) -> None:
     session = ChatSession(mode="agent")
     result = run_turn(session, "habit done: skin", _ShouldNotRunAdapter())
     assert result.stop_reason == "pack_fast_path"
-    assert "Confirm habit" in (result.text or "")
+    spoken = result.text or ""
+    assert "Which habit" in spoken or "Confirm" in spoken
+    assert "logged" not in spoken.lower()
     habit_receipts = [
         r for r in result.tool_receipts if str(r.get("tool") or "") == "life_habit_do"
     ]
@@ -163,6 +165,59 @@ def test_habit_unique_binds_without_confirm(data_root: Path) -> None:
     assert result.stop_reason == "pack_fast_path"
     assert "Habit logged" in (result.text or "")
     assert _habit_event_count("habit_floss") == 1
+
+
+def test_habit_unique_miss_binds_habit_id(data_root: Path) -> None:
+    """Resolve gate: unique miss → habit_id; code bind, not cortex pick."""
+    from ada.harness.resolve_gate import decide_habit_bind
+
+    habits_mod.upsert_habit_definition(
+        habit_id="habit_floss",
+        display_name="floss",
+        aliases=["flossing"],
+        source="seed",
+    )
+    resolved = habits_mod.resolve_habit("floss")
+    assert resolved.get("ok") is True
+    assert resolved.get("habit_id") == "habit_floss"
+    decision = decide_habit_bind(query="floss", matches=resolved.get("matches") or [])
+    assert decision.get("needs_confirm") is not True
+    assert decision.get("proposed_habit_id") == "habit_floss"
+
+    parsed = build_habit_tick_args("floss", verb="habit_miss")
+    assert parsed.get("ok") is True
+    assert parsed.get("needs_confirm") is not True
+    assert parsed["args"]["habit_id"] == "habit_floss"
+
+    session = ChatSession(mode="agent")
+    result = run_turn(session, "habit miss: floss", _ShouldNotRunAdapter())
+    assert result.stop_reason == "pack_fast_path"
+    miss_receipts = [
+        r for r in result.tool_receipts if str(r.get("tool") or "") == "life_habit_miss"
+    ]
+    assert miss_receipts
+    assert miss_receipts[0].get("needs_confirm") is not True
+    assert (miss_receipts[0].get("data") or {}).get("needs_confirm") is not True
+    assert _habit_event_count("habit_floss") == 1
+
+
+def test_habit_unknown_miss_no_silent_create(data_root: Path) -> None:
+    """Zero-match miss → missing_life_receipt; never Confirm-create / silent def."""
+    assert habits_mod.list_habit_definitions() == []
+    parsed = build_habit_tick_args("flurmble glorp", verb="habit_miss")
+    assert parsed.get("ok") is False
+    assert parsed.get("needs_confirm") is not True
+    assert parsed.get("create") is not True
+    assert parsed.get("reason") == "missing_life_receipt"
+
+    session = ChatSession(mode="agent")
+    result = run_turn(session, "habit miss: flurmble glorp", _ShouldNotRunAdapter())
+    assert result.stop_reason == "missing_life_receipt"
+    assert not any(
+        str(r.get("tool") or "") == "life_habit_create" for r in result.tool_receipts
+    )
+    assert habits_mod.list_habit_definitions() == []
+    assert _habit_event_count() == 0
 
 
 def test_chat_yes_alone_does_not_invent_bind(data_root: Path) -> None:
@@ -314,3 +369,96 @@ def test_f_m22_hud_works_without_habit_seed(data_root: Path) -> None:
         str(r.get("tool") or "") == "life_habit_create" for r in result.tool_receipts
     )
     assert habits_mod.list_habit_definitions() == []
+
+
+def test_same_display_name_duplicate_collapses_unique(data_root: Path) -> None:
+    """Seed Skincare + teach-in skincare is one habit, not a picker."""
+    habits_mod.upsert_habit_definition(
+        habit_id="habit_skincare",
+        display_name="Skincare",
+        aliases=["skincare", "spf"],
+        source="seed",
+    )
+    habits_mod.upsert_habit_definition(
+        habit_id="habit_skincare_dd278a",
+        display_name="skincare",
+        source="teach_in_flow",
+    )
+    resolved = habits_mod.resolve_habit("skincare")
+    assert resolved.get("ok") is True
+    assert resolved.get("habit_id") == "habit_skincare"
+    parsed = build_habit_tick_args("skincare", verb="habit_do")
+    assert parsed.get("ok") is True
+    assert parsed.get("needs_confirm") is not True
+    assert parsed["args"]["habit_id"] == "habit_skincare"
+
+    session = ChatSession(mode="agent")
+    result = run_turn(session, "habit done: skincare", _ShouldNotRunAdapter())
+    assert result.stop_reason == "pack_fast_path"
+    assert "Habit logged" in (result.text or "")
+    assert _habit_event_count("habit_skincare") == 1
+    assert _habit_event_count("habit_skincare_dd278a") == 0
+
+
+def test_create_habit_reuses_existing_unique_name(data_root: Path) -> None:
+    habits_mod.upsert_habit_definition(
+        habit_id="habit_skincare",
+        display_name="Skincare",
+        aliases=["skincare"],
+        source="seed",
+    )
+    written = habits_mod.create_habit(
+        display_name="skincare",
+        confirmed=True,
+        tick_after=True,
+        receipt_id="receipt-reuse-skincare",
+    )
+    assert written.get("ok") is True
+    assert written.get("habit_id") == "habit_skincare"
+    assert written.get("source") == "reused"
+    defs = habits_mod.list_habit_definitions()
+    assert len(defs) == 1
+    assert defs[0]["habit_id"] == "habit_skincare"
+    assert _habit_event_count("habit_skincare") == 1
+
+
+def test_habit_yes_binds_selected_ref_ids_dict(data_root: Path) -> None:
+    """HUD picker posts selected_ref_ids like meals — bind that id only."""
+    a, b = _seed_ambiguous_skin(data_root)
+    probe = Gateway(mode="agent").execute(
+        "life_habit_do",
+        {"name": "skin", "confirmed": False},
+    )
+    assert probe.needs_confirm
+    svc = ChatService()
+    svc._ensure_session("agent")
+    data = probe.data if isinstance(probe.data, dict) else {}
+    stash = dict(probe.args or {})
+    for key in ("candidates", "resolve", "name", "habit_id"):
+        if data.get(key) is not None and key not in stash:
+            stash[key] = data[key]
+    svc.pending_confirms[probe.receipt_id] = {
+        "tool": "life_habit_do",
+        "args": stash,
+    }
+    out = svc.confirm_tool(
+        "life_habit_do",
+        {},
+        pending_id=probe.receipt_id,
+        selected_ref_ids={"skin": b},
+    )
+    assert out.get("ok")
+    hid = (out.get("data") or {}).get("habit_id") if isinstance(out.get("data"), dict) else None
+    if hid is None:
+        hid = out.get("habit_id")
+    assert hid == b
+    assert _habit_event_count(b) == 1
+    assert _habit_event_count(a) == 0
+
+
+def test_hud_habit_confirm_picker_in_stream_js() -> None:
+    js = Path(__file__).resolve().parents[1] / "src/ada/hud/static/js/stream.js"
+    text = js.read_text(encoding="utf-8")
+    assert "_buildHabitConfirmPicker" in text
+    assert "_buildHabitCreateSummary" in text
+    assert "JSON.stringify(args" in text

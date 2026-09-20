@@ -11,6 +11,7 @@ import yaml
 
 from ada.harness.gym_date import is_gym_read_shape, parse_gym_date
 from ada.harness.gym_spine import is_bare_nxm_without_unit, lift_utterance_body
+from ada.harness.habit_date import is_habit_read_shape, parse_habit_date
 from ada.harness.nutrition_date import (
     has_week_cue,
     is_nutrition_read_shape,
@@ -93,13 +94,13 @@ _MEAL_MULTI_BARE = re.compile(
     r"\b(?:for|to)\s+(?:an?\s+|the\s+)?(?:breakfast|lunch|dinner|snacks?)\b",
     re.IGNORECASE,
 )
-# Phone NL: "Habit done skincare" (no colon) — still pack-route, not prose Confirm.
+# Phone NL: "Habit done skincare" / "habit done: skincare" — wrappers, name is a slot.
 _HABIT_DONE_NL = re.compile(
-    r"^(?:habit\s+)?(?:done|tick|logged)\s+:?\s*(.+)$",
+    r"^(?:habit\s+)?(?:done|tick|logged)\s*:?\s*(.+)$",
     re.IGNORECASE,
 )
 _HABIT_MISS_NL = re.compile(
-    r"^(?:habit\s+)?miss(?:ed)?\s+:?\s*(.+)$",
+    r"^(?:habit\s+)?miss(?:ed)?\s*:?\s*(.+)$",
     re.IGNORECASE,
 )
 _BRIEF_PREF_NL = re.compile(
@@ -125,6 +126,8 @@ READ_PACK_VERBS = frozenset(
         "gym_status",
         "gym_day",
         "gym_week",
+        "habit_day",
+        "habit_week",
         "life_status",
         "streak_show",
         "who_is",
@@ -316,6 +319,15 @@ def _route_from_pack(
                 args["date"] = parsed
             elif verb == "time_day":
                 args.setdefault("date", local_today())
+    elif tool == "life_habit_week":
+        args.setdefault("days", 7)
+    elif tool == "life_habit_day":
+        if not has_week_cue(raw):
+            parsed = parse_habit_date(raw)
+            if parsed:
+                args["date"] = parsed
+            elif verb == "habit_day":
+                args.setdefault("date", local_today())
     return {
         "verb": verb,
         "tool": tool,
@@ -400,6 +412,28 @@ def _route_time_read(
     return routed
 
 
+def _route_habit_read(
+    raw: str,
+    *,
+    config: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Structural habit day/week read. Not undated habits today / streak_show."""
+    if not is_habit_read_shape(raw):
+        return None
+    if has_week_cue(raw):
+        routed = _route_from_pack("habit_week", raw, raw, config=config)
+        if routed is not None:
+            routed["args"]["days"] = 7
+        return routed
+    parsed = parse_habit_date(raw)
+    if parsed is None:
+        return None
+    routed = _route_from_pack("habit_day", raw, raw, config=config)
+    if routed is not None:
+        routed["args"]["date"] = parsed
+    return routed
+
+
 def _route_aliases(
     raw: str,
     lower: str,
@@ -461,6 +495,240 @@ def is_time_start_utterance(text: str) -> bool:
     if lower.startswith("start focus") or lower.startswith("start timer"):
         return True
     return bool(_TIME_START_SHAPE.match(raw))
+
+
+def is_habit_do_utterance(text: str) -> bool:
+    """Wrapper pack door for habit_do — name is a slot, not a YAML row.
+
+    Hint optional: wrappers force the verb even if pack_hint is missing.
+    Bare labels (skincare / laundry) without a wrapper are not a door.
+    """
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw:
+        return False
+    lower = raw.lower()
+    matched = _HABIT_DONE_NL.match(raw)
+    if not matched or not matched.group(1).strip():
+        return False
+    return (
+        lower.startswith("habit ")
+        or lower.startswith("habit\t")
+        or lower.startswith("tick ")
+        or "habit done" in lower
+        or "habit tick" in lower
+    )
+
+
+def is_habit_miss_utterance(text: str) -> bool:
+    """Wrapper pack door for habit_miss — habit in string, or starts with miss."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw:
+        return False
+    lower = raw.lower()
+    matched = _HABIT_MISS_NL.match(raw)
+    if not matched or not matched.group(1).strip():
+        return False
+    return "habit" in lower or lower.startswith("miss")
+
+
+_DUE_ADD_LEAD = re.compile(
+    r"^(?:add\s+due:\s*|gotta(?:\s+finish)?\s+|i\s+need\s+to\s+finish\s+)",
+    re.IGNORECASE,
+)
+_DUE_LIST_CUES = (
+    "what's due",
+    "whats due",
+    "on my plate",
+    "have to buy",
+    "what to buy",
+    "grocery",
+    "shopping list",
+)
+
+
+def _due_other_organ(raw: str) -> bool:
+    """Meal / lift / gym / time / habit wrappers win over due."""
+    return (
+        is_habit_do_utterance(raw)
+        or is_habit_miss_utterance(raw)
+        or is_gym_start_utterance(raw)
+        or is_gym_end_utterance(raw)
+        or is_time_start_utterance(raw)
+        or is_lift_log_utterance(raw)
+        or is_meal_log_utterance(raw)
+    )
+
+
+def is_due_add_utterance(text: str) -> bool:
+    """Wrapper pack door for due_add — title is a slot, not a YAML row.
+
+    Hint optional: wrappers force the verb even if pack_hint is missing.
+    Bare titles (thesis) without a wrapper are not a door.
+    """
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or _due_other_organ(raw):
+        return False
+    lower = raw.lower()
+    if _DUE_ADD_LEAD.match(raw):
+        return True
+    return "due by" in lower
+
+
+def is_remind_utterance(text: str) -> bool:
+    """Wrapper pack door for remind — `remind:` / `remind me`. Not people_remind."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or _due_other_organ(raw):
+        return False
+    lower = raw.lower()
+    if lower.startswith("people remind"):
+        return False
+    if lower.startswith("remind:"):
+        return True
+    return "remind me" in lower
+
+
+def is_due_done_utterance(text: str) -> bool:
+    """Wrapper pack door for due_done — `done:` only. Not habit done / gym end."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw:
+        return False
+    lower = raw.lower()
+    if not lower.startswith("done:"):
+        return False
+    if is_habit_do_utterance(raw) or is_gym_end_utterance(raw):
+        return False
+    return True
+
+
+def is_due_list_utterance(text: str) -> bool:
+    """Read door for due_list — grocery/shopping aliases stay this organ."""
+    raw = (text or "").strip()
+    raw = _LEADING_FILLER.sub("", raw).strip()
+    if not raw or _due_other_organ(raw):
+        return False
+    lower = raw.lower()
+    return any(cue in lower for cue in _DUE_LIST_CUES)
+
+
+# People wrappers — name is a remainder slot, not a YAML row. Bare "Ravi" is not a door.
+_MET_NL = re.compile(r"^met\s+(.+)$", re.IGNORECASE)
+_WHO_IS_NL = re.compile(r"^who\s+is\s+(.+)$", re.IGNORECASE)
+_NOTE_FOR_NL = re.compile(r"^note\s+for\s+(.+)$", re.IGNORECASE)
+_ALIAS_SET_NL = re.compile(r"^alias\s+set:\s*(.+)$", re.IGNORECASE)
+_BIRTHDAY_SET_NL = re.compile(r"^set\s+birthday:\s*(.+)$", re.IGNORECASE)
+
+
+def _people_other_organ(raw: str) -> bool:
+    """Meal / lift / gym / time / habit / due wrappers win over people."""
+    return (
+        is_habit_do_utterance(raw)
+        or is_habit_miss_utterance(raw)
+        or is_gym_start_utterance(raw)
+        or is_gym_end_utterance(raw)
+        or is_time_start_utterance(raw)
+        or is_lift_log_utterance(raw)
+        or is_meal_log_utterance(raw)
+        or is_due_add_utterance(raw)
+        or is_due_done_utterance(raw)
+        or is_remind_utterance(raw)
+        or is_due_list_utterance(raw)
+    )
+
+
+def _people_raw(text: str) -> str:
+    raw = (text or "").strip()
+    return _LEADING_FILLER.sub("", raw).strip()
+
+
+def is_person_capture_utterance(text: str) -> bool:
+    """Wrapper pack door for person_capture — `met {name}`. Bare names are not a door."""
+    raw = _people_raw(text)
+    if not raw or _people_other_organ(raw):
+        return False
+    matched = _MET_NL.match(raw)
+    return bool(matched and matched.group(1).strip())
+
+
+def is_who_is_utterance(text: str) -> bool:
+    """Wrapper pack door for who_is — `who is {name}`."""
+    raw = _people_raw(text)
+    if not raw or _people_other_organ(raw):
+        return False
+    matched = _WHO_IS_NL.match(raw)
+    return bool(matched and matched.group(1).strip())
+
+
+def is_person_note_utterance(text: str) -> bool:
+    """Wrapper pack door for person_note — `note for {name}`."""
+    raw = _people_raw(text)
+    if not raw or _people_other_organ(raw):
+        return False
+    matched = _NOTE_FOR_NL.match(raw)
+    return bool(matched and matched.group(1).strip())
+
+
+def is_alias_set_utterance(text: str) -> bool:
+    """Wrapper pack door for alias_set — `alias set:`."""
+    raw = _people_raw(text)
+    if not raw or _people_other_organ(raw):
+        return False
+    matched = _ALIAS_SET_NL.match(raw)
+    return bool(matched and matched.group(1).strip())
+
+
+def is_birthday_set_utterance(text: str) -> bool:
+    """Wrapper pack door for birthday_set — `set birthday: {name} YYYY-MM-DD`."""
+    raw = _people_raw(text)
+    if not raw or _people_other_organ(raw):
+        return False
+    matched = _BIRTHDAY_SET_NL.match(raw)
+    return bool(matched and matched.group(1).strip())
+
+
+def is_people_remind_utterance(text: str) -> bool:
+    """Read door for people_remind — not dues `remind me`."""
+    raw = _people_raw(text)
+    if not raw or _people_other_organ(raw):
+        return False
+    lower = raw.lower()
+    if lower.startswith("people remind"):
+        return True
+    return "upcoming birthdays" in lower
+
+
+def person_capture_body(text: str) -> str:
+    raw = _people_raw(text)
+    matched = _MET_NL.match(raw)
+    return (matched.group(1).strip() if matched else raw)
+
+
+def who_is_mention(text: str) -> str:
+    raw = _people_raw(text)
+    matched = _WHO_IS_NL.match(raw)
+    return (matched.group(1).strip() if matched else raw)
+
+
+def person_note_body(text: str) -> str:
+    raw = _people_raw(text)
+    matched = _NOTE_FOR_NL.match(raw)
+    return (matched.group(1).strip() if matched else raw)
+
+
+def alias_set_body(text: str) -> str:
+    raw = _people_raw(text)
+    matched = _ALIAS_SET_NL.match(raw)
+    return (matched.group(1).strip() if matched else raw)
+
+
+def birthday_set_body(text: str) -> str:
+    raw = _people_raw(text)
+    matched = _BIRTHDAY_SET_NL.match(raw)
+    return (matched.group(1).strip() if matched else raw)
 
 
 def is_gym_end_utterance(text: str) -> bool:
@@ -637,6 +905,10 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
     if timed is not None:
         return timed
 
+    habit_read = _route_habit_read(raw, config=cfg)
+    if habit_read is not None:
+        return habit_read
+
     # Lift writes before YAML aliases so "at the gym" cannot steal kg×reps NL.
     if is_lift_log_utterance(raw):
         lift_args = lift_log_fast_path_args(raw) or {}
@@ -683,22 +955,16 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
             routed["args"]["meal_slot"] = slot
         return routed
 
-    # Habit NL before bare due — require "habit" / tick cue (not "done: thesis").
-    habit_done = _HABIT_DONE_NL.match(raw)
-    if habit_done and (
-        lower.startswith("habit ")
-        or lower.startswith("habit\t")
-        or lower.startswith("tick ")
-        or "habit done" in lower
-        or "habit tick" in lower
-    ):
-        body = habit_done.group(1).strip()
+    # Habit NL before bare due — wrappers only (not "done: thesis" / bare skincare).
+    if is_habit_do_utterance(raw):
+        done_m = _HABIT_DONE_NL.match(raw)
+        body = (done_m.group(1) if done_m else "").strip()
         if body:
             return _route_from_pack("habit_do", raw, body, config=cfg)
 
-    habit_miss = _HABIT_MISS_NL.match(raw)
-    if habit_miss and ("habit" in lower or lower.startswith("miss")):
-        body = habit_miss.group(1).strip()
+    if is_habit_miss_utterance(raw):
+        miss_m = _HABIT_MISS_NL.match(raw)
+        body = (miss_m.group(1) if miss_m else "").strip()
         if body:
             return _route_from_pack("habit_miss", raw, body, config=cfg)
 
@@ -714,5 +980,19 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
     # After meal / lift / gym start / gym end — start-shapes only, hint optional.
     if is_time_start_utterance(raw):
         return _route_from_pack("time_start", raw, raw, config=cfg)
+
+    # After meal / lift / gym / time / habit — people wrappers (prefill usually wins first).
+    if is_person_capture_utterance(raw):
+        return _route_from_pack("person_capture", raw, raw, config=cfg)
+    if is_who_is_utterance(raw):
+        return _route_from_pack("who_is", raw, who_is_mention(raw), config=cfg)
+    if is_person_note_utterance(raw):
+        return _route_from_pack("person_note", raw, person_note_body(raw), config=cfg)
+    if is_alias_set_utterance(raw):
+        return _route_from_pack("alias_set", raw, alias_set_body(raw), config=cfg)
+    if is_birthday_set_utterance(raw):
+        return _route_from_pack("birthday_set", raw, birthday_set_body(raw), config=cfg)
+    if is_people_remind_utterance(raw):
+        return _route_from_pack("people_remind", raw, raw, config=cfg)
 
     return None

@@ -301,6 +301,155 @@ function _mealRowCandidates(resolve, row) {
   return global.slice(0, 5);
 }
 
+function _habitCandidates(args) {
+  const resolve = args.resolve || {};
+  const fromResolve = Array.isArray(resolve.candidates) ? resolve.candidates : [];
+  if (fromResolve.length) return fromResolve;
+  return Array.isArray(args.candidates) ? args.candidates : [];
+}
+
+function _peopleCandidates(args) {
+  const resolve = args.resolve || {};
+  const fromResolve = Array.isArray(resolve.candidates) ? resolve.candidates : [];
+  if (fromResolve.length) return fromResolve;
+  return Array.isArray(args.candidates) ? args.candidates : [];
+}
+
+function _buildHabitConfirmPicker(args) {
+  const resolve = args.resolve || {};
+  const candidates = _habitCandidates(args).slice(0, 8);
+  if (candidates.length < 2) return null;
+
+  const key = String(resolve.query || args.name || "habit").trim() || "habit";
+  const proposed = String(
+    resolve.proposed_habit_id || args.habit_id || ""
+  ).trim();
+  const showRefId = currentFace() === "mac";
+  const groupId = "habit-ref-" + encodeURIComponent(key || "row");
+  let html = '<div class="confirm-candidate-list">';
+  html +=
+    '<div class="confirm-candidate-group" data-query-key="' +
+    esc(key) +
+    '">';
+  if (key) {
+    html +=
+      '<div class="confirm-candidate-query">Which habit — ' +
+      esc(key) +
+      "</div>";
+  }
+  for (const cand of candidates) {
+    const refId = String(cand.ref_id || cand.habit_id || "").trim();
+    const label = cand.label || cand.display_name || cand.name || refId;
+    const checked = refId && refId === proposed;
+    html +=
+      '<label class="confirm-candidate-row' +
+      (checked ? " selected" : "") +
+      '" data-ref-id="' +
+      esc(refId) +
+      '">';
+    html +=
+      '<input type="radio" name="' +
+      esc(groupId) +
+      '" value="' +
+      esc(refId) +
+      '"' +
+      (checked ? " checked" : "") +
+      " />";
+    html += '<span class="confirm-candidate-main">';
+    html +=
+      '<span class="confirm-candidate-label">' + esc(label) + "</span>";
+    html += "</span>";
+    if (showRefId && refId) {
+      html +=
+        '<span class="confirm-candidate-refid">' + esc(refId) + "</span>";
+    }
+    html += "</label>";
+  }
+  html += "</div></div>";
+  return html;
+}
+
+function _buildHabitCreateSummary(args) {
+  const name = String(
+    args.proposed_display_name || args.display_name || ""
+  ).trim();
+  if (!name) return null;
+  return (
+    '<div class="confirm-create-summary">Save habit <span class="confirm-candidate-label">' +
+    esc(name) +
+    "</span></div>"
+  );
+}
+
+function _buildPeopleConfirmPicker(args) {
+  const resolve = args.resolve || {};
+  const candidates = _peopleCandidates(args).slice(0, 8);
+  if (candidates.length < 2) return null;
+
+  const key =
+    String(
+      resolve.query || args.display_name || args.mention || args.alias || "person"
+    ).trim() || "person";
+  const proposed = String(
+    resolve.proposed_person_id || args.person_id || ""
+  ).trim();
+  const showRefId = currentFace() === "mac";
+  const groupId = "person-ref-" + encodeURIComponent(key || "row");
+  let html = '<div class="confirm-candidate-list">';
+  html +=
+    '<div class="confirm-candidate-group" data-query-key="' +
+    esc(key) +
+    '">';
+  if (key) {
+    html +=
+      '<div class="confirm-candidate-query">Which person — ' +
+      esc(key) +
+      "</div>";
+  }
+  for (const cand of candidates) {
+    const refId = String(cand.ref_id || cand.person_id || "").trim();
+    const label = cand.label || cand.display_name || cand.name || refId;
+    const checked = refId && refId === proposed;
+    html +=
+      '<label class="confirm-candidate-row' +
+      (checked ? " selected" : "") +
+      '" data-ref-id="' +
+      esc(refId) +
+      '">';
+    html +=
+      '<input type="radio" name="' +
+      esc(groupId) +
+      '" value="' +
+      esc(refId) +
+      '"' +
+      (checked ? " checked" : "") +
+      " />";
+    html += '<span class="confirm-candidate-main">';
+    html +=
+      '<span class="confirm-candidate-label">' + esc(label) + "</span>";
+    html += "</span>";
+    if (showRefId && refId) {
+      html +=
+        '<span class="confirm-candidate-refid">' + esc(refId) + "</span>";
+    }
+    html += "</label>";
+  }
+  html += "</div></div>";
+  return html;
+}
+
+function _buildPeopleCreateSummary(args) {
+  const name = String(
+    args.proposed_display_name || args.display_name || ""
+  ).trim();
+  if (!name) return null;
+  return (
+    '<div class="confirm-create-summary">Save person <span class="confirm-candidate-label">' +
+    esc(name) +
+    "</span></div>"
+  );
+}
+
 function _buildMealConfirmPicker(args) {
   const resolve = args.resolve || {};
   const rows = Array.isArray(resolve.rows) ? resolve.rows : [];
@@ -417,9 +566,31 @@ function makeConfirmCard(payload) {
     args.resolve
       ? _buildMealConfirmPicker(args)
       : null;
-  const bodyHtml = mealPicker
-    ? mealPicker
-    : '<pre class="confirm-args">' + esc(JSON.stringify(args, null, 2)) + "</pre>";
+  const habitPicker =
+    (tool === "life_habit_do" || tool === "life_habit_miss") && args.resolve
+      ? _buildHabitConfirmPicker(args)
+      : null;
+  const habitCreate =
+    tool === "life_habit_create" ? _buildHabitCreateSummary(args) : null;
+  const peoplePicker =
+    (tool === "life_person_capture" ||
+      tool === "life_person_note" ||
+      tool === "life_alias_set") &&
+    _peopleCandidates(args).length >= 2
+      ? _buildPeopleConfirmPicker(args)
+      : null;
+  const peopleCreate =
+    tool === "life_person_capture" && _peopleCandidates(args).length < 2
+      ? _buildPeopleCreateSummary(args)
+      : null;
+  const candidatePicker = mealPicker || habitPicker || peoplePicker;
+  const bodyHtml = candidatePicker
+    ? candidatePicker
+    : habitCreate
+      ? habitCreate
+      : peopleCreate
+        ? peopleCreate
+        : '<pre class="confirm-args">' + esc(JSON.stringify(args, null, 2)) + "</pre>";
   card.innerHTML =
     '<div class="card-head"><span class="card-title">Confirm</span>' +
     '<span class="status-chip">needs confirm</span></div>' +
@@ -437,7 +608,7 @@ function makeConfirmCard(payload) {
     '<button type="button" class="danger" data-act="deny">Deny</button>' +
     "</div>";
 
-  if (mealPicker) {
+  if (candidatePicker) {
     _wireMealConfirmPicker(card);
   }
 
@@ -447,7 +618,9 @@ function makeConfirmCard(payload) {
     confirmBtn.addEventListener("click", async () => {
       if (!requireSessionForMode("agent")) return;
       confirmBtn.disabled = true;
-      const selectedRefIds = mealPicker ? _collectMealSelections(card) : null;
+      const selectedRefIds = candidatePicker
+        ? _collectMealSelections(card)
+        : null;
       const { ok, data } = await postConfirm(
         tool,
         args,

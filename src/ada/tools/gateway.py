@@ -204,6 +204,8 @@ class Gateway:
             "life_gym_day",
             "life_gym_week",
             "life_habit_status",
+            "life_habit_day",
+            "life_habit_week",
             "life_who_is",
             "life_people_remind",
         ):

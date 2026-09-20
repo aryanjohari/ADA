@@ -292,11 +292,22 @@ def _propose_name_from_command(utterance: str) -> str | None:
     return None
 
 
+def _people_candidate_row(item: dict[str, Any]) -> dict[str, Any]:
+    pid = str(item.get("person_id") or item.get("ref_id") or "").strip()
+    label = str(item.get("display_name") or item.get("label") or item.get("name") or pid)
+    row = dict(item)
+    row["person_id"] = pid
+    row["ref_id"] = pid
+    row["label"] = label
+    return row
+
+
 def person_capture(
     *,
     utterance: str | None = None,
     display_name: str | None = None,
     note: str | None = None,
+    person_id: str | None = None,
     confirmed: bool = False,
     paths: DataPaths | None = None,
 ) -> dict[str, Any]:
@@ -369,34 +380,55 @@ def person_capture(
                 ],
             }
 
-    resolved = resolve_mention(name, paths=paths)
+    bound_id = str(person_id or "").strip()
     created = False
-    if resolved.get("ok"):
-        person_id = str(resolved["person_id"])
-        loaded = load_person(person_id, paths=paths)
+    if confirmed and bound_id:
+        loaded = load_person(bound_id, paths=paths)
+        if not loaded.get("found"):
+            return {"ok": False, "reason": "not_found", "person_id": bound_id}
+        person_id = bound_id
         doc = loaded.get("doc") or {}
-    elif (resolved.get("candidates") or []) and len(resolved.get("candidates") or []) > 1:
-        return {
-            "ok": False,
-            "needs_confirm": True,
-            "outcome": "needs_confirm",
-            "reason": "ambiguous",
-            "match_count": resolved.get("match_count"),
-            "candidates": resolved.get("candidates") or [],
-            "display_name": name,
-        }
     else:
-        person_id = _person_id_from_name(name)
-        doc = {
-            "id": person_id,
-            "display_name": name,
-            "schema_version": 2,
-            "aliases": [],
-            "kin": {},
-            "interactions": [],
-            "notes": "",
-        }
-        created = True
+        resolved = resolve_mention(name, paths=paths)
+        if resolved.get("ok"):
+            person_id = str(resolved["person_id"])
+            loaded = load_person(person_id, paths=paths)
+            doc = loaded.get("doc") or {}
+        elif (resolved.get("candidates") or []) and len(resolved.get("candidates") or []) > 1:
+            candidates = [_people_candidate_row(c) for c in (resolved.get("candidates") or [])]
+            return {
+                "ok": False,
+                "needs_confirm": True,
+                "outcome": "needs_confirm",
+                "reason": "ambiguous",
+                "match_count": resolved.get("match_count"),
+                "candidates": candidates,
+                "display_name": name,
+                "query": name,
+            }
+        else:
+            if not confirmed:
+                return {
+                    "ok": False,
+                    "needs_confirm": True,
+                    "outcome": "needs_confirm",
+                    "reason": "create_person",
+                    "display_name": name,
+                    "proposed_display_name": name,
+                    "note": interaction_note,
+                    "utterance": raw_utt,
+                }
+            person_id = _person_id_from_name(name)
+            doc = {
+                "id": person_id,
+                "display_name": name,
+                "schema_version": 2,
+                "aliases": [],
+                "kin": {},
+                "interactions": [],
+                "notes": "",
+            }
+            created = True
     if interaction_note:
         doc.setdefault("interactions", []).append(
             {
@@ -424,13 +456,38 @@ def person_note(
     person_id: str | None = None,
     mention: str | None = None,
     text: str,
+    confirmed: bool = False,
     paths: DataPaths | None = None,
 ) -> dict[str, Any]:
-    if not person_id and mention:
+    bound_id = str(person_id or "").strip()
+    if confirmed and bound_id:
+        person_id = bound_id
+    elif mention:
         resolved = resolve_mention(mention, paths=paths)
-        if not resolved.get("ok"):
-            return resolved
-        person_id = str(resolved["person_id"])
+        if resolved.get("ok"):
+            person_id = str(resolved["person_id"])
+        elif (resolved.get("candidates") or []) and len(resolved.get("candidates") or []) > 1:
+            candidates = [_people_candidate_row(c) for c in (resolved.get("candidates") or [])]
+            return {
+                "ok": False,
+                "needs_confirm": True,
+                "outcome": "needs_confirm",
+                "reason": "ambiguous",
+                "match_count": resolved.get("match_count"),
+                "candidates": candidates,
+                "mention": mention,
+                "query": mention,
+                "text": text,
+            }
+        else:
+            return {
+                "ok": False,
+                "reason": resolved.get("reason") or "not_found",
+                "match_count": resolved.get("match_count", 0),
+                "candidates": resolved.get("candidates") or [],
+            }
+    elif bound_id:
+        person_id = bound_id
     if not person_id:
         return {"ok": False, "reason": "missing_person"}
     loaded = load_person(person_id, paths=paths)
@@ -509,6 +566,18 @@ def alias_set(
                     {"person_id": pid, "display_name": doc.get("display_name"), "alias": surface}
                 )
     if clashes and not confirmed:
+        intended = load_person(person_id, paths=paths)
+        intended_doc = intended.get("doc") or {}
+        pool = [
+            _people_candidate_row(
+                {
+                    "person_id": person_id,
+                    "display_name": intended_doc.get("display_name") or person_id,
+                }
+            )
+        ]
+        for clash in clashes:
+            pool.append(_people_candidate_row(clash))
         return {
             "ok": False,
             "needs_confirm": True,
@@ -516,7 +585,8 @@ def alias_set(
             "reason": "alias_clash",
             "alias": surface,
             "person_id": person_id,
-            "candidates": clashes,
+            "candidates": pool,
+            "query": surface,
         }
     loaded = load_person(person_id, paths=paths)
     if not loaded.get("found"):

@@ -17,6 +17,7 @@ Utterance table (test-local; not a pack YAML):
 | due_prefix    | add due: finish thesis by Friday               | pack_fast_path        |
 | due_nl        | gotta finish lab report by Thursday            | pack_fast_path        |
 | due_list      | what's due                                     | pack_fast_path        |
+| due_remind    | remind me to stretch at 7pm                    | pack_fast_path        |
 | eat_q         | what did i eat                                 | pack_fast_path        |
 | macros        | macros                                         | pack_fast_path        |
 | good_morning  | good morning                                   | pack_fast_path        |
@@ -25,6 +26,11 @@ Utterance table (test-local; not a pack YAML):
 | whats_running | what's running                                 | pack_fast_path        |
 | gym_at        | I'm at the gym                                 | pack_fast_path        |
 | due_done_miss | done: flurmble glorp                           | missing_life_receipt  |
+| habit_done    | habit done: skincare                           | pack_fast_path        |
+| habit_miss    | habit miss: skincare                           | pack_fast_path        |
+| unknown_habit | habit done: flurmble glorp                     | pack_fast_path (Confirm-create) |
+| unknown_habit_miss | habit miss: flurmble glorp                | missing_life_receipt  |
+| habits_today  | habits today                                   | pack_fast_path        |
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from ada.harness.meal_spine import build_meal_log_args
 from ada.harness.session import ChatSession
 from ada.hud.today import build_today
 from ada.io.paths import get_paths
+from ada.logs import habits as habits_mod
 from ada.logs.connection import open_life_db
 from ada.logs.food import insert_food
 from ada.logs.gym_import import import_exercise_seed
@@ -99,6 +106,11 @@ HUD_EDGE_SMOKE: list[dict[str, str]] = [
         "expect": "pack_fast_path",
     },
     {"id": "due_list", "utterance": "what's due", "expect": "pack_fast_path"},
+    {
+        "id": "due_remind",
+        "utterance": "remind me to stretch at 7pm",
+        "expect": "pack_fast_path",
+    },
     {"id": "eat_q", "utterance": "what did i eat", "expect": "pack_fast_path"},
     {"id": "macros", "utterance": "macros", "expect": "pack_fast_path"},
     {"id": "good_morning", "utterance": "good morning", "expect": "pack_fast_path"},
@@ -126,6 +138,31 @@ HUD_EDGE_SMOKE: list[dict[str, str]] = [
         "id": "due_done_miss",
         "utterance": "done: flurmble glorp",
         "expect": "missing_life_receipt",
+    },
+    {
+        "id": "habit_done",
+        "utterance": "habit done: skincare",
+        "expect": "pack_fast_path",
+    },
+    {
+        "id": "habit_miss",
+        "utterance": "habit miss: skincare",
+        "expect": "pack_fast_path",
+    },
+    {
+        "id": "unknown_habit",
+        "utterance": "habit done: flurmble glorp",
+        "expect": "pack_fast_path",
+    },
+    {
+        "id": "unknown_habit_miss",
+        "utterance": "habit miss: flurmble glorp",
+        "expect": "missing_life_receipt",
+    },
+    {
+        "id": "habits_today",
+        "utterance": "habits today",
+        "expect": "pack_fast_path",
     },
 ]
 
@@ -573,6 +610,7 @@ def test_hud_edge_smoke_table_ids_cover_operator_list() -> None:
         "due_prefix",
         "due_nl",
         "due_list",
+        "due_remind",
         "eat_q",
         "macros",
         "good_morning",
@@ -581,6 +619,11 @@ def test_hud_edge_smoke_table_ids_cover_operator_list() -> None:
         "whats_running",
         "gym_at",
         "due_done_miss",
+        "habit_done",
+        "habit_miss",
+        "unknown_habit",
+        "unknown_habit_miss",
+        "habits_today",
     }
 
 
@@ -638,6 +681,49 @@ def test_hud_smoke_due_done_zero_matches(hud_smoke_root: Path) -> None:
     assert result.stop_reason == "missing_life_receipt"
     assert "memory_open_loops_upsert" not in _tools(result)
     _assert_no_facts_append_ok(result)
+    spoken = (result.text or "").lower()
+    assert "logged" not in spoken
+
+
+def test_hud_smoke_due_done_unique(hud_smoke_root: Path) -> None:
+    prefix = _agent_turn("add due: finish thesis by Friday")
+    assert prefix.stop_reason == "pack_fast_path"
+    loops = list_loops(kind="todo", status="open", paths=get_paths())
+    hit = next(
+        item for item in loops if "thesis" in str(item.get("text") or "").lower()
+    )
+    done = _agent_turn("done: thesis")
+    assert done.stop_reason == "pack_fast_path"
+    upsert = next(
+        r for r in done.tool_receipts if r.get("tool") == "memory_open_loops_upsert"
+    )
+    assert upsert.get("ok") is True
+    assert upsert.get("needs_confirm") is not True
+    assert (upsert.get("args") or {}).get("status") == "done"
+    assert (upsert.get("args") or {}).get("id") == hit.get("id")
+    remaining = list_loops(kind="todo", status="open", paths=get_paths())
+    assert not any(item.get("id") == hit.get("id") for item in remaining)
+    spoken = (done.text or "").strip().lower()
+    assert spoken == "due done logged."
+
+
+def test_hud_smoke_remind(hud_smoke_root: Path) -> None:
+    result = _agent_turn("remind me to stretch at 7pm")
+    assert result.stop_reason == "pack_fast_path"
+    assert "memory_open_loops_upsert" in _tools(result)
+    _assert_no_facts_append_ok(result)
+    upsert = next(
+        r for r in result.tool_receipts if r.get("tool") == "memory_open_loops_upsert"
+    )
+    assert upsert.get("ok") is True
+    assert upsert.get("needs_confirm") is not True
+    loops = list_loops(kind="todo", status="open", paths=get_paths())
+    hit = next(
+        item for item in loops if "stretch" in str(item.get("text") or "").lower()
+    )
+    assert hit.get("remind_at")
+    spoken = (result.text or "").strip().lower()
+    assert spoken == "remind logged."
 
 
 def test_hud_smoke_life_status_concat(hud_smoke_root: Path) -> None:
@@ -728,3 +814,50 @@ def test_hud_smoke_m24_lat_pulldown_ladder(hud_smoke_root: Path) -> None:
     with open_life_db(paths=get_paths()) as conn:
         n = conn.execute("SELECT COUNT(*) AS n FROM gym_sets").fetchone()["n"]
     assert int(n) >= 3
+
+
+def test_hud_smoke_habit_done_miss_and_unknown(hud_smoke_root: Path) -> None:
+    """M26 habits HUD path — wrappers, Confirm-create, unknown miss, already_done."""
+    habits_mod.seed_default_habits()
+    done = _agent_turn("habit done: skincare")
+    assert done.stop_reason == "pack_fast_path"
+    assert "life_habit_do" in _tools(done)
+
+    second = _agent_turn("habit done: skincare")
+    assert second.stop_reason == "pack_fast_path"
+    dup = next(r for r in second.tool_receipts if r.get("tool") == "life_habit_do")
+    assert (dup.get("data") or {}).get("reason") == "already_done"
+    assert "logged" not in (second.text or "").lower()
+
+    unknown_do = _agent_turn("habit done: flurmble glorp")
+    assert unknown_do.stop_reason == "pack_fast_path"
+    assert "life_habit_create" in _tools(unknown_do)
+    assert habits_mod.resolve_habit("flurmble glorp").get("ok") is not True
+
+    unknown_miss = _agent_turn("habit miss: flurmble glorp")
+    assert unknown_miss.stop_reason == "missing_life_receipt"
+    assert "life_habit_create" not in _tools(unknown_miss)
+
+    miss = _agent_turn("habit miss: skincare")
+    assert miss.stop_reason == "pack_fast_path"
+    assert "life_habit_miss" in _tools(miss)
+
+    today = run_turn(
+        ChatSession(mode="observe"), "habits today", _ShouldNotRunAdapter()
+    )
+    assert today.stop_reason == "pack_fast_path"
+    spoken = (today.text or "").lower()
+    assert "streak broken" not in spoken
+    with open_life_db(paths=get_paths()) as conn:
+        done_n = conn.execute(
+            "SELECT COUNT(*) AS n FROM habit_events WHERE kind = 'done'"
+        ).fetchone()["n"]
+        miss_n = conn.execute(
+            "SELECT COUNT(*) AS n FROM habit_events WHERE kind = 'miss'"
+        ).fetchone()["n"]
+        defs = conn.execute(
+            "SELECT COUNT(*) AS n FROM habit_definitions WHERE display_name LIKE '%flurmble%'"
+        ).fetchone()["n"]
+    assert int(done_n) == 1
+    assert int(miss_n) == 1
+    assert int(defs) == 0

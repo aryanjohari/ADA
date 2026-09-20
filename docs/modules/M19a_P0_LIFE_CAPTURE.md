@@ -1,10 +1,10 @@
 # M19a — P0 Life Capture (implement spec)
 
-**Status:** design + implement spec (**v1.8**) — **P0.5 + gym catalog remote-default / NL fold lookup shipped**; food presets/favorites **phone 1–4 METAL** (2026-09-17); Gemini FunctionDeclaration `items` on life array schemas (2026-08-19); M19b PTT/camera still blocked until **live** operator HUD smoke PASS  
-**Date:** 2026-09-17  
+**Status:** design + implement spec (**v1.8**) — **P0.5 + gym catalog remote-default / NL fold lookup shipped**; food presets/favorites **phone 1–4 METAL** (2026-09-17); Gemini FunctionDeclaration `items` on life array schemas (2026-08-19); M19b PTT/camera still blocked until **live** operator HUD smoke PASS. People 7-pass **pytest METAL, PHONE OPEN** ([`M26_PEOPLE_DOMAIN.md`](./M26_PEOPLE_DOMAIN.md) v1.1) — organ **not CLOSED**. **Next = people phone jsonl**.  
+**Date:** 2026-09-19  
 **Kind:** Tier B **implement slice** — child of [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md)  
 **Depends on:** M19 (catalog/phases) · [`M18_CLOSE_TIER_A.md`](./M18_CLOSE_TIER_A.md) (kernel freeze gate) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) / [`M16_OPERATOR_NOTE.md`](./M16_OPERATOR_NOTE.md) · [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (strip/sheet locks) · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`../01_BODY.md`](../01_BODY.md) (SQLite WAL durability notes §6.2) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill) · [`M07_WEB.md`](./M07_WEB.md) (egress for USDA/OFF only)  
-**Feeds:** M19 P1+ (habits, people, mail, analysis packs). Gym + time capture **CLOSED** (M26). **Next = habits Phase 2**, not join.
+**Feeds:** M19 P1+ (habits, people, mail, analysis packs). Gym + time + habits capture **CLOSED** (M26). Dues capture **CLOSED** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.2). **Next = people phone jsonl**, not join.
 
 ### Filename choice
 
@@ -14,6 +14,11 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.19** | 2026-09-19 | Pointer — people 7-pass **pytest METAL, PHONE OPEN** ([`M26_PEOPLE_DOMAIN.md`](./M26_PEOPLE_DOMAIN.md) v1.1). Organ **not CLOSED**. **Next = people phone jsonl**. Do not reopen food 5–6. |
+| **v1.18** | 2026-09-19 | Pointer — dues capture **CLOSED** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.2 — add+list `8002799b…`). **Next = people Phase 2**. Do not reopen food 5–6. |
+| **v1.17** | 2026-09-19 | Pointer — dues 7-pass **pytest METAL, PHONE OPEN** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.1). Organ **not CLOSED**. **Next = dues phone jsonl**, then people. Do not reopen food 5–6. |
+| **v1.16** | 2026-09-19 | Pointer — dues Phase 2 card shipped ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.0). **Next = dues 7-pass** on existing `due_add`/`remind`/`due_done`/`due_list`. **Next ≠ people implement**. Do not reopen food 5–6. |
+| **v1.15** | 2026-09-19 | Pointer — gym + time + habits capture **CLOSED**. **Next = people Phase 2** ([`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) v1.19). Do not reopen food 5–6. |
 | **v1.14** | 2026-09-19 | Pointer — gym + time capture **CLOSED**. **Next = habits Phase 2** ([`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) v1.16). Do not reopen food 5–6. |
 | **v1.13** | 2026-09-17 | Pointer — **life freeze stamp:** food restart **1–4 PHONE METAL**; **#5–#6 + vocative OPEN later**. Next = gym Phase 2 ([`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.17). |
 | **v1.12** | 2026-09-11 | Food/life capture **FREEZE** → [`M26_FOOD_DOMAIN.md`](./M26_FOOD_DOMAIN.md) v1.12 (restart checklist). |

@@ -20,6 +20,14 @@ packs:
     tool: life_habit_status
     preferred_tools: [life_habit_status]
     spine: read
+  habit_day:
+    tool: life_habit_day
+    preferred_tools: [life_habit_day]
+    spine: read
+  habit_week:
+    tool: life_habit_week
+    preferred_tools: [life_habit_week]
+    spine: read
   person_capture:
     tool: life_person_capture
     prefill: "met "
@@ -78,6 +86,8 @@ chips:
 aliases:
   - {pattern: "habits today", verb: streak_show}
   - {pattern: "how are my habits", verb: streak_show}
+  - {pattern: "what habits yesterday", verb: habit_day}
+  - {pattern: "habits this week", verb: habit_week}
   - {pattern: "who is", verb: who_is}
   - {pattern: "set birthday", verb: birthday_set}
   - {pattern: "routine run", verb: routine_run}

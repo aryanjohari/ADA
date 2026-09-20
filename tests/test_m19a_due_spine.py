@@ -75,3 +75,47 @@ def test_due_done_ambiguous_is_miss(data_root: Path) -> None:
     parsed = build_due_upsert_args("done: thesis", verb="due_done")
     assert parsed["ok"] is False
     assert parsed["match_count"] == 2
+    assert parsed["reason"] == "missing_life_receipt"
+
+
+def test_due_spine_does_not_set_people_ids_or_next_wake(data_root: Path) -> None:
+    ensure_prefs(get_paths())
+    add = build_due_upsert_args("add due: finish thesis by Friday", verb="due_add")
+    assert add["ok"] is True
+    assert "people_ids" not in add["args"]
+    assert "next_wake_at" not in add["args"]
+    remind = build_due_upsert_args("remind me to stretch at 7pm", verb="remind")
+    assert remind["ok"] is True
+    assert "people_ids" not in remind["args"]
+    assert "next_wake_at" not in remind["args"]
+    assert remind["args"].get("remind_at")
+    done = build_due_upsert_args("done: nobody", verb="due_done")
+    assert done["ok"] is False
+    assert "people_ids" not in (done.get("args") or {})
+
+
+def test_due_done_code_binds_id_not_cortex_hint(data_root: Path) -> None:
+    """Spine binds unique open-todo id; pack_hint id must not sole-pick."""
+    from ada.harness.loop import _fast_path_due
+    from ada.harness.session import ChatSession
+    from ada.harness.stream_events import NullSink
+    from ada.memory.open_loops import list_loops
+    from ada.tools.gateway import Gateway
+
+    ensure_prefs(get_paths())
+    created = upsert_loop(text="finish thesis chapter", kind="todo", status="open")
+    real_id = created["loop"]["id"]
+    session = ChatSession(mode="agent")
+    session.gateway = Gateway(mode="agent")
+    session.pack_hint = {
+        "verb": "due_done",
+        "args": {"utterance": "done: thesis", "id": "loop_cortex_guess"},
+    }
+    receipts: list[dict] = []
+    stop, _speech = _fast_path_due(session, NullSink(), [], receipts)
+    assert stop == "pack_fast_path"
+    upsert = next(r for r in receipts if r.get("tool") == "memory_open_loops_upsert")
+    assert (upsert.get("args") or {}).get("id") == real_id
+    assert (upsert.get("args") or {}).get("id") != "loop_cortex_guess"
+    done = list_loops(kind="todo", status="done", paths=get_paths())
+    assert any(item.get("id") == real_id for item in done)

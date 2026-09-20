@@ -1153,6 +1153,35 @@ SPECS: tuple[ToolSpec, ...] = (
         ),
     ),
     ToolSpec(
+        name="life_habit_day",
+        group="life",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "life_habit_day",
+            "Read one local calendar day of habit_events (ticks/misses).",
+            {"date": {"type": "string", "description": "YYYY-MM-DD local day"}},
+        ),
+    ),
+    ToolSpec(
+        name="life_habit_week",
+        group="life",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "life_habit_week",
+            "Read last N local days of habit_events (deterministic reflection).",
+            {
+                "days": {
+                    "type": "integer",
+                    "description": "Window size in local days (default 7, max 31)",
+                }
+            },
+        ),
+    ),
+    ToolSpec(
         name="life_person_capture",
         group="life",
         side_effect="append_local",
