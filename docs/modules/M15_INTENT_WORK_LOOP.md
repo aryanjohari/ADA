@@ -406,6 +406,8 @@ charter + register contracts             follow contracts (soft)
 
 ### P2 — deeper work objects — **deferred**
 
+First **jobs** that should force these gaps: [`M28_WORK_LOOP_CASE_STUDIES.md`](./M28_WORK_LOOP_CASE_STUDIES.md) (CV drafts · portfolio post). Research only until that card’s next slice; do not treat P2 as a blank harness rewrite.
+
 | # | Work | Owner |
 |---|------|-------|
 | 1 | Persist plans to ada-data; resume by `plan_id` | memory |
@@ -423,6 +425,7 @@ charter + register contracts             follow contracts (soft)
 |------|------|-------------------|
 | **M02** | ReAct loop, gateway, runs/ | M15 adds **work-object workflow** around the loop |
 | **M06** | Campaigns STATUS/stages/wake | M15 feeds short todos; multi-day → campaign |
+| **M28** | First work **case studies** (CV drafts · portfolio `/blog`) | Consumes M15/M06; does not replace Plan/Accept |
 | **M13/M14** | Chrome + Plan Accept + Confirm surfaces | M15 specifies **what** those surfaces bind to |
 | **M04/M10** | FACTS / understanding user | Informs interpret; does not authorize work |
 | **M05** | Register intent→class (voice) | Formatting/social gates — **not** policy mode |
