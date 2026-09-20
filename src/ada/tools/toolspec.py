@@ -313,8 +313,14 @@ SPECS: tuple[ToolSpec, ...] = (
             (
                 "Create/update a todo or campaign (Agent). "
                 "Remind/ping → remind_at (todo); campaign wake → next_wake_at. "
-                "Delete and gated stage/campaign done require confirmed=true "
-                "(or last_receipt for gated completion)."
+                "Optional plan_id on campaigns (resume pin; no plans/*.yaml). "
+                "Optional campaign_id/plan_id on todos (minutes-work pin; stages stay "
+                "campaign truth). Delete and gated stage/campaign done require "
+                "confirmed=true (or last_receipt for gated completion). "
+                "Campaign status→done while waiting_on_aryan requires confirmed=true "
+                "AND operator-typed last_receipt (https URL or 'sent to …'). "
+                "Draft artifacts/ paths are not ship proof. "
+                "Accept ≠ Confirm ≠ operator-ship. Do not invent a public URL."
             ),
             {
                 "text": {"type": "string"},
@@ -345,7 +351,11 @@ SPECS: tuple[ToolSpec, ...] = (
                 "last_progress_at": {"type": "string"},
                 "last_receipt": {
                     "type": "string",
-                    "description": "runs/ receipt pointer for claimed progress",
+                    "description": (
+                        "Receipt pointer. Draft progress: artifacts/… path. "
+                        "Campaign done after ship: operator-typed https URL or "
+                        "'sent to …' — never a Gemini-invented URL, never the draft path."
+                    ),
                 },
                 "cadence": {
                     "type": "string",
@@ -388,6 +398,19 @@ SPECS: tuple[ToolSpec, ...] = (
                     "type": "string",
                     "description": "Cooldown metal — usually set by notify_send",
                 },
+                "plan_id": {
+                    "type": "string",
+                    "description": (
+                        "Pin on campaign (resume) or todo (Accept minutes-work). "
+                        "Does not create plans/*.yaml."
+                    ),
+                },
+                "campaign_id": {
+                    "type": "string",
+                    "description": (
+                        "Todo only — pin to a kind:campaign. Stages remain campaign truth."
+                    ),
+                },
                 "delete": {"type": "boolean"},
                 "confirmed": {"type": "boolean"},
             },
@@ -405,7 +428,12 @@ SPECS: tuple[ToolSpec, ...] = (
                 "Write a durable md/csv under /mnt/ada-data/artifacts/ (Pi-doer). "
                 "Path jail — no escape. Overwrite needs confirmed=true. "
                 "Claiming a report was written requires the returned receipt_id. "
-                "Typical flow: web_fetch → cite → artifact_write with source_cites."
+                "Typical flow: web_fetch → cite → artifact_write with source_cites. "
+                "Shared work loop: optional campaign_id after a successful write sets "
+                "that campaign to waiting_on_aryan (handshake). next_stage = human-ship "
+                "stage; waiting_reason = blocked_reason. last_receipt = this path. "
+                "Do not mark the campaign done from this write — operator ships, then "
+                "types a URL or 'sent to …' under Confirm."
             ),
             {
                 "title": {"type": "string", "description": "Title / slug seed"},
@@ -426,6 +454,21 @@ SPECS: tuple[ToolSpec, ...] = (
                 },
                 "overwrite": {"type": "boolean"},
                 "confirmed": {"type": "boolean"},
+                "campaign_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional kind:campaign id. On success, handshake → "
+                        "waiting_on_aryan + last_receipt=this path."
+                    ),
+                },
+                "next_stage": {
+                    "type": "string",
+                    "description": "Optional human-ship stage id to make current_stage",
+                },
+                "waiting_reason": {
+                    "type": "string",
+                    "description": "Optional blocked_reason (what the operator should do)",
+                },
             },
             required=["body"],
         ),

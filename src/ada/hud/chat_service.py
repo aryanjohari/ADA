@@ -461,12 +461,14 @@ class ChatService:
         steps: list[dict[str, Any]],
         plan_id: str | None = None,
         raw_text: str | None = None,
+        campaign_id: str | None = None,
     ) -> dict[str, Any]:
         """Materialize plan steps as open_loops kind:todo (no cortex, no write tools)."""
-        from ada.memory.open_loops import upsert_loop
+        from ada.memory.open_loops import get_loop, upsert_loop
 
         with self._lock:
             pid = (plan_id or "").strip() or new_plan_id()
+            cid = (campaign_id or "").strip() or None
             todos: list[dict[str, str]] = []
             for step in steps:
                 text = str(
@@ -487,10 +489,17 @@ class ChatService:
                     status="open",
                     due_at=due_at,
                     remind_at=remind_at,
+                    plan_id=pid,
+                    campaign_id=cid,
                 )
                 loop = result.get("loop") if isinstance(result.get("loop"), dict) else {}
                 loop_id = str(loop.get("id") or result.get("id") or "")
                 todos.append({"id": loop_id, "text": text})
+
+            if cid:
+                camp = get_loop(cid)
+                if camp and camp.get("kind") == "campaign":
+                    upsert_loop(loop_id=cid, plan_id=pid)
 
             if self.last_plan and (
                 not plan_id or self.last_plan.get("plan_id") == plan_id
@@ -504,6 +513,7 @@ class ChatService:
                     "plan_accepted",
                     {
                         "plan_id": pid,
+                        "campaign_id": cid,
                         "todos": todos,
                         "count": len(todos),
                         "raw_text": raw_text,
@@ -512,6 +522,7 @@ class ChatService:
 
             return {
                 "plan_id": pid,
+                "campaign_id": cid,
                 "todos": todos,
                 "count": len(todos),
             }

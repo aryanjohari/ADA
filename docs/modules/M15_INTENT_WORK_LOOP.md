@@ -1,6 +1,6 @@
 # M15 — Intent → Work Loop (plan · todos · execute · receipts)
 
-**Status:** module research card — **P0+P1 metal shipped** (2026-08-16). Structured plan artifacts (SSE+JSONL), Accept→`kind:todo`, Plan↔Agent history preserve, charter clarify/done-receipt, soft mode-suggest, confirm `pending_id`. P2 deferred.  
+**Status:** module research card — **P0+P1 metal shipped** (2026-08-16). Structured plan artifacts (SSE+JSONL), Accept→`kind:todo`, Plan↔Agent history preserve, charter clarify/done-receipt, soft mode-suggest, confirm `pending_id`. **P2 #1/#2 thin metal (M28 Layer A v1.2); #3/#4 still deferred.**  
 **Date:** 2026-08-16 (v2 implement)  
 **Host:** `ada-pi5` (Raspberry Pi 5 Model B Rev 1.1, Debian trixie, ~8 GiB RAM)  
 **Client:** Aryan’s Mac over Tailscale Serve (control plane)  
@@ -404,14 +404,14 @@ charter + register contracts             follow contracts (soft)
 | 3 | `pending_id` confirm bind | **METAL** |
 | 4 | Soft mode-suggest chip | **METAL** |
 
-### P2 — deeper work objects — **deferred**
+### P2 — deeper work objects — **#1/#2 thin metal (M28 Layer A); #3/#4 still deferred**
 
-First **jobs** that should force these gaps: [`M28_WORK_LOOP_CASE_STUDIES.md`](./M28_WORK_LOOP_CASE_STUDIES.md) (CV drafts · portfolio post). Research only until that card’s next slice; do not treat P2 as a blank harness rewrite.
+First **jobs** that should force these gaps: [`M28_WORK_LOOP_CASE_STUDIES.md`](./M28_WORK_LOOP_CASE_STUDIES.md) v1.1 (CV drafts · portfolio post). **Feeds M28 v1.1:** that card names which P2 bits `portfolio-post-1` needs (persist `plan_id`, thin todo↔campaign — not mid-ReAct serialize, not intent router). Do not treat P2 as a blank harness rewrite. **M28 v1.2:** P2 #1/#2 are thin metal (`plan_id` on campaign; `campaign_id`/`plan_id` on todos). Still no `plans/*.yaml`.
 
 | # | Work | Owner |
 |---|------|-------|
-| 1 | Persist plans to ada-data; resume by `plan_id` | memory |
-| 2 | Link todos ↔ campaign stages when user says “make this a campaign” | M06 bridge |
+| 1 | Persist plans to ada-data; resume by `plan_id` | **METAL (thin, M28 Layer A)** — pin `plan_id` on the campaign record; no `plans/*.yaml` |
+| 2 | Link todos ↔ campaign stages when user says “make this a campaign” | **METAL (thin, M28 Layer A)** — `campaign_id`/`plan_id` on `kind:todo`; stages remain campaign truth |
 | 3 | Mid-loop pause/resume (SDK-like) without dropping session | harness |
 | 4 | Intent router beyond heuristics (only if measured need) | harness |
 
@@ -425,7 +425,7 @@ First **jobs** that should force these gaps: [`M28_WORK_LOOP_CASE_STUDIES.md`](.
 |------|------|-------------------|
 | **M02** | ReAct loop, gateway, runs/ | M15 adds **work-object workflow** around the loop |
 | **M06** | Campaigns STATUS/stages/wake | M15 feeds short todos; multi-day → campaign |
-| **M28** | First work **case studies** (CV drafts · portfolio `/blog`) | Consumes M15/M06; does not replace Plan/Accept |
+| **M28** | First work **case studies** (CV drafts · portfolio `/blog`) | Consumes M15/M06; does not replace Plan/Accept. **Feeds M28 v1.1** P2 mapping |
 | **M13/M14** | Chrome + Plan Accept + Confirm surfaces | M15 specifies **what** those surfaces bind to |
 | **M04/M10** | FACTS / understanding user | Informs interpret; does not authorize work |
 | **M05** | Register intent→class (voice) | Formatting/social gates — **not** policy mode |

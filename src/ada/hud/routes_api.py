@@ -81,6 +81,7 @@ class PlanAcceptBody(BaseModel):
     plan_id: str | None = None
     steps: list[PlanStepBody] = Field(default_factory=list)
     raw_text: str | None = None
+    campaign_id: str | None = None
 
 
 class TtsBody(BaseModel):
@@ -557,6 +558,7 @@ def api_plan_accept(request: Request, body: PlanAcceptBody) -> JSONResponse:
             steps=steps,
             plan_id=body.plan_id,
             raw_text=body.raw_text,
+            campaign_id=body.campaign_id,
         )
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(

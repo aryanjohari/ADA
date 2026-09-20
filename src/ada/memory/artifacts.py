@@ -104,6 +104,9 @@ def write_artifact(
     overwrite: bool = False,
     confirmed: bool = False,
     relative_path: str | None = None,
+    campaign_id: str | None = None,
+    next_stage: str | None = None,
+    waiting_reason: str | None = None,
     paths: DataPaths | None = None,
 ) -> dict[str, Any]:
     """Create/overwrite an md/csv under artifacts/. Deny path escape."""
@@ -195,7 +198,7 @@ def write_artifact(
     except OSError:
         crumb = None
 
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "outcome": "ok",
         "path": f"artifacts/{rel}",
@@ -207,3 +210,15 @@ def write_artifact(
         "title": title,
         "format": fmt,
     }
+    cid = str(campaign_id or "").strip()
+    if cid:
+        from ada.memory.open_loops import handshake_after_artifact
+
+        result["handshake"] = handshake_after_artifact(
+            campaign_id=cid,
+            artifact_path=f"artifacts/{rel}",
+            next_stage=str(next_stage).strip() if next_stage else None,
+            waiting_reason=str(waiting_reason).strip() if waiting_reason else None,
+            paths=p,
+        )
+    return result

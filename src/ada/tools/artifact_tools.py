@@ -24,6 +24,17 @@ def run_artifact_write(args: dict[str, Any]) -> dict[str, Any]:
         overwrite=bool(args.get("overwrite", False)),
         confirmed=bool(args.get("confirmed", False)),
         relative_path=str(args["path"]) if args.get("path") else None,
+        campaign_id=(
+            str(args["campaign_id"]) if args.get("campaign_id") is not None else None
+        ),
+        next_stage=(
+            str(args["next_stage"]) if args.get("next_stage") is not None else None
+        ),
+        waiting_reason=(
+            str(args["waiting_reason"])
+            if args.get("waiting_reason") is not None
+            else None
+        ),
     )
 
 

@@ -209,14 +209,24 @@ def mode_addendum(mode: str) -> str:
             "Dream seal runs via `ada dream run`, not as a chat toy. "
             "Underspecified task: ask ≤2 clarifiers before inventing args. "
             "Claiming task done: require a tool receipt in runs/ — "
-            "never fake success; do not speak receipt_id strings aloud."
+            "never fake success; do not speak receipt_id strings aloud. "
+            "Shared work loop (kind:campaign, across days — not minutes todos): "
+            "Plan → Accept (todos; optional campaign_id pin) → one Agent act "
+            "(artifact_write with campaign_id) → STATUS waiting_on_aryan. "
+            "Accept ≠ Confirm ≠ operator-ship. Do not mark campaign done because "
+            "a draft looks finished. done requires Confirm on "
+            "memory_open_loops_upsert with operator-typed last_receipt "
+            "(https URL or 'sent to …') — never invent a public URL."
         )
     if mode_l == "plan":
         return (
             "Current harness mode: Plan. Propose only; read tools OK; "
             "no side-effect tools. Prefer a short ordered checklist, or a "
             "JSON fence ```json\\n{\"steps\":[\"…\"]}\\n```. "
-            "Underspecified task: ask ≤2 clarifiers before inventing steps."
+            "Underspecified task: ask ≤2 clarifiers before inventing steps. "
+            "Long-horizon work: propose steps for the inner loop; Accept "
+            "materializes todos. Campaign STATUS/stages live on disk — do not "
+            "treat chat as the campaign."
         )
     return f"Current harness mode: {mode}."
 

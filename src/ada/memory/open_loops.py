@@ -6,6 +6,7 @@ Campaigns add stages, gates, wake fields — not a second job framework.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -28,6 +29,10 @@ CAMPAIGN_STATUSES = frozenset(
 )
 STAGE_STATES = frozenset({"pending", "active", "done", "skipped"})
 CADENCES = frozenset({"on_open_only", "daily"})
+
+# Operator-ship receipts (M28 Layer A / F-M28-7). Draft artifact paths are not ship proof.
+_SHIP_SENT_RE = re.compile(r"^sent\s+to\b", re.IGNORECASE)
+_SHIP_URL_RE = re.compile(r"^https?://\S+", re.IGNORECASE)
 
 # M09 watches on campaigns (optional field).
 WATCH_KINDS = frozenset({"rss", "atom", "fixed_urls"})
@@ -257,6 +262,104 @@ def _stage_by_id(stages: list[dict[str, Any]], stage_id: str) -> dict[str, Any] 
     return None
 
 
+def _opt_pin(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def is_operator_ship_receipt(receipt: str | None) -> bool:
+    """True when last_receipt is an operator-typed URL or 'sent to …' (F-M28-7)."""
+    text = str(receipt or "").strip()
+    if not text:
+        return False
+    if _SHIP_URL_RE.match(text):
+        host = text.split("://", 1)[1].strip().strip("/")
+        if not host or host in {".", "...", "…"} or set(host) <= {".", "…"}:
+            return False
+        return True
+    return bool(_SHIP_SENT_RE.match(text))
+
+
+def is_draft_artifact_receipt(receipt: str | None) -> bool:
+    text = str(receipt or "").strip().replace("\\", "/")
+    return text.startswith("artifacts/")
+
+
+def _effective_receipt(
+    existing: dict[str, Any] | None,
+    last_receipt: str | None,
+) -> str | None:
+    if last_receipt is not None and str(last_receipt).strip():
+        return str(last_receipt).strip()
+    if existing and existing.get("last_receipt"):
+        return str(existing.get("last_receipt")).strip() or None
+    return None
+
+
+def _ship_pause_done_gate(
+    *,
+    existing: dict[str, Any] | None,
+    new_status: str | None,
+    last_receipt: str | None,
+    confirmed: bool,
+) -> dict[str, Any] | None:
+    """waiting_on_aryan → done needs operator-typed receipt + Confirm (F-M28-7).
+
+    confirmed=true is not enough if last_receipt is still the draft artifact path.
+    Gemini-invented https:// without a real host (or without Confirm) fails.
+    """
+    if (
+        new_status != "done"
+        or not existing
+        or existing.get("kind") != KIND_CAMPAIGN
+        or existing.get("status") != "waiting_on_aryan"
+    ):
+        return None
+    receipt = _effective_receipt(existing, last_receipt)
+    cid = existing.get("id")
+    if not is_operator_ship_receipt(receipt):
+        if is_draft_artifact_receipt(receipt):
+            reason = (
+                "campaign status→done while waiting_on_aryan requires an operator-typed "
+                "last_receipt (https URL or 'sent to …'); draft artifacts/ paths are not "
+                "ship proof (F-M28-7)"
+            )
+        else:
+            reason = (
+                "campaign status→done while waiting_on_aryan requires an operator-typed "
+                "last_receipt (https URL or 'sent to …') and confirmed=true (F-M28-7)"
+            )
+        if confirmed:
+            return {
+                "ok": False,
+                "outcome": "denied",
+                "denied_reason": reason,
+                "reason": reason,
+                "id": cid,
+            }
+        return {
+            "ok": False,
+            "needs_confirm": True,
+            "outcome": "needs_confirm",
+            "reason": reason,
+            "id": cid,
+        }
+    if not confirmed:
+        return {
+            "ok": False,
+            "needs_confirm": True,
+            "outcome": "needs_confirm",
+            "reason": (
+                "campaign status→done after operator-ship requires confirmed=true "
+                "(Confirm Integrity: bind real {tool, args})"
+            ),
+            "id": cid,
+        }
+    return None
+
+
 def _gated_done_needs_confirm(
     *,
     existing: dict[str, Any] | None,
@@ -265,7 +368,16 @@ def _gated_done_needs_confirm(
     last_receipt: str | None,
     confirmed: bool,
 ) -> dict[str, Any] | None:
-    """Return needs_confirm payload if a gated completion is attempted without proof."""
+    """Return needs_confirm/denied payload if a gated completion is attempted without proof."""
+    ship_block = _ship_pause_done_gate(
+        existing=existing,
+        new_status=new_status,
+        last_receipt=last_receipt,
+        confirmed=confirmed,
+    )
+    if ship_block is not None:
+        return ship_block
+
     if confirmed:
         return None
     has_receipt = bool(last_receipt and str(last_receipt).strip()) or bool(
@@ -428,14 +540,18 @@ def list_campaigns(
     return loops[: max(0, limit)]
 
 
-def format_campaign_head(item: dict[str, Any], *, max_len: int = 200) -> str:
+def format_campaign_head(item: dict[str, Any], *, max_len: int = 240) -> str:
     title = str(item.get("title") or item.get("text") or "?").strip()
     status = item.get("status") or "?"
     stage = item.get("current_stage") or "-"
     blocked = item.get("blocked_reason")
     parts = [f"[{item.get('id', '?')}]", title[:80], f"STATUS={status}", f"stage={stage}"]
+    if item.get("plan_id"):
+        parts.append(f"plan={item.get('plan_id')}")
     if blocked:
         parts.append(f"blocked={str(blocked)[:60]}")
+    if item.get("last_receipt"):
+        parts.append(f"receipt={str(item.get('last_receipt'))[:48]}")
     line = " ".join(parts)
     if len(line) > max_len:
         return line[: max_len - 1] + "…"
@@ -539,6 +655,8 @@ def upsert_loop(
     ends_at: str | None = None,
     notify: bool | None = None,
     last_notified_at: str | None = None,
+    plan_id: str | None = None,
+    campaign_id: str | None = None,
     delete: bool = False,
     confirmed: bool = False,
     paths: DataPaths | None = None,
@@ -680,6 +798,12 @@ def upsert_loop(
             target["last_notified_at"] = _norm_iso_field(
                 last_notified_at, "last_notified_at"
             )
+        pin_plan = _opt_pin(plan_id)
+        if pin_plan is not None:
+            target["plan_id"] = pin_plan
+        pin_camp = _opt_pin(campaign_id)
+        if pin_camp is not None:
+            target["campaign_id"] = pin_camp
 
     if loop_id and existing is not None:
         if text is not None:
@@ -710,6 +834,10 @@ def upsert_loop(
             existing["nudge_attribution"] = nudge_attribution
         if new_watches is not None:
             existing["watches"] = new_watches
+        if resolved_kind == KIND_CAMPAIGN:
+            pin_plan = _opt_pin(plan_id)
+            if pin_plan is not None:
+                existing["plan_id"] = pin_plan
         if resolved_kind == KIND_TODO:
             _apply_todo_ops(existing)
         existing["updated_at"] = utc_now_iso()
@@ -741,6 +869,9 @@ def upsert_loop(
         item["nudge_attribution"] = nudge_attribution
         if new_watches is not None:
             item["watches"] = new_watches
+        pin_plan = _opt_pin(plan_id)
+        if pin_plan is not None:
+            item["plan_id"] = pin_plan
     else:
         if title is not None:
             item["title"] = str(title).strip()
@@ -751,6 +882,69 @@ def upsert_loop(
     data["schema_version"] = SCHEMA_VERSION
     atomic_write_text(p.open_loops_yaml, _dump(data))
     return {"ok": True, "outcome": "ok", "loop": item}
+
+
+def handshake_after_artifact(
+    *,
+    campaign_id: str,
+    artifact_path: str,
+    next_stage: str | None = None,
+    waiting_reason: str | None = None,
+    paths: DataPaths | None = None,
+) -> dict[str, Any]:
+    """After a successful draft write: STATUS → waiting_on_aryan (M28 Layer A).
+
+    Not a new tool. Called from artifact_write when campaign_id is set.
+    """
+    cid = _opt_pin(campaign_id)
+    if not cid:
+        return {
+            "ok": False,
+            "outcome": "error",
+            "error": "campaign_id required for handshake",
+        }
+    existing = get_loop(cid, paths=paths)
+    if not existing or existing.get("kind") != KIND_CAMPAIGN:
+        return {
+            "ok": False,
+            "outcome": "error",
+            "error": f"campaign not found: {cid}",
+        }
+
+    receipt = str(artifact_path or "").strip()
+    if not receipt:
+        return {
+            "ok": False,
+            "outcome": "error",
+            "error": "artifact_path required for handshake",
+        }
+
+    reason = (waiting_reason or "").strip() or f"operator ship after {receipt}"
+    ship_stage = _opt_pin(next_stage)
+
+    new_stages: list[dict[str, Any]] | None = None
+    if ship_stage and isinstance(existing.get("stages"), list) and existing.get("stages"):
+        prev = str(existing.get("current_stage") or "").strip() or None
+        updated: list[dict[str, Any]] = []
+        for raw in existing["stages"]:
+            stage = dict(raw)
+            sid = str(stage.get("id") or "")
+            if prev and sid == prev and sid != ship_stage and stage.get("state") != "done":
+                stage["state"] = "done"
+            if sid == ship_stage:
+                stage["state"] = "active"
+            updated.append(stage)
+        new_stages = updated
+
+    return upsert_loop(
+        loop_id=cid,
+        status="waiting_on_aryan",
+        current_stage=ship_stage,
+        blocked_reason=reason,
+        last_receipt=receipt,
+        stages=new_stages,
+        paths=paths,
+    )
 
 
 def due_todos(

@@ -219,6 +219,10 @@ def test_f4_accept_creates_todos(data_root, monkeypatch):
     texts = {x.get("text") for x in loops}
     assert "M15 todo one" in texts
     assert "M15 todo two" in texts
+    accepted = [x for x in loops if x.get("text") in {"M15 todo one", "M15 todo two"}]
+    assert accepted
+    assert all(x.get("plan_id") for x in accepted)
+    assert all(not x.get("campaign_id") for x in accepted)
 
 
 def test_f5_plan_agent_preserves_history(data_root, monkeypatch):

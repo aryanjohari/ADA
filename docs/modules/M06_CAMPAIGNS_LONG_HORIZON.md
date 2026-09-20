@@ -451,3 +451,5 @@ Morning brief can ship in parallel *as a thin surfacer* of existing open_loops/c
 **Do this:** treat **campaigns as durable STATUS + stages on (extended) `open_loops`**, with wake-on-open + optional brief timer — and **retire adaemon/job-tick vocabulary** for v1.
 
 **Fetch sequencing:** implement **campaigns substrate before generic web-fetch**. Fetch comes next so it writes into stages/digests instead of bleeding tokens into immortal chat.
+
+**M28 v1.1 (feeds):** first named work containers (`portfolio-post-1`, then CV drafts) consume this STATUS/`waiting_on_aryan` organ — do not extend M06’s schema for those jobs.

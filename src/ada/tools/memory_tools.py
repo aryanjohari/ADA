@@ -108,6 +108,10 @@ def run_memory_open_loops_upsert(args: dict[str, Any]) -> dict[str, Any]:
             if args.get("last_notified_at") is not None
             else None
         ),
+        plan_id=str(args["plan_id"]) if args.get("plan_id") is not None else None,
+        campaign_id=(
+            str(args["campaign_id"]) if args.get("campaign_id") is not None else None
+        ),
         delete=bool(args.get("delete", False)),
         confirmed=bool(args.get("confirmed", False)),
     )
