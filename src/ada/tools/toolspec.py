@@ -1358,6 +1358,135 @@ SPECS: tuple[ToolSpec, ...] = (
             required=["text"],
         ),
     ),
+    ToolSpec(
+        name="hunt_ensure_campaign",
+        group="hunt",
+        side_effect="append_local",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "hunt_ensure_campaign",
+            (
+                "Ensure kind:campaign cv-draft-1 exists with paste-smoke stages "
+                "(link_or_jd→jd_ready→triage→draft_pack→you_send). "
+                "HUNT_ROOT from ADA_HUNT_ROOT / work_hunt.yaml / smoke default."
+            ),
+            {},
+        ),
+    ),
+    ToolSpec(
+        name="hunt_guidelines_load",
+        group="hunt",
+        side_effect="read_local",
+        egress="none",
+        modes=_OBSERVE_AGENT_PLAN,
+        schema=_schema(
+            "hunt_guidelines_load",
+            (
+                "Load verbatim hunt SoT files from HUNT_ROOT (FIT_AND_EXPECT, "
+                "HUNT_SESSION, ADA_HUNT_WORKFLOW, job-apply skill, _defaults, "
+                "MASTER_PROFILE). Do not summarise into a weaker prompt. "
+                "Read-only — prod root OK; pack writes stay on smoke."
+            ),
+            {
+                "max_chars_per_file": {
+                    "type": "integer",
+                    "description": "Truncate each file (default 120000)",
+                },
+            },
+        ),
+    ),
+    ToolSpec(
+        name="hunt_paste_jd",
+        group="hunt",
+        side_effect="append_local",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "hunt_paste_jd",
+            (
+                "Store operator-pasted full JD under "
+                "HUNT_ROOT/applications/_inbox/<pack_id>/jd.md (paste path; "
+                "no fetch). Advances cv-draft-1 to triage. Writes refused on "
+                "prod nz-cv-job-hunt — use smoke root."
+            ),
+            {
+                "jd_text": {"type": "string", "description": "Full JD body"},
+                "pack_id": {
+                    "type": "string",
+                    "description": "Slug e.g. 2026-09-acme-junior-dev",
+                },
+                "company": {"type": "string"},
+                "role": {"type": "string"},
+                "source_url": {"type": "string"},
+                "campaign_id": {
+                    "type": "string",
+                    "description": "Default cv-draft-1",
+                },
+            },
+            required=["jd_text", "pack_id"],
+        ),
+    ),
+    ToolSpec(
+        name="hunt_triage_record",
+        group="hunt",
+        side_effect="append_local",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "hunt_triage_record",
+            (
+                "Record role_fit + expect (1–5) and decision skip|hold|apply. "
+                "No pack on skip/hold (F-M28-11). apply + role_fit≥3 awaits "
+                "Plan Accept then hunt_write_pack."
+            ),
+            {
+                "pack_id": {"type": "string"},
+                "role_fit": {"type": "integer", "description": "1–5 capability"},
+                "expect": {"type": "integer", "description": "1–5 path realism"},
+                "decision": {
+                    "type": "string",
+                    "enum": ["skip", "hold", "apply"],
+                },
+                "rationale": {"type": "string"},
+                "residency_score": {"type": "string"},
+                "campaign_id": {"type": "string"},
+            },
+            required=["pack_id", "role_fit", "expect", "decision"],
+        ),
+    ),
+    ToolSpec(
+        name="hunt_write_pack",
+        group="hunt",
+        side_effect="append_local",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "hunt_write_pack",
+            (
+                "After Plan Accept (= Accept apply): write tailored "
+                "applications/<id>/{cv,cover,jd}.tex under smoke HUNT_ROOT, "
+                "then handshake → waiting_on_aryan / you_send. Requires "
+                "accepted=true + campaign plan_id + triage apply + role_fit≥3. "
+                "Never default fullstack-v1; never auto-Applied / never done "
+                "(F-M28-7/11)."
+            ),
+            {
+                "pack_id": {"type": "string"},
+                "accepted": {
+                    "type": "boolean",
+                    "description": "Must be true after Plan Accept",
+                },
+                "cv_body": {"type": "string", "description": "Optional CV body text"},
+                "cover_body": {
+                    "type": "string",
+                    "description": "Optional cover body text",
+                },
+                "campaign_id": {"type": "string"},
+            },
+            required=["pack_id", "accepted"],
+        ),
+    ),
 )
 
 SPECS_BY_NAME: dict[str, ToolSpec] = {s.name: s for s in SPECS}

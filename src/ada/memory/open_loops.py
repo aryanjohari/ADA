@@ -28,6 +28,7 @@ CAMPAIGN_STATUSES = frozenset(
     {"active", "blocked", "waiting_on_aryan", "paused", "done", "failed"}
 )
 STAGE_STATES = frozenset({"pending", "active", "done", "skipped"})
+STAGE_GATES = frozenset({"confirm", "operator_ship", "plan_accept"})
 CADENCES = frozenset({"on_open_only", "daily"})
 
 # Operator-ship receipts (M28 Layer A / F-M28-7). Draft artifact paths are not ship proof.
@@ -248,9 +249,11 @@ def _normalize_stages(stages: Any) -> list[dict[str, Any]]:
         gate = raw.get("gate")
         if gate is not None and str(gate).strip():
             g = str(gate).strip()
-            if g != "confirm":
-                raise ValueError("stage.gate must be 'confirm' when set")
-            stage["gate"] = "confirm"
+            if g not in STAGE_GATES:
+                raise ValueError(
+                    f"stage.gate must be one of {sorted(STAGE_GATES)} when set; got {g!r}"
+                )
+            stage["gate"] = g
         out.append(stage)
     return out
 
@@ -691,17 +694,22 @@ def upsert_loop(
         }
 
     existing: dict[str, Any] | None = None
+    create_with_id: str | None = None
     if loop_id:
         for item in loops:
             if item.get("id") == loop_id:
                 existing = item
                 break
         if existing is None:
-            return {
-                "ok": False,
-                "outcome": "error",
-                "error": f"open_loop id not found: {loop_id}",
-            }
+            # Allow minting a stable campaign id (e.g. cv-draft-1) when text is given.
+            if text and str(text).strip():
+                create_with_id = str(loop_id).strip()
+            else:
+                return {
+                    "ok": False,
+                    "outcome": "error",
+                    "error": f"open_loop id not found: {loop_id}",
+                }
 
     resolved_kind = str(
         kind
@@ -849,8 +857,9 @@ def upsert_loop(
     # Create
     if not text or not str(text).strip():
         raise ValueError("text required to create open_loop")
+    new_id = create_with_id or uuid.uuid4().hex[:12]
     item: dict[str, Any] = {
-        "id": uuid.uuid4().hex[:12],
+        "id": new_id,
         "kind": resolved_kind,
         "text": str(text).strip(),
         "status": resolved_status,
