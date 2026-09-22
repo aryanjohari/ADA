@@ -919,6 +919,12 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
     if aliased is not None:
         return aliased
 
+    # Structural create-meal draft (make / wanna make / add a meal) before meal_log.
+    from ada.harness.meal_draft_spine import is_meal_draft_start
+
+    if is_meal_draft_start(raw):
+        return _route_from_pack("meal_draft_start", raw, raw, config=cfg)
+
     if lower.startswith("start focus") or lower.startswith("start timer"):
         mapped = map_time_intent(raw)
         pack = resolve_pack("time_start", config=cfg) or {}

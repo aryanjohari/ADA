@@ -149,3 +149,59 @@ def test_meal_confirm_no_selection_uses_proposed(data_root) -> None:
     )
     assert out.get("ok") is True
     assert _meal_line_ref_id() == proposed
+
+
+def test_patch_rejects_null_energy_pick_when_complete_exists() -> None:
+    """Confirm pick of null-kcal oats remaps to proposed Oats, raw (d99da535…)."""
+    raw = {
+        "ref_id": "raw-oats",
+        "label": "Oats, raw",
+        "kcal_per_100g": 379.0,
+        "macros_empty": False,
+        "nutrients": {
+            "energy_kcal": 379.0,
+            "protein_g": 13.2,
+            "fat_g": 6.5,
+            "carb_g": 67.7,
+        },
+    }
+    rolled = {
+        "ref_id": "rolled-oats",
+        "label": "Oats, whole grain, rolled, old fashioned",
+        "kcal_per_100g": None,
+        "macros_empty": True,
+        "nutrients": {
+            "energy_kcal": None,
+            "protein_g": 13.5,
+            "fat_g": 5.9,
+            "carb_g": 68.7,
+        },
+    }
+    stash = {
+        "lines": [
+            {
+                "_query": "oats",
+                "_query_norm": "oats",
+                "display_name": "Oats, raw",
+                "ref_id": "raw-oats",
+                "serving_grams": 100.0,
+            }
+        ],
+        "resolve": {
+            "bind_authority": "meal_spine",
+            "rows": [
+                {
+                    "query": "oats",
+                    "query_norm": "oats",
+                    "proposed_ref_id": "raw-oats",
+                    "candidates": [raw, rolled],
+                }
+            ],
+            "candidates": [raw, rolled],
+        },
+    }
+    patched = _patch_meal_confirm_selection(stash, {"oats": "rolled-oats"})
+    assert patched["lines"][0]["ref_id"] == "raw-oats"
+    assert patched["lines"][0]["display_name"] == "Oats, raw"
+    nuts = patched["lines"][0].get("nutrients") or {}
+    assert nuts.get("energy_kcal") == 379.0

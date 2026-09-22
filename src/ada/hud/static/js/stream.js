@@ -471,6 +471,33 @@ function _buildMealConfirmPicker(args) {
       html +=
         '<div class="confirm-candidate-query">' + esc(key) + "</div>";
     }
+    const hasComplete = candidates.some(
+      (c) =>
+        c &&
+        c.kcal_per_100g != null &&
+        c.kcal_per_100g !== "" &&
+        !c.macros_empty
+    );
+    let defaultRef = proposed;
+    if (hasComplete) {
+      const proposedOk = candidates.some(
+        (c) =>
+          String(c.ref_id || "").trim() === proposed &&
+          c.kcal_per_100g != null &&
+          c.kcal_per_100g !== "" &&
+          !c.macros_empty
+      );
+      if (!proposedOk) {
+        const firstOk = candidates.find(
+          (c) =>
+            c &&
+            c.kcal_per_100g != null &&
+            c.kcal_per_100g !== "" &&
+            !c.macros_empty
+        );
+        defaultRef = firstOk ? String(firstOk.ref_id || "").trim() : proposed;
+      }
+    }
     for (const cand of candidates) {
       const refId = String(cand.ref_id || "").trim();
       const label = cand.label || cand.name || refId;
@@ -479,10 +506,13 @@ function _buildMealConfirmPicker(args) {
         cand.kcal_per_100g != null && cand.kcal_per_100g !== ""
           ? String(cand.kcal_per_100g)
           : "—";
-      const checked = refId && refId === proposed;
+      const incomplete = Boolean(cand.macros_empty) || kcal === "—";
+      const disabled = incomplete && hasComplete;
+      const checked = refId && refId === defaultRef && !disabled;
       html +=
         '<label class="confirm-candidate-row' +
         (checked ? " selected" : "") +
+        (disabled ? " confirm-candidate-disabled" : "") +
         '" data-ref-id="' +
         esc(refId) +
         '">';
@@ -493,6 +523,7 @@ function _buildMealConfirmPicker(args) {
         esc(refId) +
         '"' +
         (checked ? " checked" : "") +
+        (disabled ? " disabled" : "") +
         " />";
       html += '<span class="confirm-candidate-main">';
       html +=
@@ -504,7 +535,8 @@ function _buildMealConfirmPicker(args) {
       html +=
         '<span class="confirm-candidate-kcal">' +
         esc(kcal) +
-        " kcal/100g</span>";
+        (incomplete ? " kcal/100g (incomplete)" : " kcal/100g") +
+        "</span>";
       html += "</span>";
       if (showRefId && refId) {
         html +=

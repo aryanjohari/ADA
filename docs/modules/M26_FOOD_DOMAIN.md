@@ -1,13 +1,13 @@
 # M26 food — Phase 2 cited domain memory (first vertical)
 
-**Status:** **LIFE FREEZE (2026-09-17)** — food organ + retrieval closed enough. Restart **1–4 PHONE METAL**; capture spine / Confirm / `nutrition_day`+`week` **METAL**. **OPEN later (not gym/time blockers):** restart **#5** typed barcode write · **#6** estimate omelette · vocative OPEN #4. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3). Habits capture **CLOSED** ([`M26_HABITS_DOMAIN.md`](./M26_HABITS_DOMAIN.md) v1.3). Dues capture **CLOSED** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.2). **Next = people phone jsonl**, not join.  
-**Date:** 2026-09-19 (v1.27)  
+**Status:** **LIFE FREEZE (2026-09-17)** — food organ + retrieval closed enough. Restart **1–4 PHONE METAL**; capture spine / Confirm / `nutrition_day`+`week` **METAL**. **2026-09-22 METAL (M19c #1):** meal-draft session stickiness + “Add …” divert + null-energy refuse (pytest); **PHONE re-smoke OPEN** for compose→preset path. **OPEN later (not gym/time blockers):** restart **#5** typed barcode write · **#6** estimate omelette · vocative OPEN #4. Gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3). Habits capture **CLOSED** ([`M26_HABITS_DOMAIN.md`](./M26_HABITS_DOMAIN.md) v1.3). Dues capture **CLOSED** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.2). **Next = people phone jsonl**, not join.  
+**Date:** 2026-09-22 (v1.29)  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **Phase 2 cited domain memory** for **food only** — organ wiring + organism purpose + Dream contract. Not a nutrition textbook. Not cortex prompt stuffing. Not P4 charts.  
-**Depends on:** [`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) (organ · reference · reject) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) (food verbs, §5 nutrient slots) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (decompose + empty-macro guard) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) (bounded recover) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (favorites / presets / targets) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library ≠ logs) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) (WORLDVIEW cites; Dream ~03:30; brief ~05:30)
+**Depends on:** [`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) (organ · reference · reject) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) (food verbs, §5 nutrient slots) · [`M24_MULTI_INTENT_CAPTURE.md`](./M24_MULTI_INTENT_CAPTURE.md) (decompose + empty-macro guard) · [`M25_RESOLVE_RECOVER.md`](./M25_RESOLVE_RECOVER.md) (bounded recover) · [`M22_LIFE_TEACH_IN_FLOW.md`](./M22_LIFE_TEACH_IN_FLOW.md) (favorites / presets / targets) · [`M10_MEMORY_KNOWLEDGE.md`](./M10_MEMORY_KNOWLEDGE.md) (library ≠ logs) · [`M04_MEMORY_DREAM.md`](./M04_MEMORY_DREAM.md) (WORLDVIEW cites; Dream ~03:30; brief ~05:30) · [`M19c_MULTI_FACE_SURFACES.md`](./M19c_MULTI_FACE_SURFACES.md) (meal-draft ingress implement-next #1)
 
-**Feeds:** gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3). Habits capture **CLOSED** ([`M26_HABITS_DOMAIN.md`](./M26_HABITS_DOMAIN.md) v1.3). Dues capture **CLOSED** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.2). Food restart **5–6** + vocative OPEN #4 stay named later — not this gate. Join **OPEN later**. **Next = people phone jsonl**.
+**Feeds:** gym capture **CLOSED** ([`M26_GYM_DOMAIN.md`](./M26_GYM_DOMAIN.md) v1.4). Time capture **CLOSED** ([`M26_TIME_DOMAIN.md`](./M26_TIME_DOMAIN.md) v1.3). Habits capture **CLOSED** ([`M26_HABITS_DOMAIN.md`](./M26_HABITS_DOMAIN.md) v1.3). Dues capture **CLOSED** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.2). Food restart **5–6** + vocative OPEN #4 stay named later — not this gate. Join **OPEN later**. **Next = people phone jsonl** (after M19c phone compose re-smoke).
 
 **Name stays `M26_FOOD_DOMAIN.md`:** git-tracked **reference know** for food. Sibling of the agnostic lock, not a charter dump. Runtime `memory/domain/food.md` is **not** shipped here — boot/brief cannot load that path (charter injects FACT slice + WORLDVIEW digest only; `paths.py` has no `domain/` dir). Module doc is the source of truth until a later chat wires a capped slice.
 
@@ -17,6 +17,8 @@
 
 | Ver | Date | Delta |
 |-----|------|-------|
+| **v1.29** | 2026-09-22 | **Confirm null-energy pick guard (phone [`d99da535…`](../../../runs/2026-09-21/d99da535487c4e83be766bfcc07ec5ae.jsonl)):** stickiness **PASS** (draft sid correct; oats via `life_meal_draft_add`); oats missed because Confirm Yes on rolled oats (E=null) → `empty_macros`. **Fix:** `macros_empty` when energy null; Confirm remaps null-kcal pick → energy-complete proposed; HUD disables incomplete radios when complete exists. **Found OPEN (bound, not chased):** milk→**oat milk** rank; preset typo `amoothie`. Still OPEN #5–#6 · vocative #4. |
+| **v1.28** | 2026-09-22 | **M19c #1 meal-draft ingress METAL (pytest):** cite miss [`f024fb03…`](../../../runs/2026-09-20/f024fb03bfbb4358a48362039aeea9c3.jsonl) — cortex `session_id=meal_draft_1` orphaned scratch so “Add …” became one-shot `life_meal_log` (receipts `life_dc5c35ef…` kcal **0**, `life_e2edcd1f…`, `life_32d78a5e…`). **Fix:** force `life_meal_draft_*` → chat `session_id`; widen start doors (`make`/`wanna make a meal`); divert excludes start while open; refuse null `energy_kcal` (no kcal-0 write). Tests: [`tests/test_m19c_meal_draft_ingress.py`](../../tests/test_m19c_meal_draft_ingress.py). Smoke note: [`../reviews/M19c_MEAL_DRAFT_INGRESS_SMOKE.md`](../reviews/M19c_MEAL_DRAFT_INGRESS_SMOKE.md). **Still OPEN:** #5 barcode write · #6 estimate · vocative #4; **PHONE re-smoke** compose→preset. Ranking / NZ / camera untouched. |
 | **v1.27** | 2026-09-19 | **Pointer (no food code):** people 7-pass **pytest METAL, PHONE OPEN** ([`M26_PEOPLE_DOMAIN.md`](./M26_PEOPLE_DOMAIN.md) v1.1). Organ **not CLOSED**. Do not reopen food 5–6. **Next:** people phone jsonl; join later. |
 | **v1.26** | 2026-09-19 | **Pointer (no food code):** dues capture **CLOSED** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.2 — `8002799b…` add+list). Do not reopen food 5–6. **Next:** people Phase 2; join later. |
 | **v1.25** | 2026-09-19 | **Pointer (no food code):** dues 7-pass **pytest METAL, PHONE OPEN** ([`M26_DUES_DOMAIN.md`](./M26_DUES_DOMAIN.md) v1.1). Organ **not CLOSED**. Do not reopen food 5–6. **Next:** dues phone jsonl, then people; join later. |
@@ -56,7 +58,7 @@
 |------------|----------------------|-------|
 | Rank default | Multi-hit USDA + form propose-pool (`catalog_rank.py`) | **PHONE METAL** — `edef2243…` 300g boiled white rice → plain cooked white rice (not Beans-and-rice). Old fail `e3ab8d20…` superseded. |
 | Favorites | `favorites.py` re-bind after Confirm Yes | **PHONE METAL** — `edef2243…` wipe → eggs `favorite_ref_missing` Confirm → 2nd boiled eggs **silent** |
-| Create-meal session | scratch `meal_draft_{session}.json`; `meal_draft_spine.py` | **PHONE METAL** — `edef2243…` Add a meal → chicken + rice → `save as my lunch`; `nutrition_presets.yaml` on disk |
+| Create-meal session | scratch `meal_draft_{session}.json`; `meal_draft_spine.py` | **METAL pytest** (v1.28 stickiness + divert) · prior phone `edef2243…` · **PHONE re-smoke OPEN** after miss `f024fb03…` |
 | Named preset | `nutrition_presets.py` + `life_meal_preset_log` / “log my X” | **PHONE METAL** — `293134b…` `Log my lunch` Confirm→write `bc268e8f…` (295 kcal / 33.7 g P). Vocative `Hi Ada. Log my lunch` still miss (OPEN #4). |
 | Barcode typed GTIN | `life_barcode_lookup` + HUD `barcode:` chip | **PHONE OPEN** — `edef2243…` dummy GTIN miss; `94147803` hit+Confirm, **no write** (camera PARK) |
 | Estimate dish | `provenance=estimate` + day `honest_partial` | **PHONE OPEN** — `edef2243…` `Log omelette (estimate)` USDA-looped, never logged |
@@ -75,7 +77,7 @@
 |---|------|-----------------|-----------|
 | 1 | Rank: “white rice boiled” ≠ Beans-and-rice default | **PASS** [`edef2243…`](../../../runs/2026-09-16/edef22435a074065a8dbe75d6250ca44.jsonl) | **PHONE METAL** |
 | 2 | Favorites after cache wipe: no stuck `favorite_ref_missing` | **PASS** same run — 2nd eggs silent | **PHONE METAL** |
-| 3 | Draft→save: Add a meal → 2 lines → save as named preset | **PASS** same run — `my lunch` in `nutrition_presets.yaml` | **PHONE METAL** |
+| 3 | Draft→save: Add a meal → 2 lines → save as named preset | **PASS** `edef2243…` · **re-open PHONE** after `f024fb03…` divert miss — pytest METAL v1.28 | **PHONE re-smoke OPEN** |
 | 4 | “Log my X” expands preset → Confirm → write | **PASS** [`293134b…`](../../../runs/2026-09-16/293134b046f341fc99a27c4c230d6a9a.jsonl) write `bc268e8f…` (after v1.13–1.14). Prior fails: `edef2243…` miss; `dde9d72d…` shared key | **PHONE METAL** |
 | 5 | Typed barcode GTIN path smoke | camera PARK · `edef2243…` lookup+Confirm, no write | one packaged **write** |
 | 6 | Estimate omelette tagged | `edef2243…` never logged | `provenance=estimate` / `honest_partial` |
@@ -406,7 +408,16 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 | 3 | **NZ FOODfiles / NZ label import?** | Manual CLI (`ada life food-import-nz`) when operator drops a bundle — not capture-path web hunt. **No NZ market research in freeze.** |
 | 4 | **Vocative filler on pack verbs?** (`Hi Ada. Log my lunch`) | **Later.** Alias still fires; name scrape uses the whole utterance [`dde9d72d…`](../../../runs/2026-09-16/dde9d72df37c467ea8ef83ecd13e2e87.jsonl). Default: strip `hi/hey ada` like `please`/`yes` — still Verb→Pack, **not** a Gemini chat turn. Copy into gym/time pack doors ([`M26_DOMAIN_KNOWLEDGE.md`](./M26_DOMAIN_KNOWLEDGE.md) capture grammar). |
 
-**Active reopen path:** none for gym. Food restart **#5–#6** + vocative OPEN #4 are **later**, named — not this freeze.
+### Found OPEN (bound — cite, do not reopen ranking whack-a-mole)
+
+Phone [`d99da535…`](../../../runs/2026-09-21/d99da535487c4e83be766bfcc07ec5ae.jsonl) after stickiness METAL:
+
+| Found | Evidence | Bound until |
+|-------|----------|-------------|
+| **Milk → oat milk** (wrong rank bind) | `250ml milk` → draft line **Oat milk** | Later catalog/query prefer dairy when query is bare `milk` — **not** this card’s reopen |
+| **Preset typo** | `Log my test amoothie` → `preset_unknown`; `Log my test smoothie` ok | Optional fuzzy/alias later; operator retype is fine |
+
+**Active reopen path:** none for gym. Food restart **#5–#6** + vocative OPEN #4 are **later**, named — not this freeze. Null-energy Confirm pick = **METAL v1.29**.
 
 **Do not reopen:** invent kcal; essay in charter; Dream auto-merge nutrition FACTS; analysis-as-write-gate; second cortex; ranking whack-a-mole without pack fence; `memory/domain/` boot-load without an implement chat; **new food features this freeze**; **do not treat 5–6 as gym blockers**.
 
@@ -414,16 +425,16 @@ Paste phone run ids into v1.9 changelog after operator smoke.
 
 ## Phase 3 implement backlog
 
-**METAL-in-tree (frozen):** processed ranking · favorites sticky · head-noun gate · path integrity · deterministic reflection · capture organ · personal library code (create-meal draft · presets · barcode GTIN · estimate tag · multi-hit USDA).
+**METAL-in-tree (frozen + v1.28–1.29):** processed ranking · favorites sticky · head-noun gate · path integrity · deterministic reflection · capture organ · personal library · **meal-draft session stickiness / divert / null-energy refuse** · **Confirm null-energy pick remap** (M19c #1).
 
-**PHONE OPEN later (not SHIPPED, not gym gate):** typed barcode **write** · estimate tag. **1–4 PHONE METAL** (`edef2243…`, `293134b…`). Vocative `Hi Ada` = OPEN #4 later.
+**PHONE OPEN later (not SHIPPED, not gym gate):** typed barcode **write** · estimate tag · **compose→preset re-smoke** (oats must land after v1.29). Prior 1–4 phone (`edef2243…`, `293134b…`). Vocative `Hi Ada` = OPEN #4 later. **Found bound:** milk→oat milk · preset typo.
 
 **Parked:** camera barcode · P4 charts · NZ import · photo-of-plate.
 
-**Won’t-chase this freeze:** food ML · Cronometer OAuth · NZ market research · treating 5–6 as the gym blocker.
+**Won’t-chase this freeze:** food ML · Cronometer OAuth · NZ market research · treating 5–6 as the gym blocker · ranking whack-a-mole (milk/oat milk listed found, not fixed here).
 
 ---
 
-**Next:** people phone jsonl ([`M26_PEOPLE_DOMAIN.md`](./M26_PEOPLE_DOMAIN.md) v1.1 **PHONE OPEN**). **Join later**. Gym capture **CLOSED**. Time capture **CLOSED**. Habits capture **CLOSED**. Dues capture **CLOSED**. Do not reopen food 5–6.
+**Next:** phone meal-draft re-smoke ([`../reviews/M19c_MEAL_DRAFT_INGRESS_SMOKE.md`](../reviews/M19c_MEAL_DRAFT_INGRESS_SMOKE.md)); people phone jsonl ([`M26_PEOPLE_DOMAIN.md`](./M26_PEOPLE_DOMAIN.md) v1.1 **PHONE OPEN**). **Join later**. Gym/time/habits/dues CLOSED. Do not reopen food 5–6 / barcode SHIPPED claim.
 
-*End M26 food. LIFE FREEZE 2026-09-17 (v1.27 pointer) — 1–4 PHONE METAL; 5–6 + vocative OPEN later; gym v1.4 CLOSED; time v1.3 CLOSED; habits v1.3 CLOSED; dues v1.2 CLOSED; people v1.1 pytest METAL PHONE OPEN; logs are truth; this doc is the lens.*
+*End M26 food. v1.29 Confirm null-energy guard; PHONE compose re-smoke OPEN; found milk-rank + typo bound; 5–6 + vocative OPEN later; logs are truth; this doc is the lens.*

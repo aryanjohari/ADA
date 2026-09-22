@@ -6,9 +6,9 @@
 **Branch:** `rewrite/v1-body`  
 **Kind:** Tier B **surface + transport** card — child of [`M19_TIER_B_LIFE_ADMIN.md`](./M19_TIER_B_LIFE_ADMIN.md)  
 **Depends on:** [`M17_SURFACE_DESIGN.md`](./M17_SURFACE_DESIGN.md) (chat-home **default**, strip, Body drawer) · [`M19a_P0_LIFE_CAPTURE.md`](./M19a_P0_LIFE_CAPTURE.md) (P0 logs + fast-path) · [`M19a_P1_HABITS_PEOPLE.md`](./M19a_P1_HABITS_PEOPLE.md) (P1 habits/people — reference only) · [`M05_VOICE_PERSONALITY_CONTROL.md`](./M05_VOICE_PERSONALITY_CONTROL.md) (register, not soul) · [`M14_AGENT_SURFACE.md`](./M14_AGENT_SURFACE.md) (ASGI+static, Mac packaging, B-voice) · [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) (Confirm bind) · [`M12_BODY_PROPRIOCEPTION.md`](./M12_BODY_PROPRIOCEPTION.md) (vitals truth for Body blueprint) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (Verb→Pack→Cortex-fill) · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) · [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8  
-**Feeds:** M17 P1 markdown + Body life sheets · M05 audio channel · M19 P2 mail (**after** this slice — **not started here**)
+**Feeds:** M17 P1 markdown + Body life sheets · M05 audio channel · M19 P2 mail (**after** this slice — **not started here**) · **product-base evolution** → [`M19c_MULTI_FACE_SURFACES.md`](./M19c_MULTI_FACE_SURFACES.md) (pages/faces as destinations; chat = harness — does **not** reopen voice/registry ontology here)
 
-**Filename stays `M19b_DAILY_SURFACE_VOICE.md`:** this is an addendum on the same surface+voice slice. A sibling `M19c_FACES.md` / `M19c_DEVICES.md` would split skeleton from faces/registry and force implement chats to merge two cards. Ontology belongs here.
+**Filename stays `M19b_DAILY_SURFACE_VOICE.md`:** this is an addendum on the same surface+voice slice. A sibling `M19c_FACES.md` / `M19c_DEVICES.md` would split skeleton from faces/registry and force implement chats to merge two cards. Ontology belongs here. **Exception (2026-09-21):** [`M19c_MULTI_FACE_SURFACES.md`](./M19c_MULTI_FACE_SURFACES.md) is a different slice (multi-route product IA / chat demoted) — not that rejected ontology split.
 
 ### Changelog
 
@@ -20,6 +20,7 @@
 | **v1.6.1** | 2026-08-18 | **Shipped on HUD:** `ada_hud_device` cookie + `facts/hud_devices.yaml` + HUD `user` event stamp (`input`/`face`/`device_*`/`tailscale_user`); `data-face=phone\|mac\|display` + picker + phone CSS; one Mac desk (small idle orb + visible stream + one panel slot + Body); M17 P1 **light markdown**; deterministic `nutrition_day` view registry from receipt/API JSON; additive SSE `view_open` filling the Mac slot. P1.5 PTT/mouth still **not** shipped |
 | **v1.6.2** | 2026-08-19 | **First-open (M20 phase 3a):** modal requires face confirm (phone/mac/display) + optional name; Save posts existing `/api/device`; Skip still stamps uuid and hinted/chosen face. `?face=` still wins. Session picker remains the later override. Name-only prompt **SUPERSEDED**. |
 | **v1.6.3** | 2026-08-26 | **Status honesty pointer:** register-pass mouth is **METAL** (`mouth.py` + harness wire). PTT/STT/TTS **productize** and remaining panels stay separate. Life-ack **feel** → [`M23_FRIEND_MOUTH.md`](./M23_FRIEND_MOUTH.md). Does not reopen v1.6 POLICY. |
+| **v1.6.4** | 2026-09-21 | **Feeds pointer only:** multi-face / pages-as-destination → [`M19c_MULTI_FACE_SURFACES.md`](./M19c_MULTI_FACE_SURFACES.md). Voice + registry locks HOLD; chat-as-**product-base** SUPERSEDED there (not rewritten here). |
 
 ### One-liner
 

@@ -172,6 +172,11 @@ def _execute_tool(
 ) -> None:
     gateway = session.gateway
     assert gateway is not None
+    # Draft scratch is keyed by HUD/chat session — never trust model-invented ids
+    # (phone f024fb03… cortex used session_id=meal_draft_1 → divert miss).
+    if tool.startswith("life_meal_draft_"):
+        args = dict(args or {})
+        args["session_id"] = session.session_id
     session.writer.append("tool_call", {"tool": tool, "args": args})
     sink.emit("tool_call_started", {"tool": tool, "args": args})
     result = gateway.execute(tool, args)
@@ -854,6 +859,12 @@ def _maybe_open_draft_divert(
     if save_name:
         return _fast_path_meal_draft_save(
             session, sink, history, receipts, {"name": save_name}
+        )
+    # Do not strip "add a meal" into draft_add("a meal") / wipe mid-compose.
+    if draft_spine.is_meal_draft_start(text):
+        return (
+            "pack_fast_path",
+            "Meal draft already open — add a food, say done / save as …, or cancel meal.",
         )
     gtin = draft_spine.parse_barcode_gtin(text)
     if gtin:

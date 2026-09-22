@@ -37,14 +37,42 @@ def _scale_line_nutrients(
     return nutrients
 
 
+def _line_energy_kcal(line: dict[str, Any]) -> float | None:
+    """Honest energy from line nutrients or snapshot — None is not zero."""
+    for blob in (line.get("nutrients"), None):
+        if isinstance(blob, dict) and blob.get("energy_kcal") is not None:
+            try:
+                return float(blob["energy_kcal"])
+            except (TypeError, ValueError):
+                return None
+    snap = line.get("snapshot_json")
+    if isinstance(snap, dict):
+        sn = snap.get("nutrients") if isinstance(snap.get("nutrients"), dict) else {}
+        if isinstance(sn, dict) and sn.get("energy_kcal") is not None:
+            try:
+                return float(sn["energy_kcal"])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def _line_macros_present(line: dict[str, Any]) -> bool:
+    """Write-ready when CORE macros include energy_kcal (null energy ≠ kcal 0)."""
     nutrients = line.get("nutrients")
-    if isinstance(nutrients, dict) and not macros_all_null({"nutrients": nutrients}):
+    if (
+        isinstance(nutrients, dict)
+        and nutrients.get("energy_kcal") is not None
+        and not macros_all_null({"nutrients": nutrients})
+    ):
         return True
     snap = line.get("snapshot_json")
     if isinstance(snap, dict):
         sn = snap.get("nutrients") if isinstance(snap.get("nutrients"), dict) else {}
-        if sn and not macros_all_null({"nutrients": sn}):
+        if (
+            isinstance(sn, dict)
+            and sn.get("energy_kcal") is not None
+            and not macros_all_null({"nutrients": sn})
+        ):
             return True
     return False
 
@@ -215,6 +243,7 @@ def _refuse_empty_macros(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
     Sibling guard: ``_require_spine_resolve`` blocks cortex ref_id commits without
     meal_spine ``resolve.bind_authority``. Freestyle name-only lines (no ref_id/
     preset_id, no honest nutrients) must not touch SQLite — fail closed before insert.
+    Null ``energy_kcal`` with P/F/C present is also refuse (phone oats → kcal 0).
     """
     for line in lines:
         if _line_macros_present(line):
@@ -230,6 +259,24 @@ def _refuse_empty_macros(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
             and isinstance(snap.get("nutrients"), dict)
             and macros_all_null({"nutrients": snap["nutrients"]})
         )
+        # P/F/C without energy still not write-ready (would coerce to kcal 0).
+        energy_missing = _line_energy_kcal(line) is None and (
+            (
+                isinstance(nutrients, dict)
+                and any(
+                    nutrients.get(k) is not None
+                    for k in ("protein_g", "fat_g", "carb_g")
+                )
+            )
+            or (
+                isinstance(snap, dict)
+                and isinstance(snap.get("nutrients"), dict)
+                and any(
+                    snap["nutrients"].get(k) is not None
+                    for k in ("protein_g", "fat_g", "carb_g")
+                )
+            )
+        )
         # Unbound display_name-only → empty_macros (no invent, no orphan meal row).
         if not has_ref and not has_preset:
             return {
@@ -239,7 +286,7 @@ def _refuse_empty_macros(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
                 "error": "empty_macros",
                 "lines": lines,
             }
-        if has_ref or explicit_empty:
+        if has_ref or explicit_empty or energy_missing:
             return {
                 "ok": False,
                 "outcome": "error",

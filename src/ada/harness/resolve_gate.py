@@ -235,7 +235,8 @@ def candidate_preview(candidate: dict[str, Any], *, query: str | None = None) ->
         "score": candidate.get("score"),
         "kcal_per_100g": kcal,
         "source": candidate.get("source"),
-        "macros_empty": macros_all_null(candidate),
+        # Null energy with P/F/C present is still write-incomplete (phone oats d99da535…).
+        "macros_empty": macros_all_null(candidate) or kcal is None,
     }
     if nutrients:
         # Per-100g CORE — Confirm scales by serving_grams at write time.

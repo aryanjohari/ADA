@@ -13,7 +13,9 @@ from ada.logs import nutrition_presets as presets_mod
 
 _START = re.compile(
     r"^(?:ada[, ]+)?(?:please\s+)?"
-    r"(?:add|create|start|begin|new)\s+(?:a\s+)?meal\b"
+    r"(?:add|create|start|begin|new|make)\s+(?:a\s+)?meal\b"
+    r"|^(?:ada[, ]+)?(?:please\s+)?"
+    r"(?:i\s+)?(?:wanna|want\s+to)\s+make\s+(?:a\s+)?meal\b"
     r"|^(?:ada[, ]+)?meal\s+draft\b",
     re.I,
 )

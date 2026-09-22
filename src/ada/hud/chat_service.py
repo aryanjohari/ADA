@@ -74,6 +74,37 @@ def _preview_per_100g(cand: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _cand_has_energy(cand: dict[str, Any]) -> bool:
+    """True when Confirm preview has energy_kcal (null energy ≠ write-ready)."""
+    preview = _preview_per_100g(cand)
+    return bool(preview is not None and preview.get("energy_kcal") is not None)
+
+
+def _prefer_energy_complete_ref(
+    pool: list[dict[str, Any]],
+    *,
+    ref_id: str,
+    proposed: str,
+) -> tuple[str, dict[str, Any]]:
+    """If pick lacks energy and pool has complete rows, keep proposed / first complete.
+
+    Phone ``d99da535…``: Confirm Yes on rolled oats (E=null) while Oats, raw (379)
+    was proposed → empty_macros refuse; oats never entered the draft.
+    """
+    cand = _meal_candidate_by_ref(pool, ref_id) or {}
+    if _cand_has_energy(cand):
+        return ref_id, cand
+    energy_pool = [c for c in pool if _cand_has_energy(c)]
+    if not energy_pool:
+        return ref_id, cand
+    if proposed:
+        prop = _meal_candidate_by_ref(pool, proposed)
+        if prop is not None and _cand_has_energy(prop):
+            return proposed, prop
+    best = energy_pool[0]
+    return str(best.get("ref_id") or "").strip(), best
+
+
 def _scale_preview_nutrients(
     per_100g: dict[str, Any], grams: float | None
 ) -> dict[str, float | None]:
@@ -268,8 +299,13 @@ def _patch_meal_confirm_selection(
         if not ref_id:
             continue
 
+        ref_id, cand = _prefer_energy_complete_ref(
+            pool, ref_id=ref_id, proposed=proposed
+        )
+        if not ref_id:
+            continue
+
         row["proposed_ref_id"] = ref_id
-        cand = _meal_candidate_by_ref(pool, ref_id) or {}
         label = str(cand.get("label") or cand.get("name") or "").strip()
         preview_macros = _preview_per_100g(cand)
 
@@ -583,8 +619,8 @@ class ChatService:
                     selected_ref_ids,
                     selected_ref_id=client_selected_ref_id,
                 )
-            # Draft tools need the HUD session id if missing from stash.
-            if tool.startswith("life_meal_draft_") and not merged.get("session_id"):
+            # Draft scratch is always the HUD session — overwrite model/stash ids.
+            if tool.startswith("life_meal_draft_"):
                 merged["session_id"] = self.session.session_id
             merged["confirmed"] = True
             gateway = Gateway(mode="agent", turn_user_text="[hud confirm]")

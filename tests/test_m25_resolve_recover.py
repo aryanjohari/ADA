@@ -404,7 +404,8 @@ def test_recover_cap_hit_human_ask(
 
     import ada.logs.food as food_mod
 
-    monkeypatch.setattr(food_mod, "fetch_usda_search", lambda *a, **k: None)
+    # search_foods_resolved calls fetch_usda_search_hits (not sole fetch_usda_search).
+    monkeypatch.setattr(food_mod, "fetch_usda_search_hits", lambda *a, **k: [])
 
     session = ChatSession(mode="agent")
     result = run_turn(
@@ -483,25 +484,27 @@ def test_search_null_core_local_triggers_remote(
     )
     remote_called: list[str] = []
 
-    def fake_fetch(query, **kwargs):
+    def fake_fetch_hits(query, **kwargs):
         remote_called.append(query)
-        return {
-            "name": "Egg, whole, cooked, hard-boiled",
-            "source": "usda_fdc",
-            "external_id": "173424",
-            "brand": None,
-            "nutrients_per_100g": {
-                "energy_kcal": 155.0,
-                "protein_g": 12.6,
-                "fat_g": 10.6,
-                "carb_g": 1.1,
-            },
-            "data_type": "Foundation",
-        }
+        return [
+            {
+                "name": "Egg, whole, cooked, hard-boiled",
+                "source": "usda_fdc",
+                "external_id": "173424",
+                "brand": None,
+                "nutrients_per_100g": {
+                    "energy_kcal": 155.0,
+                    "protein_g": 12.6,
+                    "fat_g": 10.6,
+                    "carb_g": 1.1,
+                },
+                "data_type": "Foundation",
+            }
+        ]
 
     import ada.logs.food as food_mod
 
-    monkeypatch.setattr(food_mod, "fetch_usda_search", fake_fetch)
+    monkeypatch.setattr(food_mod, "fetch_usda_search_hits", fake_fetch_hits)
     hits = food_mod.search_foods_resolved("eggs", limit=5, paths=paths)
     assert remote_called == ["eggs"]
     assert hits

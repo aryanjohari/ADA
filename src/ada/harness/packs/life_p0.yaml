@@ -141,6 +141,9 @@ aliases:
   - {pattern: "create a meal", verb: meal_draft_start}
   - {pattern: "start a meal", verb: meal_draft_start}
   - {pattern: "new meal", verb: meal_draft_start}
+  - {pattern: "make a meal", verb: meal_draft_start}
+  - {pattern: "wanna make a meal", verb: meal_draft_start}
+  - {pattern: "want to make a meal", verb: meal_draft_start}
   - {pattern: "save this meal", verb: meal_draft_save}
   - {pattern: "cancel meal", verb: meal_draft_cancel}
   - {pattern: "log my ", verb: meal_preset_log}
