@@ -6,6 +6,8 @@ import {
   startBodyPolls,
   wireBody,
 } from "./body.js";
+import { wireBlog } from "./blog.js";
+import { wireChain } from "./chain.js";
 import { wireComposerChips } from "./composer_chips.js";
 import { wireDevice } from "./device.js";
 import { wireFace } from "./face.js";
@@ -20,6 +22,8 @@ wireFace();
 wireDevice();
 wireSession({ refreshMode });
 wireComposerChips();
+wireBlog();
+wireChain();
 wireModeDial();
 wireVoice({
   isBusy: () => streamState.busy,

@@ -452,4 +452,4 @@ Morning brief can ship in parallel *as a thin surfacer* of existing open_loops/c
 
 **Fetch sequencing:** implement **campaigns substrate before generic web-fetch**. Fetch comes next so it writes into stages/digests instead of bleeding tokens into immortal chat.
 
-**M28 v1.4 (feeds):** Layer B for `cv-draft-1` mapped (stages on this STATUS organ; hunt SoT under `ADA_DATA_ROOT/hunt/`); do not extend M06’s schema for those jobs.
+**M28:** Layer A campaign pin stays on this STATUS organ. The CV hunt case is removed. Do not extend M06’s schema for a job-hunt tree.

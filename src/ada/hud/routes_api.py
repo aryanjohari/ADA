@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, File, Request, UploadFile
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ada.body import identity as identity_mod
@@ -88,6 +88,33 @@ class TtsBody(BaseModel):
     text: str = Field(min_length=1)
 
 
+class BlogStepBody(BaseModel):
+    step: Literal["store", "gather", "draft", "copy", "delete"]
+    campaign_id: str | None = None
+    site: str | None = None
+    audience: str | None = None
+    source: str | None = None
+    question: str | None = None
+    fill: str | None = None
+    cta_label: str | None = None
+    cta_url: str | None = None
+    confirmed: bool = False
+
+
+class ChainSourceBody(BaseModel):
+    source: str = ""
+    fill: str = ""
+    keyword: str = ""
+
+
+class ChainPageBody(BaseModel):
+    sources: list[ChainSourceBody] = Field(default_factory=list)
+
+
+class ChainRepairBody(BaseModel):
+    campaign_id: str = ""
+
+
 # Tools whose schemas accept confirmed=true (Consent Integrity re-drive).
 _CONFIRMABLE_TOOLS = frozenset(
     {
@@ -95,6 +122,7 @@ _CONFIRMABLE_TOOLS = frozenset(
         "memory_facts_append",
         "memory_open_loops_upsert",
         "artifact_write",
+        "blog_checkout_delete",
         "life_alias_set",
         "life_person_update",
         "life_meal_log",
@@ -531,6 +559,75 @@ def api_confirm(request: Request, body: ConfirmBody) -> JSONResponse:
             content={"error": "confirm_failed", "message": str(exc)},
         )
     return JSONResponse(content={"ok": True, "observation": obs})
+
+
+@router.get("/blog")
+def api_blog_status(campaign_id: str | None = None) -> JSONResponse:
+    """Which blog step is current. Read only."""
+    from ada.memory.blog_status import describe_blog
+
+    return JSONResponse(content=describe_blog(campaign_id))
+
+
+@router.post("/blog/step", response_model=None)
+def api_blog_step(request: Request, body: BlogStepBody) -> JSONResponse:
+    """Run the one current blog step. Delete still needs confirmed."""
+    from ada.hud.blog_form import run_blog_step
+
+    gate = require_agent_session(request, "agent")
+    if gate is not None:
+        return gate
+    result = run_blog_step(
+        body.step,
+        campaign_id=body.campaign_id,
+        site=body.site,
+        audience=body.audience,
+        source=body.source,
+        question=body.question,
+        fill=body.fill,
+        cta_label=body.cta_label,
+        cta_url=body.cta_url,
+        confirmed=body.confirmed,
+    )
+    status_code = 200 if result.get("ok") or result.get("needs_confirm") else 400
+    return JSONResponse(status_code=status_code, content=result)
+
+
+@router.get("/chain")
+def api_chain_status(campaign_id: str | None = None) -> JSONResponse:
+    """Read the chain queue. Does not wake."""
+    from ada.hud.chain_form import describe_chain
+
+    return JSONResponse(content=describe_chain(campaign_id))
+
+
+@router.post("/chain/page", response_model=None)
+def api_chain_page(request: Request, body: ChainPageBody) -> JSONResponse:
+    """Publish the first YAML fact whose url is empty. The body sends no source list."""
+    from ada.hud.chain_form import publish_one_page
+    from ada.memory.chain_plan import gemini_reader_model
+
+    gate = require_agent_session(request, "agent")
+    if gate is not None:
+        return gate
+    _ = body.sources  # a typed source list is ignored
+    reader = gemini_reader_model()
+    result = publish_one_page(model=reader, draft_model=reader)
+    status_code = 200 if result.get("ok") else 400
+    return JSONResponse(status_code=status_code, content=result)
+
+
+@router.post("/chain/repair", response_model=None)
+def api_chain_repair(request: Request, body: ChainRepairBody) -> JSONResponse:
+    """Wake the current chain campaign through push. Does not plan a new title."""
+    from ada.hud.chain_form import repair_and_publish
+
+    gate = require_agent_session(request, "agent")
+    if gate is not None:
+        return gate
+    result = repair_and_publish(body.campaign_id)
+    status_code = 200 if result.get("ok") else 400
+    return JSONResponse(status_code=status_code, content=result)
 
 
 @router.post("/plan/accept", response_model=None)

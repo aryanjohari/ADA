@@ -486,6 +486,115 @@ SPECS: tuple[ToolSpec, ...] = (
         ),
     ),
     ToolSpec(
+        name="blog_page_upsert",
+        group="blog",
+        side_effect="append_local",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "blog_page_upsert",
+            (
+                "Store one campaign page sidecar (site, audience, source, question, "
+                "fill, optional call to action). Site must be "
+                "github.com/aryanjohari/aryan-portfolio. Those fields are not "
+                "arguments to memory_open_loops_upsert. A question whose blog slug "
+                "is longer than 80 characters is refused and is not shortened."
+            ),
+            {
+                "site": {"type": "string"},
+                "audience": {
+                    "type": "string",
+                    "description": "One sentence. Not written into the markdown file.",
+                },
+                "source": {"type": "string"},
+                "question": {
+                    "type": "string",
+                    "description": "Becomes the title. The operator types it.",
+                },
+                "fill": {
+                    "type": "string",
+                    "enum": ["build-log", "lesson", "researched"],
+                },
+                "cta_label": {"type": "string"},
+                "cta_url": {"type": "string"},
+                "campaign_id": {"type": "string"},
+            },
+            required=["site", "audience", "source", "question", "fill"],
+        ),
+    ),
+    ToolSpec(
+        name="blog_checkout_write",
+        group="blog",
+        side_effect="append_local",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "blog_checkout_write",
+            (
+                "Copy the drafted markdown to "
+                "{ADA_PORTFOLIO_CHECKOUT}/content/blog/{slug}.md on "
+                "github.com/aryanjohari/aryan-portfolio. Does not read confirmed. "
+                "Requires a critic pass receipt. Refuses when that path already "
+                "exists. Does not run git. artifact_write does not perform this copy."
+            ),
+            {"campaign_id": {"type": "string"}},
+            required=["campaign_id"],
+        ),
+    ),
+    ToolSpec(
+        name="blog_checkout_delete",
+        group="blog",
+        side_effect="confirm",
+        egress="none",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "blog_checkout_delete",
+            (
+                "Remove {ADA_PORTFOLIO_CHECKOUT}/content/blog/{slug}.md and clear "
+                "the slug on the sidecar. Needs confirmed=true. The question, "
+                "audience, source, and fill stay. Does not run git."
+            ),
+            {
+                "campaign_id": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            required=["campaign_id"],
+        ),
+    ),
+    ToolSpec(
+        name="blog_checkout_push",
+        group="blog",
+        side_effect="append_local",
+        egress="web",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "blog_checkout_push",
+            (
+                "git add only the paths on the deliver receipt, one commit, "
+                "and git push to the config branch. No --force. The receipt is "
+                "the commit SHA. Does not mark the campaign done."
+            ),
+            {"campaign_id": {"type": "string"}},
+            required=["campaign_id"],
+        ),
+    ),
+    ToolSpec(
+        name="blog_chain_wake",
+        group="blog",
+        side_effect="append_local",
+        egress="web",
+        modes=_AGENT_ONLY,
+        schema=_schema(
+            "blog_chain_wake",
+            (
+                "Advance one stage of one portfolio chain campaign, write a "
+                "receipt and next_wake_at, then stop. Does not read confirmed."
+            ),
+            {"campaign_id": {"type": "string"}},
+            required=["campaign_id"],
+        ),
+    ),
+    ToolSpec(
         name="notify_send",
         group="notify",
         side_effect="append_local",
@@ -1356,135 +1465,6 @@ SPECS: tuple[ToolSpec, ...] = (
                 "confirmed": {"type": "boolean"},
             },
             required=["text"],
-        ),
-    ),
-    ToolSpec(
-        name="hunt_ensure_campaign",
-        group="hunt",
-        side_effect="append_local",
-        egress="none",
-        modes=_AGENT_ONLY,
-        schema=_schema(
-            "hunt_ensure_campaign",
-            (
-                "Ensure kind:campaign cv-draft-1 exists with paste-smoke stages "
-                "(link_or_jd→jd_ready→triage→draft_pack→you_send). "
-                "HUNT_ROOT from ADA_HUNT_ROOT / work_hunt.yaml / smoke default."
-            ),
-            {},
-        ),
-    ),
-    ToolSpec(
-        name="hunt_guidelines_load",
-        group="hunt",
-        side_effect="read_local",
-        egress="none",
-        modes=_OBSERVE_AGENT_PLAN,
-        schema=_schema(
-            "hunt_guidelines_load",
-            (
-                "Load verbatim hunt SoT files from HUNT_ROOT (FIT_AND_EXPECT, "
-                "HUNT_SESSION, ADA_HUNT_WORKFLOW, job-apply skill, _defaults, "
-                "MASTER_PROFILE). Do not summarise into a weaker prompt. "
-                "Read-only — prod root OK; pack writes stay on smoke."
-            ),
-            {
-                "max_chars_per_file": {
-                    "type": "integer",
-                    "description": "Truncate each file (default 120000)",
-                },
-            },
-        ),
-    ),
-    ToolSpec(
-        name="hunt_paste_jd",
-        group="hunt",
-        side_effect="append_local",
-        egress="none",
-        modes=_AGENT_ONLY,
-        schema=_schema(
-            "hunt_paste_jd",
-            (
-                "Store operator-pasted full JD under "
-                "HUNT_ROOT/applications/_inbox/<pack_id>/jd.md (paste path; "
-                "no fetch). Advances cv-draft-1 to triage. Writes refused on "
-                "prod nz-cv-job-hunt — use smoke root."
-            ),
-            {
-                "jd_text": {"type": "string", "description": "Full JD body"},
-                "pack_id": {
-                    "type": "string",
-                    "description": "Slug e.g. 2026-09-acme-junior-dev",
-                },
-                "company": {"type": "string"},
-                "role": {"type": "string"},
-                "source_url": {"type": "string"},
-                "campaign_id": {
-                    "type": "string",
-                    "description": "Default cv-draft-1",
-                },
-            },
-            required=["jd_text", "pack_id"],
-        ),
-    ),
-    ToolSpec(
-        name="hunt_triage_record",
-        group="hunt",
-        side_effect="append_local",
-        egress="none",
-        modes=_AGENT_ONLY,
-        schema=_schema(
-            "hunt_triage_record",
-            (
-                "Record role_fit + expect (1–5) and decision skip|hold|apply. "
-                "No pack on skip/hold (F-M28-11). apply + role_fit≥3 awaits "
-                "Plan Accept then hunt_write_pack."
-            ),
-            {
-                "pack_id": {"type": "string"},
-                "role_fit": {"type": "integer", "description": "1–5 capability"},
-                "expect": {"type": "integer", "description": "1–5 path realism"},
-                "decision": {
-                    "type": "string",
-                    "enum": ["skip", "hold", "apply"],
-                },
-                "rationale": {"type": "string"},
-                "residency_score": {"type": "string"},
-                "campaign_id": {"type": "string"},
-            },
-            required=["pack_id", "role_fit", "expect", "decision"],
-        ),
-    ),
-    ToolSpec(
-        name="hunt_write_pack",
-        group="hunt",
-        side_effect="append_local",
-        egress="none",
-        modes=_AGENT_ONLY,
-        schema=_schema(
-            "hunt_write_pack",
-            (
-                "After Plan Accept (= Accept apply): write tailored "
-                "applications/<id>/{cv,cover,jd}.tex under smoke HUNT_ROOT, "
-                "then handshake → waiting_on_aryan / you_send. Requires "
-                "accepted=true + campaign plan_id + triage apply + role_fit≥3. "
-                "Never default fullstack-v1; never auto-Applied / never done "
-                "(F-M28-7/11)."
-            ),
-            {
-                "pack_id": {"type": "string"},
-                "accepted": {
-                    "type": "boolean",
-                    "description": "Must be true after Plan Accept",
-                },
-                "cv_body": {"type": "string", "description": "Optional CV body text"},
-                "cover_body": {
-                    "type": "string",
-                    "description": "Optional cover body text",
-                },
-                "campaign_id": {"type": "string"},
-            },
-            required=["pack_id", "accepted"],
         ),
     ),
 )

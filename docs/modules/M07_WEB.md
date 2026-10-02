@@ -63,7 +63,7 @@
 5. **Same tools for chat and campaigns** — no per-workflow private agent, no n8n brain, no second runtime.  
 6. **No local main-LLM cortex.** Extract is deterministic (readability/trafilatura-class), not a second model.  
 7. **No consciousness / soul.** Fetching pages is not “she went online and lived.”  
-8. **No LinkedIn/Seek specialized scrape as the v1 organ.** Generic HTTP GET + extract. Job-hunt campaigns may *cite* public pages Aryan pastes; they do not get a scraper product.  
+8. **No LinkedIn/Seek specialized scrape as the v1 organ.** Generic HTTP GET + extract.  
 9. **Browser automation = later / won’t-chase** unless smokes show static fetch is insufficient for the *generic* organ (JS shells). Domain login-walls stay out.  
 10. **Cortex ≠ organism.** Pages become **receipts + cites on disk**; Gemini sees capped excerpts.  
 11. **Library-first.** ADA does not rent the whole web index in v1; she grows a **private library of pages she was allowed to read**, and goes online on miss/stale/`force`.  
@@ -364,7 +364,7 @@ truncated: true
 **WORLDVIEW:** `cites: ["cite:c_01J…", "runs/2026-08-13/sess_….jsonl#01J…"]` — gateway already requires non-empty cites.  
 **Campaigns:** `last_receipt` stays the runs pointer; optional later field `last_cite` is **not required** for v1 (avoid schema churn). Stage notes can mention cite-ids in text.  
 **Dream:** manage-pass may propose a WORLDVIEW digest **over new cite heads** (titles + excerpts), not scratch HTML.  
-**Not a CRM:** no people, companies, job-application objects. URL-addressable documents only. Job hunt remains an M06 campaign that *points at* cites.
+**Not a CRM:** no people, companies, or application objects. URL-addressable documents only.
 
 **Boot pack:** do **not** inject cites. Tools page them (`web_cite_get` / worldview search). Same usable-scale lesson as M04.
 

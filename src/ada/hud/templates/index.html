@@ -69,6 +69,44 @@
   </header>
 
   <main class="home" id="home">
+    <details id="blog-panel" class="blog-panel" open>
+      <summary>Blog page</summary>
+      <ol id="blog-steps" class="blog-steps" aria-label="Blog steps"></ol>
+      <p id="blog-step-detail" class="meta"></p>
+      <form id="blog-form" class="blog-form">
+        <label>Site <input id="blog-site" name="site" type="text" value="github.com/aryanjohari/aryan-portfolio" autocomplete="off" /></label>
+        <label>Audience <input id="blog-audience" name="audience" type="text" autocomplete="off" /></label>
+        <label>Source <input id="blog-source" name="source" type="text" value="docs/research/01_how_discovery_works.md" autocomplete="off" /></label>
+        <label>Question <input id="blog-question" name="question" type="text" autocomplete="off" /></label>
+        <label>Fill
+          <select id="blog-fill" name="fill">
+            <option value="researched" selected>researched</option>
+            <option value="build-log">build-log</option>
+            <option value="lesson">lesson</option>
+          </select>
+        </label>
+        <label>Call to action label <input id="blog-cta-label" name="cta_label" type="text" autocomplete="off" /></label>
+        <label>Call to action URL <input id="blog-cta-url" name="cta_url" type="text" autocomplete="off" /></label>
+        <div class="blog-actions">
+          <button type="submit" id="blog-run" class="primary">Store the row</button>
+          <button type="button" id="blog-new" class="ghost">New row</button>
+        </div>
+      </form>
+      <p id="blog-result" class="meta" role="status"></p>
+    </details>
+    <details id="chain-panel" class="blog-panel chain-panel" open>
+      <summary>SEO chain</summary>
+      <p class="meta">One button publishes the first fact whose url is empty. This is not the Blog page form.</p>
+      <form id="chain-form" class="blog-form">
+        <div class="blog-actions">
+          <button type="submit" id="chain-publish" class="primary">Publish one page</button>
+          <button type="button" id="chain-repair" class="ghost">Repair and publish</button>
+        </div>
+      </form>
+      <p id="chain-result" class="meta" role="status"></p>
+      <ol id="chain-stages" class="blog-steps" aria-label="Chain stages"></ol>
+      <ol id="chain-queue" class="chain-queue" aria-label="Queued sources"></ol>
+    </details>
     <div class="desk-row">
       <div class="ada-orb" id="ada-orb" role="img" aria-label="Presence" data-state="idle">
         <span class="ada-orb-disc"></span>

@@ -406,7 +406,7 @@ charter + register contracts             follow contracts (soft)
 
 ### P2 — deeper work objects — **#1/#2 thin metal (M28 Layer A); #3/#4 still deferred**
 
-First **jobs** that should force these gaps: [`M28_WORK_LOOP_CASE_STUDIES.md`](./M28_WORK_LOOP_CASE_STUDIES.md) (CV drafts · portfolio post). **Feeds M28:** that card names which P2 bits `cv-draft-1` needs (persist `plan_id`, thin todo↔campaign — not mid-ReAct serialize, not intent router). Do not treat P2 as a blank harness rewrite. **M28 v1.2:** P2 #1/#2 are thin metal (`plan_id` on campaign; `campaign_id`/`plan_id` on todos). Still no `plans/*.yaml`. **M28 v1.3:** case order = CV first. **M28 v1.4:** Layer B `cv-draft-1` mapped to hunt SoT — do not extend this minutes loop.
+First **jobs** that should force these gaps: [`M28_WORK_LOOP_CASE_STUDIES.md`](./M28_WORK_LOOP_CASE_STUDIES.md) (campaign pin · later portfolio post). **Feeds M28:** that card names which P2 bits a work container needs (persist `plan_id`, thin todo↔campaign — not mid-ReAct serialize, not intent router). Do not treat P2 as a blank harness rewrite. **M28 v1.2:** P2 #1/#2 are thin metal (`plan_id` on campaign; `campaign_id`/`plan_id` on todos). Still no `plans/*.yaml`. The CV hunt case is removed.
 
 | # | Work | Owner |
 |---|------|-------|

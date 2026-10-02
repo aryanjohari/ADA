@@ -701,7 +701,7 @@ def upsert_loop(
                 existing = item
                 break
         if existing is None:
-            # Allow minting a stable campaign id (e.g. cv-draft-1) when text is given.
+            # Allow minting a stable campaign id when text is given.
             if text and str(text).strip():
                 create_with_id = str(loop_id).strip()
             else:

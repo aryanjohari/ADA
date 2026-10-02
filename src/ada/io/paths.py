@@ -55,6 +55,16 @@ class DataPaths:
         return self.facts / "open_loops.yaml"
 
     @property
+    def campaign_pages(self) -> Path:
+        """Sidecar page fields: memory/facts/campaign_pages/{id}.yaml."""
+        return self.facts / "campaign_pages"
+
+    @property
+    def portfolio_chain_yaml(self) -> Path:
+        """Operator-written chain config. A wake does not create this file."""
+        return self.facts / "portfolio_chain.yaml"
+
+    @property
     def people(self) -> Path:
         return self.facts / "people"
 

@@ -212,17 +212,15 @@ def mode_addendum(mode: str) -> str:
             "never fake success; do not speak receipt_id strings aloud. "
             "Shared work loop (kind:campaign, across days — not minutes todos): "
             "Plan → Accept (todos; optional campaign_id pin) → one Agent act "
-            "(artifact_write or hunt_write_pack with campaign_id) → STATUS "
-            "waiting_on_aryan. "
-            "cv-draft-1 paste smoke: hunt_ensure_campaign → hunt_guidelines_load "
-            "→ hunt_paste_jd → triage in chat + hunt_triage_record "
-            "(role_fit+expect) → Plan Accept (= Accept apply) → "
-            "hunt_write_pack(accepted=true) tailored pack under HUNT_ROOT "
-            "(smoke) → you_send. skip/hold = no pack. Never auto-Applied. "
+            "(artifact_write with campaign_id) → STATUS waiting_on_aryan. "
             "Accept ≠ Confirm ≠ operator-ship. Do not mark campaign done because "
             "a draft looks finished. done requires Confirm on "
             "memory_open_loops_upsert with operator-typed last_receipt "
-            "(https URL or 'sent to …') — never invent a public URL."
+            "(https URL or 'sent to …') — never invent a public URL. "
+            "On github.com/aryanjohari/aryan-portfolio, blog_checkout_write "
+            "and the git push do not need confirm. blog_checkout_delete still "
+            "needs confirmed=true. artifact_write does not perform the checkout "
+            "write, and a commit SHA does not mark the campaign done."
         )
     if mode_l == "plan":
         return (

@@ -552,7 +552,7 @@ M15 Accept may set `due_at` / `remind_at` only when plan step includes explicit 
 | “How hot is the Pi?” | self/body | Observe | No | — | `body_*` | vitals JSON | 0 |
 | “Remind me at 9 about the note” | track+notify | Agent | No | Confirm if first notify enable | upsert `remind_at` + notify path | todo + optional ntfy receipt | 1 |
 | “What’s on Today?” | home | Observe | No | — | due + pending plans + shelf heads | Today strip | 1 |
-| “Prep a multi-day job hunt” | LH | Plan | Yes | Accept | *suggest* `kind:campaign` | **M06** | 2 consumer |
+| “Prep a multi-day research watch” | LH | Plan | Yes | Accept | *suggest* `kind:campaign` | **M06** | 2 consumer |
 
 ### 12.2 What M15 already gives the package
 

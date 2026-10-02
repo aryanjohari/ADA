@@ -1,4 +1,4 @@
-"""Jinja page routes for the five-pane HUD shell."""
+"""Jinja page routes for the five-pane HUD shell + organ faces."""
 
 from __future__ import annotations
 
@@ -23,18 +23,23 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter()
 
 
-@router.get("/", response_class=HTMLResponse)
-def index(request: Request) -> HTMLResponse:
-    face = normalize_face(request.query_params.get("face"))
+def _stamp_device(request: Request, *, face_hint: str | None) -> tuple[str, bool]:
     device_id, need_cookie = resolve_device_id(
         cookie=request.cookies.get(DEVICE_COOKIE),
         body=None,
     )
     if need_cookie:
         try:
-            upsert_device(device_id, face_hint=face, touch=True)
+            upsert_device(device_id, face_hint=face_hint, touch=True)
         except (BodyFault, OSError, ValueError):
             pass
+    return device_id, need_cookie
+
+
+@router.get("/", response_class=HTMLResponse)
+def index(request: Request) -> HTMLResponse:
+    face = normalize_face(request.query_params.get("face"))
+    device_id, need_cookie = _stamp_device(request, face_hint=face)
     resp = templates.TemplateResponse(
         request,
         "index.html",

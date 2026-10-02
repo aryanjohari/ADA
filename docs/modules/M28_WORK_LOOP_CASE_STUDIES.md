@@ -1,13 +1,13 @@
 # M28 — Work-loop case studies (CV drafts · portfolio publish)
 
-**Status:** **Layer A metal shipped** (v1.2); **case order = CV first** (v1.3); **Layer B for `cv-draft-1` researched + mapped** (v1.4); **paste-JD smoke on smoke hunt root** (v1.5).  
-**Date:** 2026-09-20  
+**Status:** **Layer A metal shipped** (v1.2). The CV / job-hunt case (`cv-draft-1`, hunt tools, `/hunt`) is **removed** from Ada. `portfolio-post-1` stays the later, unbuilt case.  
+**Date:** 2026-09-22  
 **Host:** `ada-pi5` (Raspberry Pi 5, 8 GiB) · windows: Mac / phone via Tailscale Serve  
 **Branch:** `rewrite/v1-body`  
 **Kind:** **work-organ research** — two named long-running containers as the first case studies. Not life. Not old-`main` pSEO/GSC/S3. Not package.  
 **Depends on:** [`M15_INTENT_WORK_LOOP.md`](./M15_INTENT_WORK_LOOP.md) (Plan → Accept → todos; **P2 #1/#2 thin metal via Layer A**) · [`M06_CAMPAIGNS_LONG_HORIZON.md`](./M06_CAMPAIGNS_LONG_HORIZON.md) (STATUS / stages / `waiting_on_aryan`) · [`M16_FIRST_PACKAGE.md`](./M16_FIRST_PACKAGE.md) (`artifact_write`) · [`M07_WEB.md`](./M07_WEB.md) (fetch + cites; no LinkedIn/Seek scrape) · private hunt SoT `aryanjohari/nz-cv-job-hunt` (`docs/ADA_HUNT_WORKFLOW.md`, `HUNT_SESSION.md`, `FIT_AND_EXPECT.md`, job-apply skill — **map to**, do not copy playbook into ADA) · [`../00_ASSISTANT_RESEARCH.md`](../00_ASSISTANT_RESEARCH.md) §8 · [`../02_CONSTITUTION.md`](../02_CONSTITUTION.md) (Confirm Integrity, modes, quiet hours, no Funnel) · [`../19_JARVIS_JUSTINE_AGENT_RESEARCH.md`](../19_JARVIS_JUSTINE_AGENT_RESEARCH.md) (workflows over tool soup) · operator lock 2026-09-20: life = Study A (fast path); work = Study B
 
-**Feeds:** fetch-with-hold → CSV helpers → optional `latexmk` closer → later `portfolio-post-1`. Does **not** reorder [`M20_V1_PRODUCT.md`](./M20_V1_PRODUCT.md) 1→5. Does **not** start mail, GSC ingest, S3 ISR, LinkedIn API, or `portfolio-post-1`. **Surface pointer:** Mac **hunt control panel** face is owned by [`M19c_MULTI_FACE_SURFACES.md`](./M19c_MULTI_FACE_SURFACES.md) (stub after life ingress) — Study B metal stays here; no M29.
+**Feeds:** Layer A campaign pin stays. The CV hunt organ is removed. Does **not** reorder [`M20_V1_PRODUCT.md`](./M20_V1_PRODUCT.md) 1→5. Does **not** start mail, GSC ingest, S3 ISR, or LinkedIn API. **`portfolio-post-1` is not started.**
 
 **Name stays `M28_WORK_LOOP_CASE_STUDIES.md`:** the research object is the **loop + two cases**, not a CV SaaS and not a blog CMS. Rejected: stuffing into M15 P2 (too harness-generic); stuffing into M06 (campaigns substrate, not the first jobs); stuffing into M26 (life). **Do not create M29.**
 
@@ -22,7 +22,14 @@
 | **v1.2** | 2026-09-20 | **Layer A metal shipped:** persist `plan_id` on campaign; thin todo↔campaign pin; `artifact_write` handshake → `waiting_on_aryan`; operator-typed ship receipt Confirm-gated `done` (F-M28-7/8). Layer B still research. No `portfolio-post-1` / `cv-draft-1` campaigns this slice. |
 | **v1.3** | 2026-09-20 | **Operator override:** start with **`cv-draft-1`**; `portfolio-post-1` second (blog structure / public ship undecided; private CV workflow already exists). Layer A metal unchanged. Still no S3/ISR/`main` transplant for publish. |
 | **v1.4** | 2026-09-20 | **Layer B researched map for `cv-draft-1`:** SoT split vs private `nz-cv-job-hunt`; stages aligned to hunt FSM (`link_or_jd`→…→`you_send`); dual `role_fit`+`expect`; always-tailor on Accept; fetch-with-hold→paste; never auto-`Applied`; tool-gap order + Pi clone path. Still **docs only** — no Python, no clone into ADA git. |
-| **v1.5** | 2026-09-20 | **Paste-JD smoke coded** on `/mnt/ada-data/hunt/nz-cv-job-hunt-smoke`: `HUNT_ROOT` from FACT/env; verbatim load; jailed `hunt_*` tools; stages `link_or_jd`→`jd_ready`→`triage`→`draft_pack`→`you_send`; Accept-gated tailored pack; prod write refuse. HUD note [`../reviews/M28_CV_DRAFT_PASTE_SMOKE.md`](../reviews/M28_CV_DRAFT_PASTE_SMOKE.md). Still no fetch/CSV/TeX/prod writers. |
+| **v1.5** | 2026-09-20 | **Paste-JD smoke coded** on `/mnt/ada-data/hunt/nz-cv-job-hunt-smoke`: `HUNT_ROOT` from FACT/env; verbatim load; jailed `hunt_*` tools; stages `link_or_jd`→`jd_ready`→`triage`→`draft_pack`→`you_send`; Accept-gated tailored pack; prod write refuse. HUD note the paste-smoke note (removed). Still no fetch/CSV/TeX/prod writers. |
+| **v1.6** | 2026-09-22 | **Real tailored packs on smoke:** `hunt_write_pack` drafts evidence-backed `cv.tex`/`cover.tex` from Job_Hunt_Brain + `cover/` (WELD fail-closed); guidelines load from `prod_hunt_root` (incl. `cover/WELD`); stub boilerplate removed; pytest extended. Still no prod CSV/pack writes, fetch, latexmk, or guideline promote. |
+| **v1.7** | 2026-09-22 | **Allowlisted fetch-with-hold:** `hunt_fetch_jd` → M07 `web_fetch` → smoke `_inbox/<id>/jd.md` (`fetch_ok=true`, `paste=false`) → same triage/Accept/pack path; allowlist miss deny; fail/thin → `waiting_on_aryan` + ask `hunt_paste_jd`; no invent/auto-score; prod write still refused. |
+| **v1.8** | 2026-09-22 | **Smoke CSV helpers:** `hunt_csv_dedup` + `hunt_csv_upsert` jailed under smoke `applications/index.csv` (tracker.md header; archive read-only if present); `role_fit`/`expect` from triage; default Viewed/To apply; Applied Confirm+receipt only (F-M28-7); prod CSV still HARD REFUSE. |
+| **v1.8a** | 2026-09-23 | **Docs pointer only (no CV code):** face/UX is the apply blocker, not latexmk. Operator pack-up lives in [`M19c_MULTI_FACE_SURFACES.md`](./M19c_MULTI_FACE_SURFACES.md) **v1.2** — Mac hunt panel (fields + download `.tex` + Applied) **before** more CV metal; Overleaf OK; cover edit-on-face > critic-agent. |
+| **v1.8b** | 2026-09-23 | **Docs pointer:** CV hunt face IA — the CV hunt face card (removed) (piles over one smoke `index.csv`; Accept ≠ Confirm ≠ ship; no prod CSV; no `hunt_*` fork). Stub `/hunt` chrome superseded by views. |
+| **v1.8d** | 2026-09-23 | **Docs pointer:** Intake Agent triage propose — the CV hunt face card (removed) v1.2 (`hunt_triage_propose` → human Confirm → `hunt_triage_record`+CSV). Same FIT/expect metal; no prod writes. |
+| **v1.8c** | 2026-09-23 | **Docs pointer:** face IA **METAL** (M19c v1.5) — `/hunt` views call existing `hunt_*`; smoke checklist updated. Still no prod CSV/pack writes. |
 
 ---
 
@@ -71,7 +78,7 @@ Secondary (same card, later slices — defaults **locked** v1.0):
 | **Acceptance falsifiers** | F-M28-* |
 | **Egress** | **Control:** Tailscale Confirm/Accept. **Cortex:** JD text, draft bodies, optional allowlisted fetch. **Public:** only after **you** publish. Secrets never-to-cloud |
 
-**This card’s Layer A is metal.** Layer B for `cv-draft-1` is **designed** (v1.4) and **paste-smoke coded** on smoke root (v1.5). Implement-next: Layer A 1–3 done; Layer B charter done; clone done; **paste smoke done on smoke root**; fetch → CSV → … still later.
+**This card’s Layer A is metal.** Layer B for `cv-draft-1` is **designed** (v1.4), **paste-smoke coded** (v1.5), **real evidence+WELD packs on smoke** (v1.6), **fetch-with-hold** (v1.7), and **smoke CSV helpers** (v1.8). Implement-next: latexmk → … still later; prod write still refused.
 
 ---
 
@@ -157,7 +164,7 @@ Inspected / shipped: `harness/plan_artifact.py`, `hud/chat_service.py` `accept_p
 | Quiet hours 23:00–05:30 NZST; heal-first | **Shipped** constitution | **POLICY** / **METAL** |
 | Playwright ATS / LinkedIn API / GSC ingest / Pi `pdflatex` as **gate** | **ABSENT** — and **refuse** as v1 **gates** (Pi TeX = compile **closer** for CV later; Overleaf OK) | **POLICY** |
 
-**Verdict:** Plan card + Accept→todos **shipped**. Persist `plan_id`, handshake `waiting_on_aryan`, and operator-typed ship receipt are **Layer A metal** (v1.2). Mid-ReAct serialize and intent router remain **ABSENT**. `cv-draft-1` Layer B is **mapped** (v1.4) and **paste-smoke metal** on smoke hunt root (v1.5). Fetch/CSV/TeX/prod writers still later.
+**Verdict:** Plan card + Accept→todos **shipped**. Persist `plan_id`, handshake `waiting_on_aryan`, and operator-typed ship receipt are **Layer A metal** (v1.2). Mid-ReAct serialize and intent router remain **ABSENT**. `cv-draft-1` Layer B is **mapped** (v1.4), **paste-smoke metal** (v1.5), **fetch + CSV on smoke** (v1.7–v1.8). TeX/prod writers still later.
 
 ---
 
@@ -307,9 +314,9 @@ Include: `id`, title, STATUS, `current_stage`, `blocked_reason`, `plan_id` (once
 
 **Do not** include: full post body, CV corpus, week of `runs/`. Agent **reads the artifact file** only when the turn is a revise/ship-check.
 
-### A.9 M15 P2 → what `cv-draft-1` needs
+### A.9 M15 P2 → what a work container needs
 
-| M15 P2 | Needed for `cv-draft-1`? | Why |
+| M15 P2 | Needed for a work container? | Why |
 |--------|--------------------------------|-----|
 | **#1 Persist plans; resume by `plan_id`** | **Yes — first missing metal → METAL v1.2 (campaign pin)** | Else day-2 session amnesia |
 | **#2 Link todos ↔ campaign stages** | **Yes — thin → METAL v1.2** | Accept todos are minutes-work; campaign stages are days-work. Pin `campaign_id` (or `plan_id`) on todos **or** skip todo dual-write and treat stages as truth after first Accept |
@@ -322,142 +329,9 @@ Do not implement the rest of P2 “while we’re here.”
 
 ## Layer B — per container (stages / slots / gates only)
 
-Same campaign schema. Different stage lists. **Start with CV (`cv-draft-1`).**
+Same campaign schema. The CV hunt case is removed. The remaining container is `portfolio-post-1` (unbuilt).
 
-### B.1 `cv-draft-1` (first — Layer B mapped v1.4)
-
-**Research question (this container):** How does ADA hang a durable `kind:campaign` on the **existing private hunt pipeline** (`nz-cv-job-hunt`) so Mode B (link/paste → triage → Accept → tailored pack → you submit) survives across days — without transplanting the playbook into ADA, without SEEK/LinkedIn harvest, and without auto-`Applied`?
-
-| Claim | Lens |
-|-------|------|
-| Hunt SoT already encodes dual scores, always-tailor, fetch-HOLD-paste, review→guidelines | **EVIDENCE** — private `docs/ADA_HUNT_WORKFLOW.md` (2026-09-20) + `FIT_AND_EXPECT.md` + job-apply skill |
-| ADA should own brain / `_defaults` / Fit meaning | **FANFICTION** — that stays in the hunt repo |
-| Across-days pause = campaign STATUS + Plan Accept + Confirm + operator-ship | **METAL** Layer A + **FEASIBLE** on Pi |
-| Allowlisted fetch of **operator-pasted** URL; fail → paste | **POLICY** / **METAL** — M07; hunt §5 hard rules; playbook §9 |
-| Pi `latexmk` as compile closer (Overleaf OK meanwhile) | **FEASIBLE** later; **not** a gate for first smoke (**POLICY** F-M28-10 spirit) |
-| HUD chat + Plan/Accept/Confirm + campaign STATUS enough for v1 UI | **FEASIBLE** — no major hunt UI this slice |
-
-#### B.1.1 SoT / clone contract
-
-**Strict split (operator lock):**
-
-| Owner | Owns | Never |
-|-------|------|-------|
-| **Private hunt repo** `aryanjohari/nz-cv-job-hunt` | Brain (`Job_Hunt_Brain/`), `_defaults/*.md`, job-apply skill, `index.csv` / `watchlist.csv` (+ archive), tex packs under `applications/<id>/`, Fit meaning (`FIT_AND_EXPECT.md`), session FSM (`HUNT_SESSION.md`), orchestrator map (`ADA_HUNT_WORKFLOW.md`), strategy playbook | Living inside ADA git; ADA inventing Fit; auto-`Applied` |
-| **ADA (`rewrite/v1-body`)** | Across-days pause: campaign `STATUS`, `plan_id`, `waiting_on_aryan`, Plan **Accept** ≠ **Confirm** ≠ **operator-ship**; later thin tools that *touch* the hunt tree under a jail | Duplicating `NZ_JOB_HUNT_PLAYBOOK.md` into ADA; SEEK/LinkedIn scrape product; forking M06 schema |
-
-**Proposed Pi clone path (coding slice — not this chat):**
-
-```text
-ADA_DATA_ROOT = /mnt/ada-data
-HUNT_ROOT     = /mnt/ada-data/hunt/nz-cv-job-hunt   # git clone of private SoT
-                                                 # NOT under /mnt/ada-data/ADA/
-```
-
-| Why here | Tag |
-|----------|-----|
-| Sibling of `memory/`, `artifacts/`, `runs/` — durable HDD substrate; wipe of ADA git does not erase hunt history | **FEASIBLE** · **POLICY** (body layout) |
-| Outside ADA git tree — no accidental commit of contact/strategy/secrets | **POLICY** |
-| Single path for every run to load guidelines + write packs | **METAL** target |
-
-**What ADA must load verbatim each run** (pointers into `HUNT_ROOT` — do **not** summarise into a weaker system prompt):
-
-| Path under `HUNT_ROOT` | Why |
-|------------------------|-----|
-| `docs/FIT_AND_EXPECT.md` | Dual scores + draft gate |
-| `docs/HUNT_SESSION.md` | Session FSM, hard rules, close checklist |
-| `docs/ADA_HUNT_WORKFLOW.md` | Orchestrator map / Pi target |
-| `.cursor/skills/job-apply/SKILL.md` | Accept-apply drafting procedure |
-| `applications/_defaults/cv-summaries.md` · `covers.md` · `education.md` | Tone / layout locks |
-| `Job_Hunt_Brain/MASTER_PROFILE.md` (+ evidence cards when drafting) | Facts only; do-not-claim |
-| `applications/index.csv` + `applications/index-archive-2026-07-08.csv` | Dedup + status |
-| `applications/watchlist.csv` | Careers-sweep reminders (Mode A; not first smoke) |
-
-Playbook (`docs/NZ_JOB_HUNT_PLAYBOOK.md`) stays in the hunt repo — **cite for lanes/residency**, do not copy into ADA modules.
-
-**Read vs write:**
-
-| ADA may **read** (always) | ADA may **write** (later tools; Confirm where overwrite) | ADA must **not** |
-|---------------------------|----------------------------------------------------------|-------------------|
-| Guideline MDs, brain, skill, CSVs, lock tex (style refs) | Campaign row in ADA `open_loops` · `_inbox/` manifests · `applications/<id>/{cv,cover,jd}.tex` · CSV append/update · optional `_defaults` / guideline promote under Confirm · PDF under pack (gitignored) | Auto-`Applied` · invent JD body · harvest SEEK/LinkedIn · ship `_defaults/fullstack-v1` for named JD · rewrite frozen `applications/2026-08-*` unless referral named · commit secrets |
-
-**Artifacts bridge (ADA side):** optional thin pointers under `artifacts/work/cv-draft-1/` (e.g. last `jd.md` crumb, score card md) via existing `artifact_write` — **canonical pack + CSV remain in `HUNT_ROOT`**. Do not dual-write tex into both trees as truth.
-
-#### B.1.2 Stage table (align names to hunt FSM)
-
-Hunt Mode B (ADA_HUNT_WORKFLOW §2–§3 / §6) ≈: paste link → fetch/HOLD → dedup+score → user gate → tailored pack → compile → human submit → mark applied → optional review. ADA campaign stages **name** that path; gates reuse Layer A binds.
-
-| Stage id | State machine | Gate | ADA does | You do |
-|----------|---------------|------|----------|--------|
-| `link_or_jd` | pending → done | none (Agent may store URL/text) | Record operator-pasted URL and/or JD text; open/advance campaign | Paste **link(s)** (preferred) or full JD body. **Not** a board harvest |
-| `jd_ready` | pending → done \| **hold** | hold → `waiting_on_aryan` | Allowlisted fetch of pasted URL → readable `jd.md` (+ `_inbox` manifest). If `fetch_ok=false` / thin / junk / login wall → **stop**; ask for full paste | If hold: paste full JD. Confirm body is score-quality |
-| `triage` | pending → done | none for scoring itself; next gate is Accept | Dedup (`index`+archive) · score **`role_fit` + `expect`** · lane · city · relocate · **`residency_score` (separate)** · propose skip/hold/apply. Report both scores + why. **No pack yet** | Read score card; choose **skip** \| **hold** \| **Accept apply** |
-| `draft_pack` | pending → done | **Plan Accept** (= hunt “Accept apply”) | Only if Accept **and** `role_fit` ≥ 3: always **tailored** `applications/<id>/{cv,cover}.tex` + `jd.md`; CSV `To apply`. **Never** default circulate for named JD. `expect` orders queue/depth only | Accept apply (or skip/hold — then **no pack**; stage may end / campaign pause) |
-| `compile_pdf` | pending → done \| skip | none as **hard** gate | Target: local `latexmk`/`pdflatex` on pack. Meanwhile: remind Overleaf path | Compile if needed; download PDFs |
-| `you_send` | pending → done | **Operator-ship** then Confirm-upsert | After pack ready: `waiting_on_aryan`; remind on wake. **Never** auto-mark Applied / campaign `done` | Submit on employer site; type ship receipt (“sent to … on …” / apply URL) |
-| `done` | terminal | Confirm + operator-typed receipt (F-M28-7) | Upsert hunt CSV `Applied` + `date_applied` **only after** your confirm; campaign `done` | Confirm submit |
-
-**Optional side-path** (not a substitute for Applied-history rewrites):
-
-| Stage id | When | Gate | ADA does | You do |
-|----------|------|------|----------|--------|
-| `revise_pack` | After review / HR skim / before resubmit | Confirm on overwrite of existing pack tex | Edit `applications/<id>/*.tex`; recompile | Name the pack + fixes |
-| `update_guidelines` | Repeated lesson / rejection calibration | **Confirm** on guideline MD overwrite | Promote lesson into `_defaults` / skill / `FIT_AND_EXPECT` / `HUNT_SESSION` (files remain locks) | Approve the MD change intent |
-
-Frozen Applied packs (`applications/2026-08-*` and named frozen rows): **out** unless you name a referral resubmit.
-
-#### B.1.3 Dual scores + draft rule (encode; do not redefine)
-
-Canonical definitions live in hunt `FIT_AND_EXPECT.md` — ADA loads them; does not fork meaning here.
-
-| Axis | Column | Role in Layer B |
-|------|--------|-----------------|
-| Capability | `role_fit` 1–5 | Draft gate: ≤2 → skip (no pack); ≥3 + **Accept apply** → always tailored (3/4/5) |
-| Path realism | `expect` 1–5 | Prioritises compile / To-apply **queue depth** — **does not** reintroduce default CV for named JD |
-| SMC path | `residency_score` Y/Maybe/N | Separate third axis — **do not fold into `expect`** |
-| Legacy | `fit` | Display only on CSV — **not** the draft decision key |
-
-| Condition | Pack? |
-|-----------|-------|
-| skip / hold | **No** |
-| `role_fit` ≥ 3 + Accept apply | **Always tailored** named-JD pack |
-| Recruiter circulate / Lane A send-as-is | Defaults under `_defaults/` — **not** this container’s named-JD path |
-
-#### B.1.4 Fetch stance
-
-| Allowed | Forbidden |
-|---------|-----------|
-| Operator pastes URL → allowlisted GET → readable `jd.md` (**M07** `web_fetch` / later hunt-thin wrapper) | SEEK/LinkedIn **harvest** or careers crawl as product (**POLICY** · M07 lock · hunt hard rules) |
-| `fetch_ok=false` / thin / junk → `waiting_on_aryan` for full paste | Inventing JD text; scoring homepage junk |
-| Discovery source labels (`SEEK` \| `LinkedIn` \| …) on CSV | Auto-apply / portal submit |
-
-#### B.1.5 Slots / on-disk layout
-
-| Slot | Where truth lives |
-|------|-------------------|
-| Campaign STATUS / stages / `plan_id` / `waiting_on_aryan` | ADA `open_loops` (`kind: campaign`, id `cv-draft-1` or per-role child — **default:** one campaign `cv-draft-1` with `current_stage` + `last_receipt` pointing at active pack id; optional later: one campaign per `applications/<id>`) |
-| JD body | `HUNT_ROOT/applications/_inbox/<stamp>-<slug>/jd.md` then pack `applications/<id>/jd.md` |
-| Inbox manifest | `…/manifest.yaml` (`source_url`, `fetch_ok`, `notes`) — hunt ADA_HUNT_WORKFLOW §6 |
-| Tailored pack | `HUNT_ROOT/applications/<id>/{cv,cover}.tex` |
-| Tracker | `HUNT_ROOT/applications/index.csv` (`role_fit`, `expect`, …) |
-| Optional ADA crumb | `artifacts/work/cv-draft-1/` via `artifact_write` |
-
-**UI this slice:** HUD chat + Plan/Accept/Confirm + campaign STATUS heads. Hunt-tagged context panes = later. No major UI.
-
-#### B.1.6 Tool gap list (ORDERED — not built now)
-
-Each gap maps to existing metal where possible. Implement later coding slices in this order; stop before scrape farm / ATS / S3.
-
-| # | Gap | Maps to existing metal | Notes |
-|---|-----|------------------------|-------|
-| **1** | **Paste-only smoke** — operator pastes full JD → store `jd.md` → triage text in chat → Accept → write tailored pack (even if Overleaf-only) | `artifact_write` (crumb) · `open_loops` STATUS/handshake · Plan Accept · **`hunt_*` tools (v1.5)** | **Done (v1.5)** on smoke root — proves Layer A + SoT load **without** fetch/TeX |
-| **2** | **Allowlisted fetch-with-hold** — pasted URL → readable body; fail → `waiting_on_aryan` | M07 `web_fetch` + cites; campaign handshake | Not Seek/LinkedIn product; host allowlist / SSRF as M07 |
-| **3** | **Sandboxed write into hunt `applications/`** — path jail under `HUNT_ROOT`; create `<id>/` tex + jd | `hunt_write_pack` / paste jail under smoke `HUNT_ROOT` (v1.5); Confirm on overwrite later | **Done (thin, v1.5)** — must not escape to `/` or ADA git; prod basename refused |
-| **4** | **CSV helpers** — dedup check; append/update `index.csv` (`role_fit`/`expect`); never auto-`Applied` | Pattern: `open_loops` upsert discipline; Confirm for `Applied` / destructive | File lock; no column reorder |
-| **5** | **Local `latexmk`** — compile approved pack → PDF paths | `body_readonly_cmd` too weak → later Confirm-bound compile helper | Closer, not gate; Overleaf OK until earned |
-| **6** | **Guideline edit Confirm** — promote review lessons into `_defaults` / FIT / skill | Confirm Integrity on MD overwrite | Pack-only edits ≠ guideline promote |
-
-**Not needed for v1 of this container:** mid-ReAct serialize · intent router · Mode A careers automation · LinkedIn API · Playwright ATS · mail OAuth · GSC · S3/ISR · AlterX as required (fetch may start as M07-only) · hunt-tagged HUD chrome · `portfolio-post-1`.
+The CV / job-hunt case (`cv-draft-1`, hunt tools, smoke root, `/hunt`) was removed from Ada. The private CV files stay on disk outside this repo. This card keeps Layer A and the unbuilt portfolio case.
 
 ### B.2 `portfolio-post-1` (second)
 
@@ -469,46 +343,30 @@ Each gap maps to existing metal where possible. Implement later coding slices in
 | `you_paste_blog` | pending → active → done | **Operator-ship** then Confirm-upsert | Set `waiting_on_aryan`; remind on wake | Paste to **`/blog` on the portfolio origin**; type the live URL |
 | `linkedin_cut` | pending → skipped \| done | Optional; skip allowed | `artifact_write` `…/linkedin.md` (cut that **links back** to canonical URL) | Paste into LinkedIn yourself |
 
-**Won’t:** auto-post; GSC ingest; pSEO clusters; ADA pushing git/Vercel; Reddit bots. **Not** `main` S3/ISR as the v1 actuator (F-M28-3). **Deferred** until `cv-draft-1` paste→Accept→pack smoke works.
+**Won’t:** auto-post; GSC ingest; pSEO clusters; ADA pushing git/Vercel; Reddit bots. **Not** `main` S3/ISR as the v1 actuator (F-M28-3). **Deferred.** The CV hunt case is removed.
 
 ### B.3 Illustrative YAML (design — not code)
 
-Fields that exist today stay. `plan_id` is the shared pin (Layer A). Stages match §B.1.2.
+Fields that exist today stay. `plan_id` is the shared pin (Layer A). Stages match the portfolio case.
 
 ```yaml
-# design sketch — not implemented this chat
-id: cv-draft-1
+# design sketch — not implemented
+id: portfolio-post-1
 kind: campaign
-title: "CV / hunt Mode B (named JD)"
+title: "One portfolio post"
 status: waiting_on_aryan
-plan_id: plan_ab12cd34ef56          # METAL v1.2 — pin on campaign row
-hunt_root: /mnt/ada-data/hunt/nz-cv-job-hunt   # coding-slice constant
-active_pack_id: 2026-09-acme-junior-dev        # pointer into hunt applications/
+plan_id: plan_ab12cd34ef56
 stages:
-  - id: link_or_jd
+  - id: draft_md
     state: done
-  - id: jd_ready
-    state: done                    # or hold → waiting_on_aryan for paste
-  - id: triage
-    state: done
-    # receipt crumb: role_fit / expect / residency (full text in hunt / artifact)
-  - id: draft_pack
-    state: done                    # only after Plan Accept (= Accept apply)
-  - id: compile_pdf
-    state: skipped                 # Overleaf meanwhile; Pi TeX later
-  - id: you_send
+  - id: you_paste_blog
     state: active
     gate: operator_ship
-  # optional:
-  # - id: revise_pack
-  # - id: update_guidelines
-current_stage: you_send
-blocked_reason: "submit pack applications/2026-09-acme-junior-dev/; type sent-to receipt"
+  - id: linkedin_cut
+    state: pending
+current_stage: you_paste_blog
+blocked_reason: "paste post.md to /blog; type the live URL"
 cadence: on_open_only
-last_receipt: "hunt:applications/2026-09-acme-junior-dev/cv.tex"
-# after ship (operator-typed):
-# last_receipt: "sent to Acme via careers on 2026-09-21"
-# status: done
 ```
 
 ---
@@ -591,13 +449,13 @@ F-M28-1…6 are **v1.0** (held). 7–10 close v1.1 gaps. **11** closes the v1.4 
 | Same Gemini; no second cortex / Cowork runtime | **v1.1** · constitution |
 | Accept ≠ Confirm ≠ operator-ship | M15 · **v1.1** |
 | Missing metal order: persist `plan_id` → handshake `waiting_on_aryan` → operator-typed ship receipt | **v1.1** |
-| Layer A implemented v1.2; Layer B `cv-draft-1` **mapped** v1.4; **paste smoke** on smoke root v1.5; fetch/CSV/TeX still later | §8 · **v1.5** |
+| Layer A implemented v1.2; Layer B `cv-draft-1` **mapped** v1.4; **paste smoke** v1.5; **real smoke packs** v1.6; **fetch-with-hold** v1.7; **smoke CSV** v1.8; TeX/prod still later | §8 · **v1.8** |
 
 ---
 
 ## Ordered “research done → implement next”
 
-**v1.5:** paste-JD smoke **done** on `/mnt/ada-data/hunt/nz-cv-job-hunt-smoke`. No redesign of hunt. No prod CSV/pack writers. No fetch/TeX/portfolio this slice.
+**v1.8:** smoke `hunt_csv_dedup` + `hunt_csv_upsert` (tracker header; role_fit/expect; never auto-Applied). Fetch + paste + evidence+WELD pack path held. No prod CSV/pack writers. No latexmk/portfolio this slice.
 
 Later coding slice, in order:
 
@@ -606,9 +464,9 @@ Later coding slice, in order:
 3. Operator-typed ship string → Confirm-gated `done` (F-M28-7). **Done (v1.2).**  
 4. Charter/recipe for `cv-draft-1` stage list (Layer B) — not a new schema. **Done (v1.4 docs).**  
 5. **Clone** private `nz-cv-job-hunt` → `/mnt/ada-data/hunt/nz-cv-job-hunt` (outside ADA git; auth via existing gh). Wire `HUNT_ROOT` constant. **Done on ada-pi5 (2026-09-20):** mount `/mnt/ada-data` · clone at prod path · FACT `memory/facts/work_hunt.yaml` · ops `hunt/README.md`.  
-6. **Paste-JD smoke:** load verbatim guidelines → paste JD → triage (`role_fit`+`expect`) → Plan Accept → sandboxed write tailored pack → `waiting_on_aryan` → you send → operator-typed Applied (F-M28-7/11). **Done (v1.5)** on **smoke** root `nz-cv-job-hunt-smoke` (`hunt_*` tools + `tests/test_m28_cv_draft_paste_smoke.py` + [`../reviews/M28_CV_DRAFT_PASTE_SMOKE.md`](../reviews/M28_CV_DRAFT_PASTE_SMOKE.md)). Prod tree remains read-only.  
-7. Allowlisted **fetch-with-hold** (M07) for pasted URLs.  
-8. CSV helpers (dedup + `role_fit`/`expect` columns; never auto-Applied).  
+6. The CV hunt paste-smoke is **removed** from Ada. Prod CV files stay outside this repo.  
+7. Allowlisted **fetch-with-hold** (M07) for pasted URLs. **Done (v1.7)** — `hunt_fetch_jd`.  
+8. CSV helpers (dedup + `role_fit`/`expect` columns; never auto-Applied). **Done (v1.8)** — `hunt_csv_dedup` / `hunt_csv_upsert`.  
 9. Local `latexmk` closer (Overleaf OK until then).  
 10. Guideline-edit Confirm path (`revise_pack` / `update_guidelines`).  
 11. Only then: `portfolio-post-1` once blog structure is decided.  
@@ -661,7 +519,7 @@ Later coding slice, in order:
 | Cowork as ADA’s runtime / clock | **FANFICTION** on this Pi |
 | `waiting_on_aryan` enum exists | **METAL** |
 | Handshake + persist `plan_id` + typed URL | **METAL** (Layer A v1.2 — `open_loops.py`, `artifact_write`, F-M28-7/8 tests) |
-| `cv-draft-1` stages + hunt SoT contract | **EVIDENCE** (hunt) + **FEASIBLE** design (v1.4) + **METAL** paste smoke (v1.5 smoke root) |
+| `cv-draft-1` stages + hunt SoT contract | **EVIDENCE** (hunt) + **FEASIBLE** design (v1.4) + **METAL** paste smoke (v1.5) + **METAL** evidence+WELD packs (v1.6 smoke) + **METAL** fetch-with-hold (v1.7) + **METAL** smoke CSV (v1.8) |
 | Accept ≠ Confirm ≠ operator-ship | **POLICY** |
 | Same Gemini; no second cortex | **FEASIBLE** + constitution |
 | LangGraph / n8n / swarm | **Won’t-chase** |
@@ -671,6 +529,6 @@ Later coding slice, in order:
 
 ---
 
-**Next:** allowlisted fetch-with-hold for pasted URLs; keep pack writes on smoke until CSV helpers are ready. Do not implement GSC, LinkedIn API, S3/ISR, scrape farm, or LaTeX-as-gate this week.
+**Next:** **Mac hunt panel face** ([`M19c`](./M19c_MULTI_FACE_SURFACES.md) v1.2) over existing smoke metal — not latexmk / critic / prod CSV this week. Overleaf OK for PDF. Do not implement GSC, LinkedIn API, S3/ISR, scrape farm, or LaTeX-as-gate.
 
-*End M28 v1.5 — Layer A metal; Layer B `cv-draft-1` paste smoke on smoke hunt root; drafts/packs in hunt tree; you ship; loop is the product.*
+*End M28 v1.8a — Layer A metal; Layer B smoke path held; face before more CV code; you ship; loop is the product.*
