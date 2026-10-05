@@ -1,4 +1,7 @@
-"""Run one blog step from the HUD form. One click, one step."""
+"""Run one blog step from the HUD form. One click, one step.
+
+FROZEN (2026-10-06): not daily product face — HUD chrome hidden / unwired. Metal retained.
+"""
 
 from __future__ import annotations
 

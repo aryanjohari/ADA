@@ -1,5 +1,8 @@
 """HUD control for one portfolio chain campaign.
 
+FROZEN (2026-10-06): not the daily product face — HUD chrome hidden / unwired.
+Metal retained for tests; do not extend as next work. See VISION.md.
+
 Publish one page reads the whole business file, chooses the next unpublished
 card in the card folders, opens up to three notes that teach that page,
 stores the passages, and writes the search title from those passages. It

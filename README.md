@@ -1,8 +1,8 @@
 # ADA
 
-ADA is the operator's agent on the Pi. It keeps a body ledger, talks through Gemini, and serves a localhost HUD over Tailscale. Memory is two stores: facts in YAML and worldview in markdown. Life capture covers food, gym, time, habits, and people. A separate chain publishes one portfolio page at a time from research cards already on disk.
+ADA is the operator's agent on the Pi. It keeps a body ledger, talks through Gemini, and serves a localhost HUD over Tailscale. Memory is two stores: facts in YAML and worldview in markdown. The live product is life capture (meal, gym, time, people, habits) + body + Today. See [`VISION.md`](./VISION.md).
 
-The live program is this repo on `main`. Module cards under `docs/modules/` are the design record. Research cards under `docs/research/` are the evidence the portfolio chain may use. The NZ business cards in `docs/research/_archive/` are a frozen library, not the live program.
+The live program is this repo on `main`. Module cards under `docs/modules/` are the design record. Research cards under `docs/research/` include a **FROZEN** portfolio SEO spine (code retained, not daily product). The NZ business cards in `docs/research/_archive/` are a frozen library, not the live program.
 
 ## Install
 
@@ -109,11 +109,13 @@ Equivalent without the Typer wrapper:
 uvicorn ada.hud.app:create_app --factory --host 127.0.0.1 --port 8787
 ```
 
-## Portfolio chain
+## Portfolio chain — FROZEN
 
-One run publishes one page on `github.com/aryanjohari/aryan-portfolio`. The operator file is `portfolio_chain.yaml` under the data root (`memory/facts/`). It stores the business once: site, audience, aim, places, offer, proof, contact, and actions. It also names the card folders. For this site those folders are `docs/research` and `docs/modules`. The operator does not write the title and does not keep a list of facts for the agent to refill.
+**Status: FROZEN (2026-10-06)** — code retained, not the daily product. Do not extend. Next work is life smoothness, not SEO / Search Console / blog publish. Living pointer: [`VISION.md`](./VISION.md).
 
-The plan lists the markdown cards in those folders, skips a card already recorded in `published_pages.yaml`, and chooses one remaining card that has a passage. It opens at most three notes that teach that page, stores the passages, and writes the search title from those passages. Twelve stages run in order: bind site, understand aim, plan, external fetch, gather, gate, draft, librarian, diagram, critic, deliver, push. The HUD control is **Publish one page**. The chain does not search the web and does not append a fact.
+SEO metal lives under `src/ada/memory/chain_*.py` + `tools/blog_tools.py` — frozen; do not extend. HUD **Publish one page** / Blog page / SEO chain panels are chrome-hidden on the daily face (HTML + API metal kept for tests). Chat/CLI portfolio publish wakes are not invited from the HUD; do not treat them as product surface.
+
+What the metal still does when invoked (quarantined): one run can publish one page on `github.com/aryanjohari/aryan-portfolio` from `portfolio_chain.yaml` under the data root (`memory/facts/`), reading cards from named folders, twelve stages (bind site → push). The chain does not search the web and does not append a fact.
 
 ## Tests
 

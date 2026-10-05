@@ -1,4 +1,4 @@
-/** SEO chain — Publish one page queues the first open YAML fact. Repair and publish wakes the current campaign. Not the Blog page form. */
+/** FROZEN (2026-10-06): SEO chain metal — not wired on daily face (main.js). Publish one page / repair stay for tests + quarantine. */
 
 let campaignId = "";
 

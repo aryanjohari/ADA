@@ -1,4 +1,4 @@
-/** Blog page form — one step at a time, with the current step marked. */
+/** FROZEN (2026-10-06): blog form metal — not wired on daily face (main.js). Kept for tests + quarantine. */
 
 import { requireSessionForMode, sessionState } from "./session.js";
 import { esc } from "./util.js";

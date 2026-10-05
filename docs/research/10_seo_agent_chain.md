@@ -1,5 +1,7 @@
 # 10 — SEO agent chain
 
+**Status: FROZEN (2026-10-06)** — not next work. Portfolio SEO / blog publish / Search Console stay quarantined. Live product = life capture + HUD + body. See [`../../VISION.md`](../../VISION.md). Metal may remain; do not extend this chain as the daily program.
+
 Access date for every source this card fetched: 2026-09-30. Cards 01–09 keep the access date on those cards, 2026-09-29, when this card cites them instead of re-fetching the page.
 
 Tags: **EVIDENCE** (a primary source), **HUNCH** (a reading, not a measurement), **MARKETING** (an agency, blog, or tool page; not a ranking rule and not a publish gate), **POLICY** (a rule this card locks), **METAL** (code this card read), **FEASIBLE** (this origin can host the object), **UNKNOWN** (not established).

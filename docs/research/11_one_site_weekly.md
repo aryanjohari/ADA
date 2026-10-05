@@ -1,9 +1,12 @@
 # 11 — One site, one YAML, one weekly pass
 
+**Status: FROZEN (2026-10-06)** — not next work. One-site weekly pass / Search Console / 9horsemen sink stay unbuilt and quarantined. Live product = life capture + HUD + body. See [`../../VISION.md`](../../VISION.md). Do not reopen SEO as the next slice.
+
 ## Changelog
 
 | Date | Note |
 | --- | --- |
+| 2026-10-06 | **FROZEN** stamp — not daily product; not next. Search Console and second-site sink stay unbuilt. |
 | 2026-10-01 | The YAML reader and plan now follow §4. Search Console and the second-site sink stay unbuilt. |
 
 Access date for every source this card fetched: 2026-10-01. Cards 02, 05, 06, 07, and 10 keep the access dates on those cards when this card cites them.

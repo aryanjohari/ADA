@@ -1,3 +1,10 @@
+/* FROZEN (2026-10-06): portfolio SEO / blog publish — not daily product face.
+   Metal (chain_*.py, blog_tools, forms) retained; do not extend. VISION.md */
+#blog-panel.seo-frozen,
+#chain-panel.seo-frozen {
+  display: none !important;
+}
+
 .blog-panel {
   margin: 0 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
