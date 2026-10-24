@@ -145,8 +145,12 @@ def test_recover_drops_off_query_banana(data_root: Path) -> None:
 
 
 
-def test_recover_detail_refresh_finds_honest_egg(data_root: Path) -> None:
+def test_recover_detail_refresh_finds_honest_egg(
+    data_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Null-CORE candy row → detail refresh → honest bind (F-M25-1, F-M25-5)."""
+    # Detail refresh skips without a USDA key; the HTTP call is mocked below.
+    monkeypatch.setenv("USDA_FDC_API_KEY", "test-key")
     paths = get_paths()
     candy = insert_food(
         name="EGGS",
@@ -608,8 +612,12 @@ def test_freestyle_meal_log_ref_id_only_refuses_null_core(data_root: Path) -> No
     assert int(n) == 0
 
 
-def test_fast_spine_detail_refresh_before_recover(data_root: Path) -> None:
+def test_fast_spine_detail_refresh_before_recover(
+    data_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Null-CORE FDC on fast spine → detail refresh → honest bind without recover cap."""
+    # Detail refresh skips without a USDA key; the HTTP call is mocked below.
+    monkeypatch.setenv("USDA_FDC_API_KEY", "test-key")
     paths = get_paths()
     candy = insert_food(
         name="EGGS",
