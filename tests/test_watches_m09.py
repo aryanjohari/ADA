@@ -31,6 +31,9 @@ from ada.web.feeds import FeedItem
 
 RUNNER = CliRunner()
 
+# Feed fixtures are dated 2026-08-14; pin the clock so max_age triage is stable.
+WATCH_NOW = datetime(2026, 8, 14, 12, 0, tzinfo=timezone.utc)
+
 ARXIV_RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>cs.AI</title>
 <item><title>Agents Paper</title>
@@ -138,6 +141,7 @@ def test_f1_fake_read_requires_fetch(data_root: Path) -> None:
         }
 
     result = watch_run(
+        now=WATCH_NOW,
         campaign_id=cid,
         http_get=_mock_article_response(),
         web_fetch_fn=tracking_fetch,
@@ -155,7 +159,7 @@ def test_f2_duplicate_guid_skips_second_wake(data_root: Path) -> None:
     _seed_arxiv_pack()
     cid = _agents_lit_campaign(max_items=5)
     http = _mock_article_response()
-    r1 = watch_run(campaign_id=cid, http_get=http)
+    r1 = watch_run(now=WATCH_NOW, campaign_id=cid, http_get=http)
     assert r1["fetched"] >= 1
     article_calls = 0
 
@@ -174,7 +178,7 @@ def test_f2_duplicate_guid_skips_second_wake(data_root: Path) -> None:
             [url],
         )
 
-    r2 = watch_run(campaign_id=cid, http_get=count_articles)
+    r2 = watch_run(now=WATCH_NOW, campaign_id=cid, http_get=count_articles)
     assert r2["ok"]
     assert article_calls == 0
 
@@ -198,6 +202,7 @@ def test_f3_allowlist_deny_skips_item(data_root: Path) -> None:
         return {"ok": True, "cite_id": "c_x", "cache": "miss"}
 
     watch_run(
+        now=WATCH_NOW,
         campaign_id=cid,
         http_get=_mock_feed_response(bad_rss),
         web_fetch_fn=track,
@@ -236,6 +241,7 @@ def test_f5_cap_burst(data_root: Path) -> None:
         return {"ok": True, "cite_id": f"c_{n}", "cache": "miss"}
 
     watch_run(
+        now=WATCH_NOW,
         campaign_id=cid,
         http_get=_mock_feed_response(big),
         web_fetch_fn=count_fetch,
@@ -305,6 +311,7 @@ def test_f9_receipt_points_to_runs(data_root: Path) -> None:
     _seed_arxiv_pack()
     cid = _agents_lit_campaign()
     watch_run(
+        now=WATCH_NOW,
         campaign_id=cid,
         http_get=_mock_article_response(),
         web_fetch_fn=lambda url, **k: {"ok": True, "cite_id": "c_r", "cache": "miss"},
@@ -325,6 +332,7 @@ def test_f11_chat_parity_same_web_fetch(data_root: Path) -> None:
     cid = _agents_lit_campaign(max_items=1)
     with patch.object(fetch_mod, "web_fetch", wraps=fetch_mod.web_fetch) as wrapped:
         watch_run(
+            now=WATCH_NOW,
             campaign_id=cid,
             http_get=_mock_article_response(),
         )
@@ -342,6 +350,7 @@ def test_f13_dry_run_no_article_fetch(data_root: Path) -> None:
         raise AssertionError("dry-run must not web_fetch articles")
 
     result = watch_run(
+        now=WATCH_NOW,
         campaign_id=cid,
         dry_run=True,
         http_get=_mock_feed_response(),
@@ -445,6 +454,7 @@ def test_watch_session_jsonl_events(data_root: Path) -> None:
     _seed_arxiv_pack()
     cid = _agents_lit_campaign(max_items=1)
     watch_run(
+        now=WATCH_NOW,
         campaign_id=cid,
         http_get=_mock_article_response(),
         web_fetch_fn=lambda url, **k: {"ok": True, "cite_id": "c_e", "cache": "miss"},
