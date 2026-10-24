@@ -147,22 +147,25 @@ def test_thin_custom_treated_as_miss_when_usda_present(
         paths=paths,
     )
 
-    def fake_usda(query, **kwargs):
-        return {
-            "name": "Bananas, raw",
-            "brand": None,
-            "source": "usda_fdc",
-            "external_id": "173944",
-            "barcode": None,
-            "nutrients_per_100g": {
-                "energy_kcal": 89.0,
-                "protein_g": 1.1,
-                "carb_g": 22.8,
-            },
-            "provenance": "api",
-        }
+    def fake_usda_hits(query, **kwargs):
+        # search_foods_resolved calls the multi-hit fetcher, which returns a list.
+        return [
+            {
+                "name": "Bananas, raw",
+                "brand": None,
+                "source": "usda_fdc",
+                "external_id": "173944",
+                "barcode": None,
+                "nutrients_per_100g": {
+                    "energy_kcal": 89.0,
+                    "protein_g": 1.1,
+                    "carb_g": 22.8,
+                },
+                "provenance": "api",
+            }
+        ]
 
-    monkeypatch.setattr("ada.logs.food.fetch_usda_search", fake_usda)
+    monkeypatch.setattr("ada.logs.food.fetch_usda_search_hits", fake_usda_hits)
     hits = search_foods_resolved("banana", fetch_remote=True, paths=paths)
     assert hits
     assert hits[0]["source"] == "usda_fdc"
