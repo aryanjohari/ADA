@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from ada.harness.loop import run_turn
 from ada.harness.pack_router import route_utterance
@@ -94,13 +96,17 @@ def test_who_is_observe_agent_not_new_sql(data_root: Path) -> None:
 
 def test_today_birthday_soon_and_people_remind(data_root: Path) -> None:
     ensure_prefs(get_paths())
+    # run_turn below reads the real clock, so derive the birthday from today
+    # (people_remind uses Pacific/Auckland and a 14-day window). 1992 is a leap
+    # year, so a Feb 29 result stays valid.
+    soon = datetime.now(ZoneInfo("Pacific/Auckland")).date() + timedelta(days=5)
     _write_person(
         "person_ravi",
         {
             "schema_version": 2,
             "id": "person_ravi",
             "display_name": "Ravi",
-            "birthday": "1990-09-25",
+            "birthday": soon.replace(year=1992).isoformat(),
         },
     )
     payload = build_today(paths=get_paths())
