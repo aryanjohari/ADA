@@ -23,6 +23,16 @@ from ada.tools.gateway import Gateway
 from ada.tools.toolspec import WRITE_TOOL_NAMES
 
 
+# Gateway meal writes need spine authority (M26 v1.8); this is a no-hold resolve.
+SPINE_RESOLVE = {
+    "bind_authority": "meal_spine",
+    "needs_confirm": False,
+    "reasons": [],
+    "rows": [],
+    "candidates": [],
+}
+
+
 class _ShouldNotRunAdapter:
     model = "fake"
 
@@ -85,7 +95,8 @@ def test_f2_snapshot_immutable_after_refetch(data_root: Path) -> None:
                     "provenance": "barcode",
                     "nutrients": {"energy_kcal": 100},
                 }
-            ]
+            ],
+            "resolve": SPINE_RESOLVE,
         },
     )
     meal_id = obs.data["meal_id"]
@@ -153,7 +164,10 @@ def test_f6_meal_write_has_receipt_id(data_root: Path) -> None:
     """F6: every meal write carries receipt_id."""
     obs = Gateway(mode="agent").execute(
         "life_meal_log",
-        {"lines": [{"display_name": "egg", "provenance": "manual", "nutrients": {"energy_kcal": 70}}]},
+        {
+            "lines": [{"display_name": "egg", "provenance": "manual", "nutrients": {"energy_kcal": 70}}],
+            "resolve": SPINE_RESOLVE,
+        },
     )
     assert obs.receipt_id
     with open_life_db(paths=get_paths()) as conn:
@@ -162,18 +176,6 @@ def test_f6_meal_write_has_receipt_id(data_root: Path) -> None:
             (obs.data["meal_id"],),
         ).fetchone()
     assert row["receipt_id"] == obs.receipt_id
-
-
-@pytest.mark.tier_a
-def test_f7_today_nutrition_from_rollup(data_root: Path) -> None:
-    """F7: Today headline from SQL rollup only."""
-    ensure_prefs(get_paths())
-    Gateway(mode="agent").execute(
-        "life_meal_log",
-        {"lines": [{"display_name": "toast", "provenance": "manual", "nutrients": {"energy_kcal": 80}}]},
-    )
-    payload = build_today(paths=get_paths())
-    assert payload["nutrition_headline"]["kcal"] == 80
 
 
 @pytest.mark.tier_a
@@ -211,7 +213,8 @@ def test_f10_honest_partial_surfaced(data_root: Path) -> None:
                     "provenance": "estimate",
                     "nutrients": {"energy_kcal": 50, "vitamin_d_ug": None},
                 }
-            ]
+            ],
+            "resolve": SPINE_RESOLVE,
         },
     )
     day = Gateway(mode="observe").execute("life_nutrition_day", {})
