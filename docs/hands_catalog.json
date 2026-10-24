@@ -1,0 +1,625 @@
+{
+  "actions": [
+    {
+      "description": "Enqueue a daemon goal with SQL-grounded daily brief text (flags + snapshot).",
+      "id": "action.daily_brief",
+      "mission_required": true,
+      "motor_type": "goal_add",
+      "playbook_id": null,
+      "require_approval": false,
+      "risk_tier": "low",
+      "skill_id": "daily_brief",
+      "workflow_kind": null
+    },
+    {
+      "description": "Enqueue RSS ingest + graph + synth workflow for a mission.",
+      "id": "action.ingest_rss_mission",
+      "mission_required": true,
+      "motor_type": "workflow_enqueue",
+      "playbook_id": "ingest_rss_summarize",
+      "require_approval": false,
+      "risk_tier": "low",
+      "skill_id": "ingest_rss_mission",
+      "workflow_kind": "rss_fetch_then_graph_then_synth"
+    },
+    {
+      "description": "Dry-run mission tick (prints due jobs only).",
+      "id": "action.mission_tick_dry_run",
+      "mission_required": true,
+      "motor_type": "ada_argv",
+      "playbook_id": null,
+      "require_approval": false,
+      "risk_tier": "low",
+      "skill_id": "mission_tick_dry_run",
+      "workflow_kind": null
+    },
+    {
+      "description": "Enrich entity, gate, draft, deploy (publish_entity_v1 playbook).",
+      "id": "action.publish_entity_v1",
+      "mission_required": true,
+      "motor_type": "workflow_enqueue",
+      "playbook_id": "publish_entity_v1",
+      "require_approval": true,
+      "risk_tier": "high",
+      "skill_id": "publish_entity_v1",
+      "workflow_kind": "publish_entity_v1"
+    },
+    {
+      "description": "Keyword-targeted publish pipeline (publish_keyword_v1 playbook).",
+      "id": "action.publish_keyword_v1",
+      "mission_required": true,
+      "motor_type": "workflow_enqueue",
+      "playbook_id": "publish_keyword_v1",
+      "require_approval": true,
+      "risk_tier": "high",
+      "skill_id": "publish_keyword_v1",
+      "workflow_kind": "publish_keyword_v1"
+    },
+    {
+      "description": "Enqueue a daemon goal for weekly research synthesis.",
+      "id": "action.weekly_research_goal",
+      "mission_required": true,
+      "motor_type": "goal_add",
+      "playbook_id": null,
+      "require_approval": false,
+      "risk_tier": "medium",
+      "skill_id": "weekly_research_goal",
+      "workflow_kind": null
+    }
+  ],
+  "capabilities": [
+    {
+      "agent": "yes",
+      "chat": "subset",
+      "chat_declared": true,
+      "entity": "subset",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.add_knowledge_source",
+      "mission_required": "no",
+      "plan": "subset",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "add_knowledge_source",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "ADA_ENABLE_MEMORY_TOOLS"
+      ],
+      "id": "cap.append_master_section",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "append_master_section",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "ADA_ENABLE_MEMORY_TOOLS"
+      ],
+      "id": "cap.append_soul_fragment",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "append_soul_fragment",
+      "work": "yes"
+    },
+    {
+      "agent": "no",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ingress: plan"
+      ],
+      "id": "cap.apply_programme",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "H",
+      "setup": "no",
+      "tool_name": "apply_programme",
+      "work": "no"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [],
+      "id": "cap.check_token_usage",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "L",
+      "setup": "yes",
+      "tool_name": "check_token_usage",
+      "work": "yes"
+    },
+    {
+      "agent": "no",
+      "chat": "no",
+      "chat_declared": false,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_WORKFLOW_TOOLS"
+      ],
+      "id": "cap.enqueue_workflow",
+      "mission_required": "when_scoped",
+      "plan": "no",
+      "risk": "H",
+      "setup": "no",
+      "tool_name": "enqueue_workflow",
+      "work": "no"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "ADA_ENABLE_WEB_TOOLS"
+      ],
+      "id": "cap.fetch_url_text",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "fetch_url_text",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "subset",
+      "chat_declared": true,
+      "entity": "subset",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.get_entity_graph_context",
+      "mission_required": "when_scoped",
+      "plan": "subset",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "get_entity_graph_context",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_GSC_READ_TOOLS"
+      ],
+      "id": "cap.get_gsc_opportunities",
+      "mission_required": "no",
+      "plan": "no",
+      "risk": "M",
+      "setup": "no",
+      "tool_name": "get_gsc_opportunities",
+      "work": "yes"
+    },
+    {
+      "agent": "if_mission",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "wired in chat_session"
+      ],
+      "id": "cap.get_mission_control_snapshot",
+      "mission_required": "when_scoped",
+      "plan": "yes",
+      "risk": "L",
+      "setup": "if_mission",
+      "tool_name": "get_mission_control_snapshot",
+      "work": "if_mission"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_WORKFLOW_TOOLS"
+      ],
+      "id": "cap.get_workflow_status",
+      "mission_required": "no",
+      "plan": "no",
+      "risk": "L",
+      "setup": "yes",
+      "tool_name": "get_workflow_status",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.link_evidence",
+      "mission_required": "when_scoped",
+      "plan": "no",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "link_evidence",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "ADA_ENABLE_WEB_SOURCES_TOOL"
+      ],
+      "id": "cap.list_session_web_sources",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "L",
+      "setup": "yes",
+      "tool_name": "list_session_web_sources",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_FILE_TOOLS"
+      ],
+      "id": "cap.list_workspace_directory",
+      "mission_required": "no",
+      "plan": "no",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "list_workspace_directory",
+      "work": "yes"
+    },
+    {
+      "agent": "no",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "ingress: chat, plan"
+      ],
+      "id": "cap.propose_programme",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "L",
+      "setup": "no",
+      "tool_name": "propose_programme",
+      "work": "no"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "ADA_ENABLE_GOAL_RECALL_TOOL"
+      ],
+      "id": "cap.read_goal_task_view",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "L",
+      "setup": "yes",
+      "tool_name": "read_goal_task_view",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_PLAN_TOOLS"
+      ],
+      "id": "cap.read_task_plan",
+      "mission_required": "no",
+      "plan": "no",
+      "risk": "L",
+      "setup": "yes",
+      "tool_name": "read_task_plan",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_FILE_TOOLS"
+      ],
+      "id": "cap.read_workspace_file",
+      "mission_required": "no",
+      "plan": "no",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "read_workspace_file",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.record_edge",
+      "mission_required": "when_scoped",
+      "plan": "no",
+      "risk": "H",
+      "setup": "yes",
+      "tool_name": "record_edge",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.record_entity",
+      "mission_required": "when_scoped",
+      "plan": "no",
+      "risk": "H",
+      "setup": "yes",
+      "tool_name": "record_entity",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.record_market_edge",
+      "mission_required": "when_scoped",
+      "plan": "no",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "record_market_edge",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.record_synthesis",
+      "mission_required": "when_scoped",
+      "plan": "no",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "record_synthesis",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "memory/shell_allowlist.txt non-empty"
+      ],
+      "id": "cap.run_allowlisted_shell",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "run_allowlisted_shell",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ingress: agent"
+      ],
+      "id": "cap.run_skill",
+      "mission_required": "when_scoped",
+      "plan": "no",
+      "risk": "M",
+      "setup": "no",
+      "tool_name": "run_skill",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "subset",
+      "chat_declared": true,
+      "entity": "subset",
+      "env_flags": [
+        "ADA_ENABLE_KNOWLEDGE_TOOLS"
+      ],
+      "id": "cap.search_knowledge",
+      "mission_required": "when_scoped",
+      "plan": "subset",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "search_knowledge",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "yes",
+      "chat_declared": true,
+      "entity": "yes",
+      "env_flags": [
+        "ADA_ENABLE_WEB_TOOLS",
+        "ADA_SERPER_API_KEY"
+      ],
+      "id": "cap.web_search",
+      "mission_required": "no",
+      "plan": "yes",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "web_search",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_PLAN_TOOLS"
+      ],
+      "id": "cap.write_task_plan",
+      "mission_required": "no",
+      "plan": "no",
+      "risk": "M",
+      "setup": "yes",
+      "tool_name": "write_task_plan",
+      "work": "yes"
+    },
+    {
+      "agent": "yes",
+      "chat": "no",
+      "chat_declared": true,
+      "entity": "no",
+      "env_flags": [
+        "ADA_ENABLE_FILE_TOOLS"
+      ],
+      "id": "cap.write_workspace_file",
+      "mission_required": "no",
+      "plan": "no",
+      "risk": "H",
+      "setup": "yes",
+      "tool_name": "write_workspace_file",
+      "work": "yes"
+    }
+  ],
+  "generated_by": "ada.motor.manifest_sync.build_hands_catalog_dict",
+  "pipelines": [
+    {
+      "enqueued_by_actions": [
+        "publish_entity_v1"
+      ],
+      "id": "pipeline.publish_entity_v1",
+      "steps": [
+        {
+          "input_json": {},
+          "step_index": 0,
+          "step_type": "ENRICH"
+        },
+        {
+          "input_json": {},
+          "step_index": 1,
+          "step_type": "GATE"
+        },
+        {
+          "input_json": {},
+          "step_index": 2,
+          "step_type": "DRAFT"
+        },
+        {
+          "input_json": {},
+          "step_index": 3,
+          "step_type": "DEPLOY"
+        }
+      ],
+      "workflow_kind": "publish_entity_v1"
+    },
+    {
+      "enqueued_by_actions": [
+        "publish_keyword_v1"
+      ],
+      "id": "pipeline.publish_keyword_v1",
+      "steps": [
+        {
+          "input_json": {},
+          "step_index": 0,
+          "step_type": "ENRICH"
+        },
+        {
+          "input_json": {},
+          "step_index": 1,
+          "step_type": "DRAFT"
+        },
+        {
+          "input_json": {},
+          "step_index": 2,
+          "step_type": "DEPLOY"
+        }
+      ],
+      "workflow_kind": "publish_keyword_v1"
+    },
+    {
+      "enqueued_by_actions": [
+        "ingest_rss_mission"
+      ],
+      "id": "pipeline.rss_fetch_then_graph_then_synth",
+      "steps": [
+        {
+          "input_json": {},
+          "step_index": 0,
+          "step_type": "FETCH"
+        },
+        {
+          "input_json": {
+            "recent_item_limit": 40
+          },
+          "step_index": 1,
+          "step_type": "EXTRACT"
+        },
+        {
+          "input_json": {},
+          "step_index": 2,
+          "step_type": "SYNTHESIZE"
+        }
+      ],
+      "workflow_kind": "rss_fetch_then_graph_then_synth"
+    }
+  ],
+  "playbooks": [
+    {
+      "id": "playbook.ingest_rss_summarize",
+      "operator_visible": false,
+      "playbook_id": "ingest_rss_summarize",
+      "risk_tier": "low",
+      "workflow_kind": "rss_fetch_then_graph_then_synth"
+    },
+    {
+      "id": "playbook.publish_entity_v1",
+      "operator_visible": false,
+      "playbook_id": "publish_entity_v1",
+      "risk_tier": "medium",
+      "workflow_kind": "publish_entity_v1"
+    },
+    {
+      "id": "playbook.publish_keyword_v1",
+      "operator_visible": false,
+      "playbook_id": "publish_keyword_v1",
+      "risk_tier": "medium",
+      "workflow_kind": "publish_keyword_v1"
+    }
+  ],
+  "version": 1
+}
