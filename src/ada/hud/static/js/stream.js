@@ -570,7 +570,8 @@ function _wireMealConfirmPicker(card) {
       const group = row.closest(".confirm-candidate-group");
       if (!group) return;
       group.querySelectorAll(".confirm-candidate-row").forEach((el) => {
-        el.classList.toggle("selected", el.querySelector("input")?.checked);
+        const radio = el.querySelector("input");
+        el.classList.toggle("selected", Boolean(radio && radio.checked));
       });
     };
     input.addEventListener("change", sync);
