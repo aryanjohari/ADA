@@ -320,6 +320,8 @@ def test_f12_today_is_strip_shaped(data_root: Path) -> None:
         "habit_continuity",
         "birthday_soon",
         "people_remind",
+        "open_gym",
+        "brief_include",
     }
     assert set(payload.keys()) <= allowed
     assert isinstance(payload["due_todos"], list)
