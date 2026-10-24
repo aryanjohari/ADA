@@ -25,6 +25,14 @@ def test_nutrition_day_payload_has_honest_meal_rows(data_root: Path) -> None:
                 },
             ],
             "meal_slot": "breakfast",
+            # Gateway meal writes need spine authority (M26 v1.8).
+            "resolve": {
+                "bind_authority": "meal_spine",
+                "needs_confirm": False,
+                "reasons": [],
+                "rows": [],
+                "candidates": [],
+            },
         },
     )
     obs = gw.execute("life_nutrition_day", {})

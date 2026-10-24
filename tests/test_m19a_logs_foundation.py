@@ -41,7 +41,19 @@ def test_schema_create_idempotent(data_root: Path) -> None:
 def test_append_meal_row(data_root: Path) -> None:
     paths = get_paths()
     rid = new_receipt_id()
-    result = append_meal(receipt_id=rid, note="test", paths=paths)
+    # meal_log refuses lines with no macros (empty_macros), so give it one.
+    result = append_meal(
+        receipt_id=rid,
+        note="test",
+        lines=[
+            {
+                "display_name": "placeholder",
+                "provenance": "manual",
+                "nutrients": {"energy_kcal": 1},
+            }
+        ],
+        paths=paths,
+    )
     assert result["ok"] is True
     with open_life_db(paths=paths) as conn:
         row = conn.execute(
