@@ -10,7 +10,7 @@ from typing import Any, Callable
 import httpx
 
 from ada.body.vitals import utc_now_iso
-from ada.harness.catalog_rank import rank_catalog_candidates
+from ada.life.food.rank import rank_catalog_candidates
 from ada.harness.resolve_gate import has_viable_local_candidate
 from ada.io.paths import DataPaths
 from ada.logs.connection import open_food_db

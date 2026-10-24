@@ -34,8 +34,8 @@ HUD daily face stays thin: chat-home + Today strip + panels later. Not a dashboa
 ## Next work (in order)
 
 1. **Life smoothness** — vocative peel, NZ local day, meal happy path (and related capture friction).
-2. **Modular `life/` extract** — `src/ada/life/{food,gym,time,people}` when smoothness is honest enough.
-3. Not SEO. Not a dashboard home. Not harness rewrite. Not Verb→Pack / Confirm / gateway reopen.
+2. ~~**Modular `life/` extract**~~ — done: organs under `src/ada/life/{time,people,gym,habits,food}` + `registry.py` (see [`docs/modules/LIFE_PACKAGES.md`](./docs/modules/LIFE_PACKAGES.md)).
+3. Not SEO. Not a dashboard home. Not Verb→Pack / Confirm / gateway reopen.
 
 ## Constraints (soft)
 

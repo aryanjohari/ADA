@@ -111,7 +111,7 @@ uvicorn ada.hud.app:create_app --factory --host 127.0.0.1 --port 8787
 
 ## Portfolio chain — FROZEN
 
-**Status: FROZEN (2026-10-06)** — code retained, not the daily product. Do not extend. Next work is life smoothness, not SEO / Search Console / blog publish. Living pointer: [`VISION.md`](./VISION.md).
+**Status: FROZEN (2026-10-06)** — code retained, not the daily product. Do not extend. Next work is life smoothness (and life packages are extracted under `src/ada/life/` — see [`docs/modules/LIFE_PACKAGES.md`](./docs/modules/LIFE_PACKAGES.md)), not SEO / Search Console / blog publish. Living pointer: [`VISION.md`](./VISION.md).
 
 SEO metal lives under `src/ada/memory/chain_*.py` + `tools/blog_tools.py` — frozen; do not extend. HUD **Publish one page** / Blog page / SEO chain panels are chrome-hidden on the daily face (HTML + API metal kept for tests). Chat/CLI portfolio publish wakes are not invited from the HUD; do not treat them as product surface.
 

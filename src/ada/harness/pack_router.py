@@ -9,110 +9,65 @@ from typing import Any
 
 import yaml
 
-from ada.harness.gym_date import is_gym_read_shape, parse_gym_date
-from ada.harness.gym_spine import is_bare_nxm_without_unit, lift_utterance_body
-from ada.harness.habit_date import is_habit_read_shape, parse_habit_date
-from ada.harness.nutrition_date import (
+from ada.life.food.date import (
     has_week_cue,
-    is_nutrition_read_shape,
     local_today,
     parse_nutrition_date,
 )
-from ada.harness.time_date import is_time_read_shape, parse_time_date
-from ada.harness.time_intent import map_time_intent
+from ada.life.food.doors import (
+    _ADD_MEAL,
+    _MEAL_MULTI,
+    _MEAL_MULTI_BARE,
+    _MEAL_SINGLE,
+    _MEAL_SLOT,
+    _meal_body_from_raw,
+    _normalize_meal_slot,
+    is_meal_log_utterance,
+    meal_log_fast_path_args,
+    route_nutrition_read,
+)
+from ada.life.gym.date import parse_gym_date
+from ada.life.gym.doors import (
+    gym_read_takes_priority,
+    is_gym_end_utterance,
+    is_gym_start_utterance,
+    is_incomplete_lift_utterance,
+    is_lift_log_utterance,
+    lift_log_fast_path_args,
+    route_gym_read,
+)
+from ada.life.habits.date import parse_habit_date
+from ada.life.habits.doors import (
+    _HABIT_DONE_NL,
+    _HABIT_MISS_NL,
+    is_habit_do_utterance,
+    is_habit_miss_utterance,
+    route_habit_read,
+)
+from ada.life.people.doors import (
+    alias_set_body,
+    birthday_set_body,
+    is_alias_set_utterance,
+    is_birthday_set_utterance,
+    is_people_remind_utterance,
+    is_person_capture_utterance,
+    is_person_note_utterance,
+    is_who_is_utterance,
+    person_capture_body,
+    person_note_body,
+    who_is_mention,
+)
+from ada.life.time.date import parse_time_date
+from ada.life.time.doors import is_time_start_utterance, route_time_read, route_time_start_focus
+from ada.life.time.intent import map_time_intent
+from ada.life.utterance import strip_leading_filler
 
 _DEFAULT_PACK = "life_p0.yaml"
 _P1_PACK = "life_p1.yaml"
-_MEAL_SLOT = re.compile(
-    r"\b(?:to|for)\s+(?:an?\s+|the\s+)?(breakfast|lunch|dinner|snacks?)\b",
-    re.IGNORECASE,
-)
-# STT often hears "Long meal" for "Log meal"; allow optional "meal" + article before slot.
-_ADD_MEAL = re.compile(
-    r"^(?:add|log|long)\s+(?:meal\s+)?(.+?)\s+(?:to|for)\s+(?:an?\s+|the\s+)?"
-    r"(breakfast|lunch|dinner|snacks?)\b",
-    re.IGNORECASE,
-)
-_LIFT_LINE = re.compile(r"\b(?:\d+(?:\.\d+)?)\s*(?:kg|kgs|lb|lbs)\s*x\s*\d+\b", re.IGNORECASE)
-# Multi-set ladder without requiring "log lift:" (M24 pack preference).
-_LIFT_LADDER = re.compile(
-    r"\b\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\s*[x×]\s*\d+\s*"
-    r"(?:reps?\s+)?(?:\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\s*[x×]\s*\d+)",
-    re.IGNORECASE,
-)
-# "3x6 at 50kg" / "flat bench 3x6 @ 50" — sets×reps with load (M26 v1.2).
-_LIFT_SETS_AT_LOAD = re.compile(
-    r"\b\d+\s*[x×]\s*\d+\s*(?:at|@)\s*\d+(?:\.\d+)?\s*(?:kg|kgs|lb|lbs)?\b",
-    re.IGNORECASE,
-)
-_GYM_START_SHAPE = re.compile(
-    r"(?:"
-    r"(?:i(?:['’]?m|\s+am)\s+)?at\s+(?:the\s+)?gym"
-    r"|(?:i\s+)?start(?:ed|ing)?\s+(?:a\s+|the\s+)?gym"
-    r")\.?\s*$",
-    re.IGNORECASE,
-)
-# Time pack door — start-shapes only. Labels are slots, not YAML/regex per phrase.
-# Ordered most-specific first so "I'm starting X" does not collapse to "I'm X".
-_TIME_START_SHAPE = re.compile(
-    r"^(?:"
-    r"i\s+started\s+\S.*"
-    r"|i(?:['’]?m|\s+am)\s+starting\s+\S.*"
-    r"|starting\s+\S.*"
-    r"|i(?:['’]?m|\s+am)\s+\S.*"
-    r")",
-    re.IGNORECASE,
-)
-_GYM_END_SHAPE = re.compile(
-    r"(?:"
-    r"\b(?:i\s+)?(?:finish(?:ed)?|done|end(?:ed)?|close[d]?)\s+"
-    r"(?:the\s+|a\s+)?(?:gym|workout)\b"
-    r"|\bgym\s+done\b"
-    r")",
-    re.IGNORECASE,
-)
-# Whole-utterance exercise name (catalog/custom fold) — not a sentence.
-_NAME_ONLY_LIFT = re.compile(
-    r"^[A-Za-z][A-Za-z'+-]*(?:\s+[A-Za-z][A-Za-z'+-]*){0,5}$"
-)
-_NAME_ONLY_CHAT = re.compile(
-    r"^(?:i|i['’]m|im|we|what|how|did|do|why)\b",
-    re.IGNORECASE,
-)
-_LIFT_PREFIX = re.compile(r"^(?:log\s+lift\b|lift\s*:)", re.IGNORECASE)
-# Multi-item meal: log/add + qty cue + and/+ — slot optional (M26 path integrity).
-_MEAL_MULTI = re.compile(
-    r"\b(?:log|add|long)\b.+"
-    r"(?:\d+(?:\.\d+)?\s*(?:g|grams?|kg|oz|ml|cups?|cup|tbsp|tsp)?|"
-    r"(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+)"
-    r".+\b(?:and|\+)\b",
-    re.IGNORECASE,
-)
-# Bare grams + and/+ + meal slot (no log verb) — still pack fence.
-_MEAL_MULTI_BARE = re.compile(
-    r"\b\d+(?:\.\d+)?\s*(?:g|grams?|kg|oz)?\b.+\b(?:and|\+)\b.+"
-    r"\b(?:for|to)\s+(?:an?\s+|the\s+)?(?:breakfast|lunch|dinner|snacks?)\b",
-    re.IGNORECASE,
-)
-# Phone NL: "Habit done skincare" / "habit done: skincare" — wrappers, name is a slot.
-_HABIT_DONE_NL = re.compile(
-    r"^(?:habit\s+)?(?:done|tick|logged)\s*:?\s*(.+)$",
-    re.IGNORECASE,
-)
-_HABIT_MISS_NL = re.compile(
-    r"^(?:habit\s+)?miss(?:ed)?\s*:?\s*(.+)$",
-    re.IGNORECASE,
-)
 _BRIEF_PREF_NL = re.compile(
     r"\b(?:don'?t|do\s+not|exclude|remove|hide|omit|add|include|put|show)\b.*\bbrief\b"
     r"|\bbrief\b.*\b(?:don'?t|do\s+not|exclude|remove|hide|omit|add|include|put|show)\b",
     re.IGNORECASE,
-)
-_LEADING_FILLER = re.compile(r"^(?:okay|ok|yeah|yep|sure|please)[,.\s]+", re.I)
-_MEAL_SINGLE = re.compile(
-    r"^(?:add|log|long)\s+(?:meal\s+)?"
-    r"(\d+(?:\.\d+)?\s*(?:g|grams?|kg|oz|ml|cups?)?\s*.+)$",
-    re.I,
 )
 
 READ_PACK_VERBS = frozenset(
@@ -236,7 +191,7 @@ def _route_from_pack(
     elif tool == "life_meal_draft_start":
         args["utterance"] = body or raw
     elif tool == "life_meal_draft_save":
-        from ada.harness.meal_draft_spine import parse_save_as_name
+        from ada.life.food.draft_spine import parse_save_as_name
 
         args["utterance"] = body or raw
         name = parse_save_as_name(raw) or parse_save_as_name(body or "")
@@ -245,7 +200,7 @@ def _route_from_pack(
     elif tool == "life_meal_draft_cancel":
         args["utterance"] = body or raw
     elif tool == "life_meal_preset_log":
-        from ada.harness.meal_draft_spine import parse_log_preset_name
+        from ada.life.food.draft_spine import parse_log_preset_name
 
         args["utterance"] = body or raw
         name = parse_log_preset_name(raw) or (body or "").strip()
@@ -256,7 +211,7 @@ def _route_from_pack(
         if slot:
             args["meal_slot"] = _normalize_meal_slot(slot.group(1))
     elif tool == "life_barcode_lookup":
-        from ada.harness.meal_draft_spine import parse_barcode_gtin
+        from ada.life.food.draft_spine import parse_barcode_gtin
 
         gtin = parse_barcode_gtin(raw) or parse_barcode_gtin(body or "")
         if not gtin:
@@ -352,20 +307,11 @@ def _route_nutrition_read(
     config: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Structural nutrition read: week window or explicit/relative day."""
-    if not is_nutrition_read_shape(raw):
-        return None
-    if has_week_cue(raw):
-        routed = _route_from_pack("nutrition_week", raw, raw, config=config)
-        if routed is not None:
-            routed["args"]["days"] = 7
-        return routed
-    parsed = parse_nutrition_date(raw)
-    if parsed is None:
-        return None
-    routed = _route_from_pack("nutrition_day", raw, raw, config=config)
-    if routed is not None:
-        routed["args"]["date"] = parsed
-    return routed
+    return route_nutrition_read(
+        raw,
+        route_from_pack=_route_from_pack,
+        config=config,
+    )
 
 
 def _route_gym_read(
@@ -374,20 +320,11 @@ def _route_gym_read(
     config: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Structural gym read: week window or explicit/relative day. Not gym_status."""
-    if not is_gym_read_shape(raw):
-        return None
-    if has_week_cue(raw):
-        routed = _route_from_pack("gym_week", raw, raw, config=config)
-        if routed is not None:
-            routed["args"]["days"] = 7
-        return routed
-    parsed = parse_gym_date(raw)
-    if parsed is None:
-        return None
-    routed = _route_from_pack("gym_day", raw, raw, config=config)
-    if routed is not None:
-        routed["args"]["date"] = parsed
-    return routed
+    return route_gym_read(
+        raw,
+        route_from_pack=_route_from_pack,
+        config=config,
+    )
 
 
 def _route_time_read(
@@ -396,20 +333,12 @@ def _route_time_read(
     config: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Structural time day/week read. Not time_status / what's running."""
-    if not is_time_read_shape(raw):
-        return None
-    if has_week_cue(raw):
-        routed = _route_from_pack("time_week", raw, raw, config=config)
-        if routed is not None:
-            routed["args"]["days"] = 7
-        return routed
-    parsed = parse_time_date(raw)
-    if parsed is None:
-        return None
-    routed = _route_from_pack("time_day", raw, raw, config=config)
-    if routed is not None:
-        routed["args"]["date"] = parsed
-    return routed
+    return route_time_read(
+        raw,
+        has_week_cue=has_week_cue,
+        route_from_pack=_route_from_pack,
+        config=config,
+    )
 
 
 def _route_habit_read(
@@ -418,20 +347,11 @@ def _route_habit_read(
     config: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Structural habit day/week read. Not undated habits today / streak_show."""
-    if not is_habit_read_shape(raw):
-        return None
-    if has_week_cue(raw):
-        routed = _route_from_pack("habit_week", raw, raw, config=config)
-        if routed is not None:
-            routed["args"]["days"] = 7
-        return routed
-    parsed = parse_habit_date(raw)
-    if parsed is None:
-        return None
-    routed = _route_from_pack("habit_day", raw, raw, config=config)
-    if routed is not None:
-        routed["args"]["date"] = parsed
-    return routed
+    return route_habit_read(
+        raw,
+        route_from_pack=_route_from_pack,
+        config=config,
+    )
 
 
 def _route_aliases(
@@ -454,83 +374,6 @@ def _route_aliases(
                 continue
             return _route_from_pack(verb, raw, raw, config=config)
     return None
-
-
-def gym_read_takes_priority(text: str) -> bool:
-    """Week / relative-day gym reads win over start/end/lift writes."""
-    raw = (text or "").strip()
-    if not is_gym_read_shape(raw):
-        return False
-    if has_week_cue(raw):
-        return True
-    return parse_gym_date(raw) is not None
-
-
-def is_gym_start_utterance(text: str) -> bool:
-    """Structural gym-start NL — independent of pack_hint match."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw or gym_read_takes_priority(raw):
-        return False
-    return bool(_GYM_START_SHAPE.match(raw))
-
-
-def is_time_start_utterance(text: str) -> bool:
-    """Structural time-start NL — start-shapes only; hint optional.
-
-    Inserted after meal / lift / gym start / gym end so those organs win.
-    Bare spine labels without a start-shape are not a door.
-    """
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw:
-        return False
-    if is_meal_log_utterance(raw) or is_lift_log_utterance(raw):
-        return False
-    if is_incomplete_lift_utterance(raw):
-        return False
-    if is_gym_start_utterance(raw) or is_gym_end_utterance(raw):
-        return False
-    lower = raw.lower()
-    if lower.startswith("start focus") or lower.startswith("start timer"):
-        return True
-    return bool(_TIME_START_SHAPE.match(raw))
-
-
-def is_habit_do_utterance(text: str) -> bool:
-    """Wrapper pack door for habit_do — name is a slot, not a YAML row.
-
-    Hint optional: wrappers force the verb even if pack_hint is missing.
-    Bare labels (skincare / laundry) without a wrapper are not a door.
-    """
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw:
-        return False
-    lower = raw.lower()
-    matched = _HABIT_DONE_NL.match(raw)
-    if not matched or not matched.group(1).strip():
-        return False
-    return (
-        lower.startswith("habit ")
-        or lower.startswith("habit\t")
-        or lower.startswith("tick ")
-        or "habit done" in lower
-        or "habit tick" in lower
-    )
-
-
-def is_habit_miss_utterance(text: str) -> bool:
-    """Wrapper pack door for habit_miss — habit in string, or starts with miss."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw:
-        return False
-    lower = raw.lower()
-    matched = _HABIT_MISS_NL.match(raw)
-    if not matched or not matched.group(1).strip():
-        return False
-    return "habit" in lower or lower.startswith("miss")
 
 
 _DUE_ADD_LEAD = re.compile(
@@ -567,8 +410,7 @@ def is_due_add_utterance(text: str) -> bool:
     Hint optional: wrappers force the verb even if pack_hint is missing.
     Bare titles (thesis) without a wrapper are not a door.
     """
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
+    raw = strip_leading_filler(text)
     if not raw or _due_other_organ(raw):
         return False
     lower = raw.lower()
@@ -579,8 +421,7 @@ def is_due_add_utterance(text: str) -> bool:
 
 def is_remind_utterance(text: str) -> bool:
     """Wrapper pack door for remind — `remind:` / `remind me`. Not people_remind."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
+    raw = strip_leading_filler(text)
     if not raw or _due_other_organ(raw):
         return False
     lower = raw.lower()
@@ -593,8 +434,7 @@ def is_remind_utterance(text: str) -> bool:
 
 def is_due_done_utterance(text: str) -> bool:
     """Wrapper pack door for due_done — `done:` only. Not habit done / gym end."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
+    raw = strip_leading_filler(text)
     if not raw:
         return False
     lower = raw.lower()
@@ -607,282 +447,16 @@ def is_due_done_utterance(text: str) -> bool:
 
 def is_due_list_utterance(text: str) -> bool:
     """Read door for due_list — grocery/shopping aliases stay this organ."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
+    raw = strip_leading_filler(text)
     if not raw or _due_other_organ(raw):
         return False
     lower = raw.lower()
     return any(cue in lower for cue in _DUE_LIST_CUES)
 
 
-# People wrappers — name is a remainder slot, not a YAML row. Bare "Ravi" is not a door.
-_MET_NL = re.compile(r"^met\s+(.+)$", re.IGNORECASE)
-_WHO_IS_NL = re.compile(r"^who\s+is\s+(.+)$", re.IGNORECASE)
-_NOTE_FOR_NL = re.compile(r"^note\s+for\s+(.+)$", re.IGNORECASE)
-_ALIAS_SET_NL = re.compile(r"^alias\s+set:\s*(.+)$", re.IGNORECASE)
-_BIRTHDAY_SET_NL = re.compile(r"^set\s+birthday:\s*(.+)$", re.IGNORECASE)
-
-
-def _people_other_organ(raw: str) -> bool:
-    """Meal / lift / gym / time / habit / due wrappers win over people."""
-    return (
-        is_habit_do_utterance(raw)
-        or is_habit_miss_utterance(raw)
-        or is_gym_start_utterance(raw)
-        or is_gym_end_utterance(raw)
-        or is_time_start_utterance(raw)
-        or is_lift_log_utterance(raw)
-        or is_meal_log_utterance(raw)
-        or is_due_add_utterance(raw)
-        or is_due_done_utterance(raw)
-        or is_remind_utterance(raw)
-        or is_due_list_utterance(raw)
-    )
-
-
-def _people_raw(text: str) -> str:
-    raw = (text or "").strip()
-    return _LEADING_FILLER.sub("", raw).strip()
-
-
-def is_person_capture_utterance(text: str) -> bool:
-    """Wrapper pack door for person_capture — `met {name}`. Bare names are not a door."""
-    raw = _people_raw(text)
-    if not raw or _people_other_organ(raw):
-        return False
-    matched = _MET_NL.match(raw)
-    return bool(matched and matched.group(1).strip())
-
-
-def is_who_is_utterance(text: str) -> bool:
-    """Wrapper pack door for who_is — `who is {name}`."""
-    raw = _people_raw(text)
-    if not raw or _people_other_organ(raw):
-        return False
-    matched = _WHO_IS_NL.match(raw)
-    return bool(matched and matched.group(1).strip())
-
-
-def is_person_note_utterance(text: str) -> bool:
-    """Wrapper pack door for person_note — `note for {name}`."""
-    raw = _people_raw(text)
-    if not raw or _people_other_organ(raw):
-        return False
-    matched = _NOTE_FOR_NL.match(raw)
-    return bool(matched and matched.group(1).strip())
-
-
-def is_alias_set_utterance(text: str) -> bool:
-    """Wrapper pack door for alias_set — `alias set:`."""
-    raw = _people_raw(text)
-    if not raw or _people_other_organ(raw):
-        return False
-    matched = _ALIAS_SET_NL.match(raw)
-    return bool(matched and matched.group(1).strip())
-
-
-def is_birthday_set_utterance(text: str) -> bool:
-    """Wrapper pack door for birthday_set — `set birthday: {name} YYYY-MM-DD`."""
-    raw = _people_raw(text)
-    if not raw or _people_other_organ(raw):
-        return False
-    matched = _BIRTHDAY_SET_NL.match(raw)
-    return bool(matched and matched.group(1).strip())
-
-
-def is_people_remind_utterance(text: str) -> bool:
-    """Read door for people_remind — not dues `remind me`."""
-    raw = _people_raw(text)
-    if not raw or _people_other_organ(raw):
-        return False
-    lower = raw.lower()
-    if lower.startswith("people remind"):
-        return True
-    return "upcoming birthdays" in lower
-
-
-def person_capture_body(text: str) -> str:
-    raw = _people_raw(text)
-    matched = _MET_NL.match(raw)
-    return (matched.group(1).strip() if matched else raw)
-
-
-def who_is_mention(text: str) -> str:
-    raw = _people_raw(text)
-    matched = _WHO_IS_NL.match(raw)
-    return (matched.group(1).strip() if matched else raw)
-
-
-def person_note_body(text: str) -> str:
-    raw = _people_raw(text)
-    matched = _NOTE_FOR_NL.match(raw)
-    return (matched.group(1).strip() if matched else raw)
-
-
-def alias_set_body(text: str) -> str:
-    raw = _people_raw(text)
-    matched = _ALIAS_SET_NL.match(raw)
-    return (matched.group(1).strip() if matched else raw)
-
-
-def birthday_set_body(text: str) -> str:
-    raw = _people_raw(text)
-    matched = _BIRTHDAY_SET_NL.match(raw)
-    return (matched.group(1).strip() if matched else raw)
-
-
-def is_gym_end_utterance(text: str) -> bool:
-    """Structural gym-end NL — does not steal habit `done:` / due `done:`."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw or gym_read_takes_priority(raw):
-        return False
-    lower = raw.lower()
-    if lower.startswith("done:") or lower.startswith("habit "):
-        return False
-    return bool(_GYM_END_SHAPE.match(raw))
-
-
-def is_lift_log_utterance(text: str) -> bool:
-    """Structural lift capture — independent of pack_hint match."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw or gym_read_takes_priority(raw):
-        return False
-    if _LIFT_PREFIX.match(raw):
-        return True
-    if _LIFT_LINE.search(raw) or _LIFT_LADDER.search(raw) or _LIFT_SETS_AT_LOAD.search(raw):
-        return True
-    return False
-
-
-def _is_complete_lift_shape(body: str) -> bool:
-    return bool(
-        _LIFT_LINE.search(body)
-        or _LIFT_LADDER.search(body)
-        or _LIFT_SETS_AT_LOAD.search(body)
-    )
-
-
-def is_incomplete_lift_utterance(text: str) -> bool:
-    """Miss-path lift: ask, no session, no row. Not a write. Not gym_start.
-
-    Matches bare ``60x6`` / ``3x6`` (no kg/lb) and name-only catalog/custom
-    folds. Does not steal gym reads, start/end, complete kg×reps, or chat
-    that is not an exercise bind (``I like bench``).
-    """
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw or gym_read_takes_priority(raw):
-        return False
-    if is_gym_start_utterance(raw) or is_gym_end_utterance(raw):
-        return False
-    body = lift_utterance_body(raw)
-    if not body:
-        return False
-    if _is_complete_lift_shape(body):
-        return False
-    if is_bare_nxm_without_unit(body):
-        return True
-    if _NAME_ONLY_CHAT.match(body):
-        return False
-    if not _NAME_ONLY_LIFT.match(body):
-        return False
-    from ada.logs.gym import exercise_name_known
-
-    return exercise_name_known(body)
-
-
-def lift_log_fast_path_args(text: str) -> dict[str, Any] | None:
-    """Return {utterance} for build_lift_log_args, or None."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw or not is_lift_log_utterance(raw):
-        return None
-    lower = raw.lower()
-    if lower.startswith("log lift:") or lower.startswith("lift:"):
-        body = raw.split(":", 1)[1].strip() if ":" in raw else raw
-        return {"utterance": body or raw}
-    return {"utterance": raw}
-
-
-def _normalize_meal_slot(raw_slot: str) -> str:
-    slot = (raw_slot or "").strip().lower()
-    if slot == "snacks":
-        return "snack"
-    return slot
-
-
-def is_meal_log_utterance(text: str) -> bool:
-    """Structural meal capture — independent of pack_hint match."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw:
-        return False
-    if _ADD_MEAL.match(raw):
-        return True
-    if _MEAL_SINGLE.match(raw):
-        return True
-    if _MEAL_MULTI.search(raw) or _MEAL_MULTI_BARE.search(raw):
-        return True
-    return False
-
-
-def meal_log_fast_path_args(text: str) -> dict[str, Any] | None:
-    """Return {utterance, meal_slot} for build_meal_log_args, or None."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
-    if not raw:
-        return None
-
-    meal = _ADD_MEAL.match(raw)
-    if meal:
-        slot_raw = meal.group(2)
-        body = _meal_body_from_raw(raw, slot=slot_raw)
-        return {
-            "utterance": body or meal.group(1).strip(),
-            "meal_slot": _normalize_meal_slot(slot_raw),
-        }
-
-    meal_single = _MEAL_SINGLE.match(raw)
-    if meal_single:
-        return {
-            "utterance": meal_single.group(1).strip(),
-            "meal_slot": None,
-        }
-
-    if _MEAL_MULTI.search(raw) or _MEAL_MULTI_BARE.search(raw):
-        slot_m = _MEAL_SLOT.search(raw)
-        slot = _normalize_meal_slot(slot_m.group(1)) if slot_m else None
-        body = _meal_body_from_raw(raw, slot=slot_m.group(1) if slot_m else None)
-        return {"utterance": body, "meal_slot": slot}
-
-    return None
-
-
-def _meal_body_from_raw(raw: str, *, slot: str | None = None) -> str:
-    """Strip log/add prefix and trailing meal-slot clause from meal NL."""
-    body = raw
-    for prefix in ("log meal:", "long meal:", "log meal", "long meal", "log ", "add ", "long "):
-        if body.lower().startswith(prefix):
-            body = body[len(prefix) :].strip()
-            break
-    if slot:
-        body = re.sub(
-            r"\s+(?:to|for)\s+(?:an?\s+|the\s+)?"
-            + re.escape(slot)
-            + r"s?\b.*$",
-            "",
-            body,
-            flags=re.IGNORECASE,
-        ).strip()
-    return body
-
-
 def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Map utterance prefix, YAML alias, or structural parser to tool + args hint."""
-    raw = (text or "").strip()
-    raw = _LEADING_FILLER.sub("", raw).strip()
+    raw = strip_leading_filler(text)
     lower = raw.lower()
     cfg = config or load_pack_config()
     packs = cfg.get("packs") or {}
@@ -920,21 +494,13 @@ def route_utterance(text: str, *, config: dict[str, Any] | None = None) -> dict[
         return aliased
 
     # Structural create-meal draft (make / wanna make / add a meal) before meal_log.
-    from ada.harness.meal_draft_spine import is_meal_draft_start
+    from ada.life.food.draft_spine import is_meal_draft_start
 
     if is_meal_draft_start(raw):
         return _route_from_pack("meal_draft_start", raw, raw, config=cfg)
 
     if lower.startswith("start focus") or lower.startswith("start timer"):
-        mapped = map_time_intent(raw)
-        pack = resolve_pack("time_start", config=cfg) or {}
-        return {
-            "verb": "time_start",
-            "tool": "life_time_start",
-            "args": mapped,
-            "preferred_tools": list(pack.get("preferred_tools") or []),
-            "spine": pack.get("spine"),
-        }
+        return route_time_start_focus(raw, resolve_pack=resolve_pack, config=cfg)
 
     meal = _ADD_MEAL.match(raw)
     if meal:

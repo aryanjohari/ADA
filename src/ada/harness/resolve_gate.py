@@ -188,21 +188,21 @@ def macros_all_null(candidate: dict[str, Any]) -> bool:
 
 def processed_food_mismatch(query: str, candidate: dict[str, Any]) -> bool:
     """True when candidate form diverges from query-implied plain intent (M27 wrapper)."""
-    from ada.harness.catalog_rank import catalog_form_mismatch
+    from ada.life.food.rank import catalog_form_mismatch
 
     return catalog_form_mismatch(query, candidate, domain="food")
 
 
 def implausible_branded_junk(query: str, candidate: dict[str, Any]) -> bool:
     """Branded row with candy-like macros for a generic whole-food query (M27 wrapper)."""
-    from ada.harness.catalog_rank import macro_implausible
+    from ada.life.food.rank import macro_implausible
 
     return macro_implausible(query, candidate)
 
 
 def has_viable_local_candidate(query: str, candidates: list[dict[str, Any]]) -> bool:
     """True when pool has a non-null, non-junk, non-form-mismatch match."""
-    from ada.harness.catalog_rank import has_viable_local_candidate as _has_viable
+    from ada.life.food.rank import has_viable_local_candidate as _has_viable
 
     return _has_viable(query, candidates, domain="food")
 
@@ -255,7 +255,7 @@ def decide_food_bind(
     score_many: float = _SCORE_MANY,
 ) -> dict[str, Any]:
     """Decide silent bind vs needs_confirm for one food resolve (M27 wrapper)."""
-    from ada.harness.catalog_rank import rank_catalog_bind
+    from ada.life.food.rank import rank_catalog_bind
 
     return rank_catalog_bind(
         query,
